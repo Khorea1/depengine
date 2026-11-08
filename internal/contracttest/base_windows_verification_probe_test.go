@@ -52,10 +52,10 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 			configA, configB map[string]any
 			responses        map[string]run.Result
 		}{
-			{kind: "scoop", field: "pkg", configA: map[string]any{"pkg": "alpha"}, configB: map[string]any{"pkg": "beta"}, responses: map[string]run.Result{"scoop list alpha": {Stdout: []byte("alpha 1.2 main\n")}, "scoop list beta": {Stdout: []byte("alpha 1.2 main\n")}}},
-			{kind: "scoop", field: "version", configA: map[string]any{"pkg": "alpha", "version": "1.2"}, configB: map[string]any{"pkg": "alpha", "version": "2.0"}, responses: map[string]run.Result{"scoop list alpha": {Stdout: []byte("alpha 1.2 main\n")}}},
-			{kind: "scoop", field: "bucket", configA: map[string]any{"pkg": "alpha", "bucket": "main"}, configB: map[string]any{"pkg": "alpha", "bucket": "extras"}, responses: map[string]run.Result{"scoop list alpha": {Stdout: []byte("alpha 1.2 main\n")}}},
-			{kind: "scoop", field: "scope", configA: map[string]any{"pkg": "alpha", "scope": "user"}, configB: map[string]any{"pkg": "alpha", "scope": "global"}, responses: map[string]run.Result{"scoop list alpha": {Stdout: []byte("alpha 1.2 main\n")}, "scoop list alpha --global": {Stdout: []byte("\n")}}},
+			{kind: "scoop", field: "pkg", configA: map[string]any{"pkg": "alpha"}, configB: map[string]any{"pkg": "beta"}, responses: map[string]run.Result{"scoop list": {Stdout: []byte("Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nalpha 1.2 main 2026-01-01 10:00:00\n")}}},
+			{kind: "scoop", field: "version", configA: map[string]any{"pkg": "alpha", "version": "1.2"}, configB: map[string]any{"pkg": "alpha", "version": "2.0"}, responses: map[string]run.Result{"scoop list": {Stdout: []byte("Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nalpha 1.2 main 2026-01-01 10:00:00\n")}}},
+			{kind: "scoop", field: "bucket", configA: map[string]any{"pkg": "alpha", "bucket": "main"}, configB: map[string]any{"pkg": "alpha", "bucket": "extras"}, responses: map[string]run.Result{"scoop list": {Stdout: []byte("Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nalpha 1.2 main 2026-01-01 10:00:00\n")}}},
+			{kind: "scoop", field: "scope", configA: map[string]any{"pkg": "alpha", "scope": "global"}, configB: map[string]any{"pkg": "alpha", "scope": "user"}, responses: map[string]run.Result{"scoop list": {Stdout: []byte("Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nalpha 1.2 main 2026-01-01 10:00:00 Global install\n")}}},
 			{kind: "choco", field: "pkg", configA: map[string]any{"pkg": "alpha"}, configB: map[string]any{"pkg": "beta"}, responses: map[string]run.Result{"choco list --local-only --exact --limit-output alpha": {Stdout: []byte("alpha|1.2\n")}, "choco list --local-only --exact --limit-output beta": {Stdout: []byte("alpha|1.2\n")}}},
 			{kind: "choco", field: "version", configA: map[string]any{"pkg": "alpha", "version": "1.2"}, configB: map[string]any{"pkg": "alpha", "version": "2.0"}, responses: map[string]run.Result{"choco list --local-only --exact --limit-output alpha": {Stdout: []byte("alpha|1.2\n")}}},
 		} {
@@ -74,7 +74,7 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 		}{
 			baseCase("bun", "pkg", "bun pm ls -g", "├── alpha@1.2.0\n", "pkg"),
 			baseCase("bun", "version", "bun pm ls -g", "├── alpha@1.2.0\n", "version"),
-			baseCase("cask", "pkg", "brew list --cask alpha", "", "pkg"),
+			baseCase("cask", "pkg", "brew list --cask", "alpha\n", "pkg"),
 			baseCase("gem", "pkg", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "pkg"),
 			baseCase("gem", "version", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "version"),
 			baseCase("pipx", "pkg", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "pkg"),
@@ -133,8 +133,7 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 	case "appman":
 		paths["alpha"], paths["beta"] = true, false
 	case "cask":
-		responses[command] = run.Result{}
-		responses["brew list --cask beta"] = run.Result{ExitCode: 1}
+		responses[command] = run.Result{Stdout: []byte(output)}
 	default:
 		responses[command] = run.Result{Stdout: []byte(output)}
 	}

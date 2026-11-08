@@ -26,7 +26,7 @@ func WindowsAdaptersWithScoop(runtime scoopruntime.Runtime) []AdapterV2 {
 			kind:       "choco",
 			binary:     "choco",
 			installCmd: []string{"choco", "install", "{pkg}", "-y"},
-			checkCmd:   []string{"choco", "list", "--exact", "--limit-output", "{pkg}"},
+			checkCmd:   []string{"choco", "list", "--local-only", "--exact", "--limit-output", "{pkg}"},
 			removeCmd:  []string{"choco", "uninstall", "{pkg}", "-y"},
 		},
 	}
@@ -99,8 +99,8 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 			observation.Identity.Source = installed.Bucket
 			observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 		}
-		if scope != "" {
-			if scope == "global" {
+		if installed.Scope != "" {
+			if installed.Scope == "global" {
 				observation.Identity.Scope = string(plan.ScopeSystem)
 			} else {
 				observation.Identity.Scope = string(plan.ScopeUser)
@@ -111,17 +111,6 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	}
 	cmd := SubstitutePkg(w.checkCmd, tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil || res.WaitErr != nil {
-		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
-	}
-	if res.ExitCode == 0 && malformedChocoOutput(res.Stdout) {
-		return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned malformed inventory output"}
-	}
-	if res.ExitCode != 0 || !hasChocoVersion(res.Stdout, pkg) {
-		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
-		// fall back for older Chocolatey releases that still require the flag.
-		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
-	}
 	if res.Err != nil || res.WaitErr != nil || res.ExitCode != 0 {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
 	}
@@ -189,7 +178,7 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 	pkg := packageName(tool, mc)
 	switch w.kind {
 	case "choco":
-		res := rn.Run(ctx, "choco", "list", "--exact", "--limit-output", pkg)
+		res := rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
 		if err := run.CheckResultCompleteOutput(res, "choco: version check"); err != nil {
 			return "", err
 		}

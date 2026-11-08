@@ -3,9 +3,10 @@
 ## Unreleased
 - Use complete inventories for Flatpak applications, Homebrew casks, and APM
   packages so failed queries remain Unknown; malformed APM rows are Broken.
-  AppMan path lookup proves presence only, not package absence. Scoop and
-  Chocolatey observations now keep malformed inventory output from authorizing
-  absence and distinguish completed absence from failed probes.
+- Enumerate Scoop's documented full installed-package table instead of treating
+  `scoop list <query>` as exact or `--global` as a scope filter; observed scope
+  now comes from its inventory marker. Chocolatey inventory is explicitly
+  local-only on both supported major versions, with no remote-query fallback.
 - Treat failed container image probes as unknown rather than absence. For a
   completed nonzero digest/platform inspect, use repository-filtered image
   inventory and exact digest comparison to distinguish absence from an
