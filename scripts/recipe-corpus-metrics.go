@@ -1,5 +1,5 @@
-// Command recipe-corpus-metrics verifies the pinned original-source corpus and
-// reports source and equivalent-schema size/candidate counts.
+// Command recipe-corpus-metrics verifies pinned original-source hashes and
+// compares authored projection size with resolved tool/candidate/when counts.
 package main
 
 import (
@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Khorea1/depengine/internal/config"
 )
 
 func main() {
@@ -31,19 +33,45 @@ func main() {
 		}
 		fmt.Printf("source %-22s lines=%d sha256=%s\n", file.name, strings.Count(string(data), "\n"), file.digest)
 	}
-	for _, name := range []string{"enumerated.toml", "intent.toml", "catalog/ripgrep.toml"} {
+	for _, name := range []string{"enumerated.toml", "intent.toml"} {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
 			fail(err)
 		}
-		lines := strings.Count(string(data), "\n")
-		methods := 0
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "[tools.ripgrep.") || strings.HasPrefix(line, "[packages.ripgrep.") {
-				methods++
+		schema, err := config.ParseProjectSchema(filepath.Join(root, name), nil)
+		if err != nil {
+			fail(err)
+		}
+		var catalog *config.Catalog
+		if name == "intent.toml" {
+			recipeRoot, err := filepath.Abs(filepath.Join(root, "catalog"))
+			if err != nil {
+				fail(err)
+			}
+			catalog = config.NewCatalog([]string{recipeRoot})
+		}
+		resolved, err := config.ResolveLayers(schema, nil, catalog, nil, false)
+		if err != nil {
+			fail(err)
+		}
+		methods, conditions := 0, 0
+		for _, tool := range resolved.Schema.Tools {
+			methods += len(tool.Methods)
+			for _, candidate := range tool.Methods {
+				if candidate.When != nil {
+					conditions++
+				}
 			}
 		}
-		fmt.Printf("projection %-20s lines=%d methods=%d\n", name, lines, methods)
+		fmt.Printf("projection %-20s lines=%d tools=%d candidates=%d when=%d\n",
+			name, strings.Count(string(data), "\n"), len(resolved.Schema.Tools), methods, conditions)
+	}
+	for _, name := range []string{"intent.toml", "catalog/ripgrep.toml"} {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			fail(err)
+		}
+		fmt.Printf("authored %-22s lines=%d\n", name, strings.Count(string(data), "\n"))
 	}
 }
 
