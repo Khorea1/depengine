@@ -133,15 +133,14 @@ func (Official) ObserveInstalled(ctx context.Context, rn run.Runner, pkg, scope 
 }
 
 func parseInstalledInventory(output, pkg, requestedScope string) (InstalledPackage, error) {
-	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
 	started, headerSeen := false, false
 	var found InstalledPackage
-	for _, line := range lines {
+	for line := range strings.Lines(output) {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if line == "Installed apps:" || (strings.HasPrefix(line, "Installed apps matching '") && strings.HasSuffix(line, "':")) {
+		if line == "Installed apps:" {
 			if started {
 				return InstalledPackage{}, fmt.Errorf("scoop: repeated installed inventory title")
 			}
@@ -164,21 +163,19 @@ func parseInstalledInventory(output, pkg, requestedScope string) (InstalledPacka
 		if !headerSeen {
 			return InstalledPackage{}, fmt.Errorf("scoop: missing installed inventory header")
 		}
-		row, ok := parseInstalledRow(line)
+		row, ok := parseInstalledRow(line, fields)
 		if !ok {
 			return InstalledPackage{}, fmt.Errorf("scoop: malformed installed package inventory row")
 		}
-		rowScope := "user"
-		if strings.EqualFold(row.info, "Global install") {
-			rowScope = "global"
-		} else if row.info != "" {
-			return InstalledPackage{}, fmt.Errorf("scoop: unknown installed package scope marker")
+		rowScope, installFailed, ok := parseInstalledInfo(row.info)
+		if !ok {
+			return InstalledPackage{}, fmt.Errorf("scoop: unknown installed package info marker")
 		}
 		if strings.EqualFold(row.name, pkg) && (requestedScope == "" || requestedScope == rowScope) {
 			if found.Present {
 				return InstalledPackage{}, fmt.Errorf("scoop: duplicate installed package row")
 			}
-			found = InstalledPackage{Present: true, Version: row.version, Bucket: row.source, Scope: rowScope}
+			found = InstalledPackage{Present: true, Version: row.version, Bucket: row.source, Scope: rowScope, Malformed: installFailed}
 		}
 	}
 	if !started || !headerSeen {
@@ -203,14 +200,16 @@ func isTableSeparator(fields []string) bool {
 	return true
 }
 
-func parseInstalledRow(line string) (installedRow, bool) {
-	fields := strings.Fields(line)
+func parseInstalledRow(line string, fields []string) (installedRow, bool) {
 	if len(fields) < 5 {
 		return installedRow{}, false
 	}
 	dateIndex := -1
 	for i := 3; i+1 < len(fields); i++ {
-		if _, err := time.Parse("2006-01-02 15:04:05", fields[i]+" "+fields[i+1]); err == nil {
+		if _, err := time.Parse("2006-01-02", fields[i]); err != nil {
+			continue
+		}
+		if _, err := time.Parse("15:04:05", fields[i+1]); err == nil {
 			dateIndex = i
 			break
 		}
@@ -218,10 +217,41 @@ func parseInstalledRow(line string) (installedRow, bool) {
 	if dateIndex < 3 {
 		return installedRow{}, false
 	}
+	infoOffset := 0
+	for _, field := range fields[:dateIndex+2] {
+		index := strings.Index(line[infoOffset:], field)
+		if index < 0 {
+			return installedRow{}, false
+		}
+		infoOffset += index + len(field)
+	}
 	return installedRow{
 		name: fields[0], version: fields[1], source: fields[2],
-		info: strings.Join(fields[dateIndex+2:], " "),
+		info: strings.TrimSpace(line[infoOffset:]),
 	}, true
+}
+
+func parseInstalledInfo(info string) (scope string, installFailed, ok bool) {
+	scope = "user"
+	if info == "" {
+		return scope, false, true
+	}
+	for {
+		flag, rest, more := strings.Cut(info, ",")
+		switch strings.TrimSpace(flag) {
+		case "Deprecated package", "Held package", "32bit", "64bit", "arm", "arm64":
+		case "Global install":
+			scope = "global"
+		case "Install failed":
+			installFailed = true
+		default:
+			return "", false, false
+		}
+		if !more {
+			return scope, installFailed, true
+		}
+		info = rest
+	}
 }
 
 func (o Official) InstallResolved(ctx context.Context, rn run.Runner, target InstallTarget) error {

@@ -11,7 +11,7 @@ import (
 )
 
 func TestOfficialObservesInstalledPackageSemantically(t *testing.T) {
-	const inventory = "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nNeovim 0.10.4 extras 2026-09-26 11:58:42 Global install\nOther 1.0 main 2026-09-26 11:58:42\n"
+	const inventory = "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nNeovim 0.10.4 extras 2026-09-26 11:58:42 Global install, Held package, 64bit\nOther 1.0 main 2026-09-26 11:58:42 Deprecated package, arm64\nBroken 2.0 main 2026-09-26 11:58:42 Install failed\n"
 	for _, tc := range []struct {
 		name  string
 		scope string
@@ -37,11 +37,22 @@ func TestOfficialObservesInstalledPackageSemantically(t *testing.T) {
 	}
 }
 
-func TestOfficialRecognizesScoopListTitleOnlyNoMatch(t *testing.T) {
-	runner := &run.FakeRunner{Stdout: "Installed apps matching 'neovim':\nName Version Source Updated Info\n---- ------- ------ ------- ----\n"}
+func TestOfficialFullInventoryReportsUnrelatedPackageAbsent(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nOther 1.0 main 2026-09-26 11:58:42\n"}
 	got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user")
 	if err != nil || got.Present {
-		t.Fatalf("title-only no-match = %+v, %v; want absent", got, err)
+		t.Fatalf("full inventory missing package = %+v, %v; want absent", got, err)
+	}
+}
+func TestOfficialMarksTargetInstallFailureMalformed(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nNeovim 0.10.4 extras 2026-09-26 11:58:42 Deprecated package, Global install, Install failed, 64bit\n"}
+	got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "global")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := InstalledPackage{Present: true, Malformed: true, Version: "0.10.4", Bucket: "extras", Scope: "global"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("failed install row = %+v, want %+v", got, want)
 	}
 }
 

@@ -318,25 +318,58 @@ func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Ru
 		if err := run.CheckResultCompleteOutput(res, "flatpak: application inventory"); err != nil {
 			return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, true
 		}
+		requestedRemote, _ := mc.Config["remote"].(string)
+		requestedBranch, _ := mc.Config["branch"].(string)
+		requestedScope, _ := mc.Config["scope"].(string)
+		var selected, observed *plan.Observation
+		matches, exactMatches := 0, 0
 		for line := range strings.Lines(string(res.Stdout)) {
-			fields := strings.Fields(line)
-			if len(fields) == 0 || strings.EqualFold(fields[0], "application") || fields[0] != pkg {
+			line = strings.TrimSpace(line)
+			if line == "" {
 				continue
 			}
-			if len(fields) < 5 {
+			fields := strings.Fields(line)
+			if (len(fields) == 5 && strings.EqualFold(fields[0], "application")) ||
+				(len(fields) == 6 && strings.EqualFold(fields[0], "application") && strings.EqualFold(fields[1], "id")) {
+				continue
+			}
+			if len(fields) != 5 || fields[0] == "" || fields[1] == "" || fields[2] == "" || fields[3] == "" || fields[4] == "" {
 				return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: malformed application inventory row"}, true
 			}
-			observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{
-				Package: pkg, Source: fields[1], Architecture: fields[3], Revision: fields[4],
-			}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldSource, plan.FieldArchitecture, plan.FieldRevision}}
-			if fields[2] == "user" {
-				observation.Identity.Scope = string(plan.ScopeUser)
-				observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
-			} else if fields[2] == "system" || fields[2] == "default" {
-				observation.Identity.Scope = string(plan.ScopeSystem)
-				observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
+			rowScope := ""
+			switch fields[2] {
+			case "user":
+				rowScope = string(plan.ScopeUser)
+			case "system", "default":
+				rowScope = string(plan.ScopeSystem)
+			default:
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: unknown installation in application inventory"}, true
 			}
-			return observation, true
+			if fields[0] != pkg || (requestedScope != "" && requestedScope != rowScope) {
+				continue
+			}
+			matches++
+			observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{
+				Package: pkg, Source: fields[1], Architecture: fields[3], Revision: fields[4], Scope: rowScope,
+			}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldSource, plan.FieldArchitecture, plan.FieldRevision, plan.FieldScope}}
+			if (requestedRemote == "" || requestedRemote == fields[1]) &&
+				(requestedBranch == "" || requestedBranch == fields[4]) {
+				exactMatches++
+				selected = &observation
+			}
+			observed = &observation
+		}
+		if exactMatches > 1 {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: ambiguous installed application identity"}, true
+		}
+		if selected != nil {
+			return *selected, true
+		}
+		if matches == 1 {
+			return *observed, true
+		}
+		if matches > 1 {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: ambiguous installed application identity"}, true
 		}
 		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
 	default:

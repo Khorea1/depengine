@@ -119,9 +119,6 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	}
 	version, ok := chocoVersionFromOutput(res.Stdout, pkg)
 	if !ok {
-		if outputMentionsPackage(res.Stdout, pkg) {
-			return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
-		}
 		return plan.Observation{Presence: plan.PresenceAbsent}
 	}
 	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
@@ -141,20 +138,6 @@ func malformedChocoOutput(stdout []byte) bool {
 	return false
 }
 
-func outputMentionsPackage(stdout []byte, pkg string) bool {
-	for _, line := range strings.Split(string(stdout), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		id, _, _ := strings.Cut(fields[0], "|")
-		if strings.EqualFold(id, pkg) {
-			return true
-		}
-	}
-	return false
-}
-
 func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
 	for _, line := range strings.Split(string(stdout), "\n") {
 		id, version, ok := strings.Cut(strings.TrimSpace(line), "|")
@@ -164,11 +147,6 @@ func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
 		return version, version != ""
 	}
 	return "", false
-}
-
-func hasChocoVersion(stdout []byte, pkg string) bool {
-	_, ok := chocoVersionFromOutput(stdout, pkg)
-	return ok
 }
 
 func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {

@@ -139,6 +139,7 @@ func TestBaseAdapterV2ObserveProjectsOnlyVerifiedScopes(t *testing.T) {
 			name:      "flatpak user",
 			kind:      "flatpak",
 			config:    map[string]any{"pkg": "org.demo.App", "scope": "user"},
+			stdout:    "Application ID Origin Installation Arch Branch\norg.demo.App flathub user x86_64 stable\n",
 			wantScope: string(plan.ScopeUser),
 			wantKnown: true,
 		},
