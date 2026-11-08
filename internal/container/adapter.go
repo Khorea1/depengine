@@ -111,35 +111,67 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 			}
 			return observed == platform, ""
 		}
-		return imageInventory(ctx, rn, manager, reference)
+		if res.Err != nil || res.WaitErr != nil {
+			return false, probeExecutionFailure("inspect platform", res)
+		}
+		return imageInventory(ctx, rn, manager, reference, false, probeExecutionFailure("inspect platform", res))
 	}
 	if strings.Contains(reference, "@") {
 		res := rn.Run(ctx, manager, "image", "inspect", reference)
 		if probeSucceeded(res) {
 			return true, ""
 		}
-		return imageInventory(ctx, rn, manager, reference)
+		if res.Err != nil || res.WaitErr != nil {
+			return false, probeExecutionFailure("inspect image", res)
+		}
+		return imageInventory(ctx, rn, manager, reference, true, probeExecutionFailure("inspect image", res))
 	}
 	res := rn.Run(ctx, manager, "images", "-q", reference)
-	if !probeSucceeded(res) {
-		return false, "container: list images: probe failed"
+	if reason := probeExecutionFailure("list images", res); reason != "" {
+		return false, reason
 	}
 	return strings.TrimSpace(string(res.Stdout)) != "", ""
 }
 
-func imageInventory(ctx context.Context, rn run.Runner, manager, reference string) (bool, string) {
-	res := rn.Run(ctx, manager, "images", "-q", reference)
-	if !probeSucceeded(res) {
-		return false, "container: list images: probe failed"
+func imageInventory(ctx context.Context, rn run.Runner, manager, reference string, digest bool, inspectFailure string) (bool, string) {
+	var res run.Result
+	if digest {
+		res = rn.Run(ctx, manager, "images", "--no-trunc", "--digests", "--format", "{{.Repository}}@{{.Digest}}")
+	} else {
+		res = rn.Run(ctx, manager, "images", "-q", reference)
+	}
+	if reason := probeExecutionFailure("list images", res); reason != "" {
+		return false, reason
+	}
+	if digest {
+		for _, listed := range strings.Split(string(res.Stdout), "\n") {
+			if strings.TrimSpace(listed) == reference {
+				return false, "container: inspect image failed with exit code 1; reference present in inventory"
+			}
+		}
+		return false, ""
 	}
 	if strings.TrimSpace(string(res.Stdout)) == "" {
 		return false, ""
 	}
-	return false, "container: inspect image: probe failed"
+	return false, inspectFailure
+}
+
+func probeExecutionFailure(action string, res run.Result) string {
+	if res.Err != nil {
+		return "container: " + action + ": " + res.Err.Error()
+	}
+	if res.WaitErr != nil {
+		return "container: " + action + " output: " + res.WaitErr.Error()
+	}
+	if res.ExitCode != 0 {
+		return fmt.Sprintf("container: %s: command exited with status %d", action, res.ExitCode)
+	}
+	return ""
 }
 
 func probeSucceeded(res run.Result) bool {
-	return res.Err == nil && res.WaitErr == nil && res.ExitCode == 0
+	return probeExecutionFailure("probe", res) == ""
 }
 
 // Install pulls the image via `<manager> pull <reference>`.
