@@ -270,6 +270,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings("")
 	*checkSchema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {

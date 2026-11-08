@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	deplog "github.com/Khorea1/depengine/internal/log"
 )
 
 func TestLoadProjectRejectsMergeIntroducedEffectiveIntegrityError(t *testing.T) {
@@ -40,4 +41,36 @@ func TestLoadProjectRejectsMergeIntroducedEffectiveIntegrityError(t *testing.T) 
 	if err == nil || !strings.Contains(err.Error(), "requires checksum") {
 		t.Fatalf("loadProject merge error = %v, want effective checksum/sidecar diagnostic", err)
 	}
+}
+
+func TestLoadProjectRetainsLayerWarnings(t *testing.T) {
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.toml")
+	if err := os.WriteFile(schemaPath, []byte("schema_version = 1\n[tools]\nfoo = {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := loadProject(schemaPath, projectLoadOptions{Catalog: config.NewCatalog([]string{filepath.Join(dir, "catalog")})})
+	if err != nil {
+		t.Fatalf("loadProject: %v", err)
+	}
+	if len(project.Warnings) != 1 || project.Warnings[0].Tool != "foo" || !strings.Contains(project.Warnings[0].Message, "no catalog recipe supplied it") {
+		t.Fatalf("layer warnings = %+v, want the inert foo diagnostic", project.Warnings)
+	}
+}
+
+func TestPresentLayerWarningsFiltersToRequestedTool(t *testing.T) {
+	previous := deplog.Default
+	capture := deplog.NewTestLogger(t)
+	deplog.Default = capture.Logger
+	t.Cleanup(func() { deplog.Default = previous })
+
+	project := &loadedProject{Warnings: []config.LayerWarning{
+		{Tool: "foo", Message: "foo warning"},
+		{Tool: "bar", Message: "bar warning"},
+	}}
+	project.presentWarnings("foo")
+
+	capture.AssertContains(t, "[W_INERT_TOOL] tools.foo: foo warning")
+	capture.AssertNotContains(t, "tools.bar")
 }

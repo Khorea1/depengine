@@ -76,6 +76,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings("")
 	*updateSchema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {

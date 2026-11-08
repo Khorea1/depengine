@@ -503,6 +503,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings("")
 	opts.schema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {

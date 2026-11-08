@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Carry catalog-layer inert-tool warnings through project loading to CLI
+  consumers such as `why`, `graph`, `install`, and status; keep `validate`'s
+  structured text/JSON output and `why`'s tool filter consistent without
+  changing exit codes.
 - Resolve catalog recipes for the effective `requires` closure even when
   project and manifest roots have no catalog recipe of their own. Local tools
   can now reach catalog-backed helpers and their transitive dependencies.

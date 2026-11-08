@@ -78,6 +78,7 @@ type loadedProject struct {
 	ManifestAuto  bool
 	CatalogRoots  []string
 	CatalogCount  int
+	Warnings      []config.LayerWarning
 }
 
 type projectLoadOptions struct {
@@ -163,7 +164,7 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		return nil, &config.ParseSchemaError{Err: errors.New("schema validation failed")}
 	}
 	for _, warning := range vr.Warnings {
-		if opts.WarningTool != "" && !strings.HasPrefix(warning.Field, "tools."+opts.WarningTool+".") {
+		if opts.WarningTool != "" && warning.Field != "tools."+opts.WarningTool && !strings.HasPrefix(warning.Field, "tools."+opts.WarningTool+".") {
 			continue
 		}
 		log.Default.Warn(warning.Error())
@@ -179,7 +180,21 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		ManifestAuto:  opts.ManifestAuto,
 		CatalogRoots:  opts.Catalog.Roots(),
 		CatalogCount:  resolution.CatalogCount,
+		Warnings:      resolution.Warnings,
 	}, nil
+}
+
+func (project *loadedProject) presentWarnings(tool string) {
+	for _, warning := range project.Warnings {
+		if tool != "" && warning.Tool != tool {
+			continue
+		}
+		log.Default.Warn((validate.ValidationError{
+			Code:    validate.WarnInertTool,
+			Field:   "tools." + warning.Tool,
+			Message: warning.Message,
+		}).Error())
+	}
 }
 
 // loadSchema preserves the older tuple API for call sites that only need a
@@ -189,6 +204,7 @@ func loadSchema(path string) (*config.Schema, string, *platform.Facts, error) {
 	if err != nil {
 		return nil, "", nil, err
 	}
+	project.presentWarnings("")
 	return project.Schema, project.Clan, project.Facts, nil
 }
 

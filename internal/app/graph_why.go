@@ -111,6 +111,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings("")
 	*graphSchema = project.SchemaPath
 	s := project.Schema
 	if project.ManifestCount > 0 && project.ManifestAuto {
@@ -363,6 +364,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings(toolName)
 	*whySchema = project.SchemaPath
 	s, facts, clan := project.Schema, project.Facts, project.Clan
 	if project.ManifestCount > 0 && project.ManifestAuto {

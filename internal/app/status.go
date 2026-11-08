@@ -171,6 +171,7 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		project = nil
 	} else {
 		lockSchemaPath = project.SchemaPath
+		project.presentWarnings("")
 		if project.ManifestCount > 0 && project.ManifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
 		}

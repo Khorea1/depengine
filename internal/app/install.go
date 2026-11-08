@@ -391,6 +391,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	project.presentWarnings("")
 	p.schema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 
