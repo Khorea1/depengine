@@ -189,6 +189,23 @@ func TestContainerAdapterV2ObserveDoesNotTreatFailedQueriesAsAbsent(t *testing.T
 		})
 	}
 }
+func TestContainerAdapterV2DigestPlatformFallbackUsesDigestInventory(t *testing.T) {
+	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	result := run.Result{ExitCode: 1}
+	runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}, result: &result}
+	config := map[string]any{"source": "redis", "digest": digest, "platform": "linux/amd64"}
+	observation, err := NewContainerAdapter().Observe(context.Background(), runner, tool("redis"), containerMethod(config))
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if observation.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() presence = %q, want unknown when digest inventory query fails", observation.Presence)
+	}
+	want := []string{"images", "--digests", "--format", "{{.Digest}}", "redis"}
+	if got := runner.calls[len(runner.calls)-1].Args; !equalArgs(got, want) {
+		t.Fatalf("digest+platform fallback argv = %v, want %v", got, want)
+	}
+}
 
 func TestContainerAdapterV2ObserveRequiresToolAndMethod(t *testing.T) {
 	ctx := context.Background()

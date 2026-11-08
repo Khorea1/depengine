@@ -114,7 +114,7 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 		if res.Err != nil || res.WaitErr != nil {
 			return false, probeExecutionFailure("inspect platform", res)
 		}
-		return imageInventory(ctx, rn, manager, reference, false, probeExecutionFailure("inspect platform", res))
+		return imageInventory(ctx, rn, manager, reference, probeExecutionFailure("inspect platform", res))
 	}
 	if strings.Contains(reference, "@") {
 		res := rn.Run(ctx, manager, "image", "inspect", reference)
@@ -124,7 +124,7 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 		if res.Err != nil || res.WaitErr != nil {
 			return false, probeExecutionFailure("inspect image", res)
 		}
-		return imageInventory(ctx, rn, manager, reference, true, probeExecutionFailure("inspect image", res))
+		return imageInventory(ctx, rn, manager, reference, probeExecutionFailure("inspect image", res))
 	}
 	res := rn.Run(ctx, manager, "images", "-q", reference)
 	if reason := probeExecutionFailure("list images", res); reason != "" {
@@ -133,23 +133,22 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 	return strings.TrimSpace(string(res.Stdout)) != "", ""
 }
 
-func imageInventory(ctx context.Context, rn run.Runner, manager, reference string, digest bool, inspectFailure string) (bool, string) {
-	var res run.Result
-	if digest {
-		res = rn.Run(ctx, manager, "images", "--no-trunc", "--digests", "--format", "{{.Repository}}@{{.Digest}}")
-	} else {
-		res = rn.Run(ctx, manager, "images", "-q", reference)
-	}
-	if reason := probeExecutionFailure("list images", res); reason != "" {
-		return false, reason
-	}
-	if digest {
-		for _, listed := range strings.Split(string(res.Stdout), "\n") {
-			if strings.TrimSpace(listed) == reference {
-				return false, "container: inspect image failed with exit code 1; reference present in inventory"
+func imageInventory(ctx context.Context, rn run.Runner, manager, reference, inspectFailure string) (bool, string) {
+	if source, digest, pinned := strings.Cut(reference, "@"); pinned {
+		res := rn.Run(ctx, manager, "images", "--digests", "--format", "{{.Digest}}", source)
+		if reason := probeExecutionFailure("list image digests", res); reason != "" {
+			return false, reason
+		}
+		for listed := range strings.Lines(string(res.Stdout)) {
+			if strings.TrimSpace(listed) == digest {
+				return false, inspectFailure
 			}
 		}
 		return false, ""
+	}
+	res := rn.Run(ctx, manager, "images", "-q", reference)
+	if reason := probeExecutionFailure("list images", res); reason != "" {
+		return false, reason
 	}
 	if strings.TrimSpace(string(res.Stdout)) == "" {
 		return false, ""
@@ -171,7 +170,7 @@ func probeExecutionFailure(action string, res run.Result) string {
 }
 
 func probeSucceeded(res run.Result) bool {
-	return probeExecutionFailure("probe", res) == ""
+	return res.Err == nil && res.WaitErr == nil && res.ExitCode == 0
 }
 
 // Install pulls the image via `<manager> pull <reference>`.
