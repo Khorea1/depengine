@@ -1,6 +1,31 @@
 recipe_version = 1
-[packages.ripgrep.http]
+# Source: https://github.com/ScoopInstaller/Main/blob/776adcdfe819887acf6df9bf7f4a57166189d671/bucket/ripgrep.json
+# Revision: 776adcdfe819887acf6df9bf7f4a57166189d671
+# SHA-256: f28790bf5e965c8df9a9318a773f47c0b2a4d6d2866f11a4b4b54ef904e5062c
+
+[packages.ripgrep.scoop-64bit]
+kind = "http"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip"
 checksum = "sha256:71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
-extract_to = "ripgrep-15.2.0-x86_64-pc-windows-msvc"
+scope = "user"
+strip_components = 1
+entrypoints = { rg = "rg.exe" }
 when = { os = ["windows"], arch = ["x86_64"] }
+
+[packages.ripgrep.scoop-32bit]
+kind = "http"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-i686-pc-windows-msvc.zip"
+checksum = "sha256:9bf73bdb3fda9ad4b0235e1295b02c717031c986afa4d7c05dd0af8b74010a95"
+scope = "user"
+strip_components = 1
+entrypoints = { rg = "rg.exe" }
+when = { os = ["windows"], arch = ["x86"] }
+
+[packages.ripgrep.scoop-arm64]
+kind = "http"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-pc-windows-msvc.zip"
+checksum = "sha256:e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f"
+scope = "user"
+strip_components = 1
+entrypoints = { rg = "rg.exe" }
+when = { os = ["windows"], arch = ["aarch64"] }

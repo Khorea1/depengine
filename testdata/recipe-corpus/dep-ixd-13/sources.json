@@ -9,6 +9,9 @@
       "url": "https://github.com/Homebrew/homebrew-core/blob/defe58540d9ea8f9bd6a41c8478b855e287a8911/Formula/r/ripgrep.rb",
       "repository_license": "BSD-2-Clause",
       "repository_license_url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/defe58540d9ea8f9bd6a41c8478b855e287a8911/LICENSE.txt",
+      "license_file": "licenses/homebrew-core-LICENSE.txt",
+      "license_sha256": "f80329e58613ad669c0e73cb132d8060b9b2c55e339c73848068e4d1567f4627",
+      "local_path": "brew/formula.rb",
       "sha256": "2e493e50a49a37f7ed090f44019d1c58dd30c90a5c6fe1ecbcd69334dccaa60b"
     },
     {
@@ -18,7 +21,10 @@
       "path": "Formula/f/fd.rb",
       "url": "https://github.com/Homebrew/homebrew-core/blob/defe58540d9ea8f9bd6a41c8478b855e287a8911/Formula/f/fd.rb",
       "repository_license": "BSD-2-Clause",
-      "license_url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/defe58540d9ea8f9bd6a41c8478b855e287a8911/LICENSE.txt",
+      "repository_license_url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/defe58540d9ea8f9bd6a41c8478b855e287a8911/LICENSE.txt",
+      "license_file": "licenses/homebrew-core-LICENSE.txt",
+      "license_sha256": "f80329e58613ad669c0e73cb132d8060b9b2c55e339c73848068e4d1567f4627",
+      "local_path": "brew/fd.rb",
       "sha256": "533d890e7c136c0b6a32ab805f24e74def0386af19a5c71fee2cd99a2210369d"
     },
     {
@@ -29,6 +35,9 @@
       "url": "https://github.com/ScoopInstaller/Main/blob/776adcdfe819887acf6df9bf7f4a57166189d671/bucket/ripgrep.json",
       "repository_license": "Unlicense",
       "repository_license_url": "https://raw.githubusercontent.com/ScoopInstaller/Main/776adcdfe819887acf6df9bf7f4a57166189d671/LICENSE",
+      "license_file": "licenses/ScoopInstaller-Main-LICENSE.txt",
+      "license_sha256": "9ef5e9727a7de987c5cbd099181c5b0ec346777ae2c5f02338c434e8a60d5556",
+      "local_path": "scoop/manifest.json",
       "sha256": "f28790bf5e965c8df9a9318a773f47c0b2a4d6d2866f11a4b4b54ef904e5062c"
     },
     {
@@ -39,16 +48,22 @@
       "url": "https://github.com/ScoopInstaller/Main/blob/776adcdfe819887acf6df9bf7f4a57166189d671/bucket/fd.json",
       "repository_license": "Unlicense",
       "repository_license_url": "https://raw.githubusercontent.com/ScoopInstaller/Main/776adcdfe819887acf6df9bf7f4a57166189d671/LICENSE",
+      "license_file": "licenses/ScoopInstaller-Main-LICENSE.txt",
+      "license_sha256": "9ef5e9727a7de987c5cbd099181c5b0ec346777ae2c5f02338c434e8a60d5556",
+      "local_path": "scoop/fd.json",
       "sha256": "52f164fd5d4d182c0062cf11940be66781dcf596da6b42a19602653066b1a7dd"
     },
     {
       "manager": "WinGet GNU installer ripgrep",
       "repository": "microsoft/winget-pkgs",
       "revision": "dbc5bce24d2394b01b34077ed4d75365f6add71c",
-      "path": "manifests/b/BurntSushi/ripgrep/GNU/15.2.0/ (installer, version, en-US locale YAML)",
+      "path": "manifests/b/BurntSushi/ripgrep/GNU/15.2.0/",
       "url": "https://github.com/microsoft/winget-pkgs/tree/dbc5bce24d2394b01b34077ed4d75365f6add71c/manifests/b/BurntSushi/ripgrep/GNU/15.2.0",
       "repository_license": "MIT",
       "repository_license_url": "https://raw.githubusercontent.com/microsoft/winget-pkgs/dbc5bce24d2394b01b34077ed4d75365f6add71c/LICENSE",
+      "license_file": "licenses/winget-pkgs-LICENSE.txt",
+      "license_sha256": "5b73c7dbe4b33522d4fa136704d5de9d96ae7389a9d95a1b5a0cab0632107c76",
+      "local_path": "winget",
       "files": {
         "manifest.yaml": "3235a2308587f17e5f014bb5799ab718206af2eaa034b9a64a65a0ec73c081b6",
         "version.yaml": "21e27fde586df90626a7a9dec1d68dcb0bfd3ae0744545f2abdd6d7e09910499",
@@ -57,8 +72,8 @@
     }
   ],
   "derived_projection": {
-    "source": "Scoop manifest architecture.64bit URL, hash, extract_dir",
-    "target": "one x86_64 Windows HTTP candidate for each tool, in enumerated.toml and catalog/*.toml",
-    "limits": "Not lossless. Homebrew build/dependencies/bottles and additional Scoop/WinGet architectures remain in originals. Only two tools and two repositories provide no broad representativeness or preset evidence."
+    "source": "Scoop manifest architecture URL, hash, and extract_dir records for 64bit, 32bit, and arm64",
+    "target": "one Windows HTTP candidate per upstream architecture variant for each tool in enumerated.toml and catalog/*.toml",
+    "limits": "Not lossless. Scoop extract_dir is not an install destination; archive layout and binary entrypoints are explicit in generated projections. Homebrew build/dependencies/bottles and WinGet installers remain original source data. Two tools do not establish broad representativeness."
   }
 }
