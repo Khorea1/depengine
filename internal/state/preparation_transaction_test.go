@@ -1,6 +1,8 @@
 package state
 
 import (
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -696,5 +698,79 @@ func TestLockedStateRecoveryReconcilesPersistedCommitWithoutReplayingIt(t *testi
 	}
 	if got := ls.state.OwnedResources; len(got) != 1 || !reflect.DeepEqual(got[0].Dependents, []string{"tool-recovery"}) {
 		t.Fatalf("owned resources after recovery = %#v", got)
+	}
+}
+
+func TestPreparationCrashSubprocessPersistsAmbiguousMutation(t *testing.T) {
+	mode := os.Getenv("DEPENGINE_PREPARATION_CRASH_MODE")
+	if mode != "" {
+		stateHome := os.Getenv("DEPENGINE_PREPARATION_CRASH_STATE")
+		if stateHome == "" {
+			t.Fatal("missing isolated state path")
+		}
+		t.Setenv("XDG_STATE_HOME", stateHome)
+		const key = "tool-crash/native#0"
+		p := preparationTransactionPlan("repo:crash")
+		ls, err := LoadLocked()
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch mode {
+		case "interrupt":
+			if _, err := ls.BeginPreparation(key, p); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ls.PlanPreparationApply(key, p, "source-add"); err != nil {
+				t.Fatal(err)
+			}
+			os.Exit(0)
+		case "restart":
+			decision, err := ls.PreparationRecovery(key, p, nil, nil)
+			if err != nil {
+				_ = ls.Close()
+				t.Fatal(err)
+			}
+			if decision.Action != plan.RecoveryBlocked {
+				_ = ls.Close()
+				t.Fatalf("restart recovery action = %q, want blocked", decision.Action)
+			}
+			if err := ls.Close(); err != nil {
+				t.Fatal(err)
+			}
+			return
+		default:
+			_ = ls.Close()
+			t.Fatalf("unknown subprocess mode %q", mode)
+		}
+	}
+
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runChild := func(mode string) {
+		t.Helper()
+		cmd := exec.Command(testBinary, "-test.run=^TestPreparationCrashSubprocessPersistsAmbiguousMutation$")
+		cmd.Env = append(os.Environ(),
+			"DEPENGINE_PREPARATION_CRASH_MODE="+mode,
+			"DEPENGINE_PREPARATION_CRASH_STATE="+stateHome,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("subprocess %q failed: %v\n%s", mode, err, output)
+		}
+	}
+
+	runChild("interrupt")
+	runChild("restart")
+
+	persisted, err := LoadFrom(DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := persisted.PreparationJournals["tool-crash/native#0"]
+	if journal.Status != plan.PreparationApplying || journal.Applying != "source-add" {
+		t.Fatalf("persisted journal after ambiguous restart = %#v", journal)
 	}
 }
