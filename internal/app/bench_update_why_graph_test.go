@@ -154,7 +154,7 @@ func BenchmarkWhyCommand(b *testing.B) {
 
 func BenchmarkGraphCommand(b *testing.B) {
 	for _, format := range []string{"dot", "text"} {
-		for _, n := range []int{1000, 5000} {
+		for _, n := range []int{100, 1000, 5000} {
 			b.Run(fmt.Sprintf("%s/tools=%d", format, n), func(b *testing.B) {
 				_, schemaPath := writeBenchSchema(b, n, true)
 				restore := silenceBenchOutput(b)

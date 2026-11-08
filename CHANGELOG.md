@@ -33,6 +33,9 @@
   `sha256:auto` as trust-on-first-use, and warns about unverified origins. The
   preview prints the canonical digest lock v2 will pin, and the recipe is
   written atomically as authored.
+- Add phase-isolated `why`/`graph` benchmarks and 100-tool graph coverage to
+  document diagnostic costs at 100/1,000/5,000 tools; this changes no runtime
+  behavior or output.
 - Enforce the declarative-only recipe rule at catalog lookup, not only at
   import: a recipe with a lifecycle hook, a command-typed field or a plan that
   requires arbitrary code fails closed when resolved, using the same
