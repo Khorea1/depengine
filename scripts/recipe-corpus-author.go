@@ -13,9 +13,14 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/Khorea1/depengine/internal/app"
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/platform"
+	"github.com/Khorea1/depengine/internal/validate"
 )
 
 type corpusSources struct {
@@ -261,9 +266,15 @@ func validateProjectionParity(root string) error {
 	if err != nil {
 		return err
 	}
-	after, err := config.ResolveLayers(intent, nil, config.NewCatalog([]string{catalogRoot}), nil, false)
+	after, err := config.ResolveLayers(intent, nil, config.NewCatalog([]string{catalogRoot}, planner.ValidateDeclarativeRecipe), nil, false)
 	if err != nil {
 		return err
+	}
+	if err := validateCorpusSchema(before.Schema); err != nil {
+		return fmt.Errorf("enumerated projection: %w", err)
+	}
+	if err := validateCorpusSchema(after.Schema); err != nil {
+		return fmt.Errorf("catalog projection: %w", err)
 	}
 	if len(before.Schema.Tools) != len(after.Schema.Tools) {
 		return fmt.Errorf("resolved tool count differs: enumerated=%d catalog=%d", len(before.Schema.Tools), len(after.Schema.Tools))
@@ -285,6 +296,20 @@ func validateProjectionParity(root string) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+var corpusAdaptersOnce sync.Once
+
+func validateCorpusSchema(schema *config.Schema) error {
+	corpusAdaptersOnce.Do(app.InitAdapters)
+	if err := config.ValidateEffectiveIntegrity(schema); err != nil {
+		return err
+	}
+	result := validate.ValidateSchema(schema, exec.RegisteredKinds())
+	if result.HasErrors() {
+		return fmt.Errorf("%s", result.Errors[0])
 	}
 	return nil
 }
