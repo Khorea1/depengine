@@ -526,7 +526,13 @@ func TestVerifyResolvedPlanAgainstLockRejectsGitAndArtifactIdentityDrift(t *test
 	changedArtifact.Artifacts = append([]plan.Artifact(nil), artifactPlan.Artifacts...)
 	changedArtifact.Artifacts[0].Checksum = "sha256:" + strings.Repeat("b", 64)
 	if err := plan.VerifyResolvedPlanAgainstLock(artifactLock, changedArtifact); !errors.Is(err, plan.ErrLockMismatch) {
-		t.Fatalf("artifact re-resolution error = %v, want ErrLockMismatch", err)
+		t.Fatalf("artifact checksum re-resolution error = %v, want ErrLockMismatch", err)
+	}
+	changedArtifactURL := artifactPlan
+	changedArtifactURL.Artifacts = append([]plan.Artifact(nil), artifactPlan.Artifacts...)
+	changedArtifactURL.Artifacts[0].URL = "https://example.test/other-tool.tar.gz"
+	if err := plan.VerifyResolvedPlanAgainstLock(artifactLock, changedArtifactURL); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("artifact URL re-resolution error = %v, want ErrLockMismatch", err)
 	}
 }
 
@@ -1375,6 +1381,7 @@ func TestLockDocumentEntryForPlanRejectsChangedIntent(t *testing.T) {
 		}},
 		{name: "source", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Source = "other-repo" }},
 		{name: "architecture", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Architecture = "arm64" }},
+		{name: "scope", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Scope = string(plan.ScopeSystem) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
