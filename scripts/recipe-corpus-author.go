@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,13 +71,17 @@ func readCorpusFile(root, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer dir.Close()
 	file, err := dir.Open(name)
 	if err != nil {
+		return nil, errors.Join(err, dir.Close())
+	}
+	data, readErr := io.ReadAll(file)
+	closeFileErr := file.Close()
+	closeRootErr := dir.Close()
+	if err := errors.Join(readErr, closeFileErr, closeRootErr); err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	return io.ReadAll(file)
+	return data, nil
 }
 
 func loadCorpusSources(root string) (corpusSources, error) {
@@ -400,16 +405,14 @@ func putCanonical(root, name string, want []byte, writeFiles bool) error {
 		if err != nil {
 			return err
 		}
-		defer dir.Close()
 		file, err := dir.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
 		if err != nil {
-			return err
+			return errors.Join(err, dir.Close())
 		}
-		if _, err := file.Write(want); err != nil {
-			_ = file.Close()
-			return err
-		}
-		return file.Close()
+		_, writeErr := file.Write(want)
+		closeFileErr := file.Close()
+		closeRootErr := dir.Close()
+		return errors.Join(writeErr, closeFileErr, closeRootErr)
 	}
 	got, err := readCorpusFile(root, name)
 	if err != nil {
