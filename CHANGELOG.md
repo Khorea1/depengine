@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Treat failed container image probes (nonzero exit, process error or wait error)
+  as unknown rather than absence. When a digest/platform inspect fails, a
+  successful image inventory still distinguishes an absent reference from an
+  installed image whose identity could not be verified.
+
 - Carry catalog-layer inert-tool warnings through project loading to CLI
   consumers such as `why`, `graph`, `install`, and status; keep `validate`'s
   structured text/JSON output and `why`'s tool filter consistent without

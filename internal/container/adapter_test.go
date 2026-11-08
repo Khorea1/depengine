@@ -22,6 +22,7 @@ import (
 type nameAwareRunner struct {
 	exitByName map[string]int // missing entries default to exit 1 (not found)
 	stdout     string
+	result     *run.Result
 	calls      []run.FakeCall
 }
 
@@ -77,6 +78,9 @@ func (r *nameAwareRunner) Run(_ context.Context, name string, args ...string) ru
 	code, ok := r.exitByName[key]
 	if !ok {
 		code = 1
+	}
+	if r.result != nil {
+		return *r.result
 	}
 	return run.Result{Stdout: []byte(r.stdout), ExitCode: code}
 }
