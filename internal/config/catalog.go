@@ -118,16 +118,16 @@ type Recipe struct {
 	Digest string
 
 	validate RecipeValidator
+	snapshot []byte
 }
 
-// Specialize parses the recipe again with host facts. The recipe file is
-// re-read so lookup stays host-independent while execution sees expanded
-// placeholders and arch/os aliases.
+// Specialize parses the lookup snapshot with host facts. This keeps the content
+// used for digest and specialization consistent while expanding placeholders.
 func (r *Recipe) Specialize(facts map[string]string) (*Schema, error) {
 	if r == nil {
 		return nil, &CatalogError{Err: errors.New("nil recipe")}
 	}
-	s, err := ParseRecipe(r.Path, facts)
+	s, err := ParseRecipeBytes(r.Path, r.snapshot, facts)
 	if err != nil {
 		return nil, &CatalogError{Err: err}
 	}
@@ -189,7 +189,7 @@ func (c *Catalog) Lookup(name string) (*Recipe, error) {
 		if err != nil {
 			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): %w", i, root, err)}
 		}
-		return &Recipe{Name: name, Path: path, RootIndex: i, Schema: s, Digest: digest, validate: c.validate}, nil
+		return &Recipe{Name: name, Path: path, RootIndex: i, Schema: s, Digest: digest, validate: c.validate, snapshot: raw}, nil
 	}
 	return nil, &CatalogError{Err: fmt.Errorf("%w: %q (roots: %s)", ErrRecipeNotFound, name, strings.Join(c.roots, string(os.PathListSeparator)))}
 }

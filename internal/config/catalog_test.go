@@ -441,6 +441,62 @@ func TestRecipeDigestIsCanonicalAndHostIndependent(t *testing.T) {
 	}
 }
 
+func TestRecipeSpecializeUsesLookupSnapshot(t *testing.T) {
+	root := t.TempDir()
+	path := writeRecipe(t, root, "foo", "[packages.foo.http]\nurl = \"https://example.test/original/{arch}.tar.gz\"\n")
+	catalog := NewCatalog([]string{root})
+	recipe, err := catalog.Lookup("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalDigest := recipe.Digest
+
+	writeRecipe(t, root, "foo", "[packages.foo.http]\nurl = \"https://example.test/replacement/{arch}.tar.gz\"\n")
+	for _, host := range []struct {
+		arch string
+		want string
+	}{
+		{"aarch64", "https://example.test/original/arm64.tar.gz"},
+		{"darwin", "https://example.test/original/darwin.tar.gz"},
+	} {
+		specialized, err := recipe.Specialize(map[string]string{"arch": host.arch})
+		if err != nil {
+			t.Fatalf("Specialize(%s): %v", host.arch, err)
+		}
+		if got := specialized.Tools["foo"].Methods[0].Config["url"]; got != host.want {
+			t.Errorf("Specialize(%s) URL = %v, want %q", host.arch, got, host.want)
+		}
+	}
+	if got := recipe.Schema.Tools["foo"].Methods[0].Config["url"]; got != "https://example.test/original/{arch}.tar.gz" {
+		t.Fatalf("lookup schema URL = %v, want unexpanded original recipe", got)
+	}
+	if recipe.Digest != originalDigest {
+		t.Fatalf("Specialize changed digest from %q to %q", originalDigest, recipe.Digest)
+	}
+
+	updated, err := catalog.Lookup("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Digest == originalDigest {
+		t.Fatal("new lookup did not detect recipe drift")
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	specialized, err := recipe.Specialize(map[string]string{"arch": "linux"})
+	if err != nil {
+		t.Fatalf("Specialize after recipe removal: %v", err)
+	}
+	if got := specialized.Tools["foo"].Methods[0].Config["url"]; got != "https://example.test/original/linux.tar.gz" {
+		t.Fatalf("Specialize after recipe removal URL = %v, want original snapshot", got)
+	}
+	if _, err := catalog.Lookup("foo"); !errors.Is(err, ErrRecipeNotFound) {
+		t.Fatalf("Lookup after recipe removal error = %v, want ErrRecipeNotFound", err)
+	}
+}
+
 func TestRecipeDigestCoversPlanInvisibleFields(t *testing.T) {
 	root := t.TempDir()
 	base := "[packages.foo]\nhttp = { url = \"https://example.test/foo.tar.gz\", checksum = \"sha256:abc\""

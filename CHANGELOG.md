@@ -4,6 +4,10 @@
 - Resolve catalog recipes for the effective `requires` closure even when
   project and manifest roots have no catalog recipe of their own. Local tools
   can now reach catalog-backed helpers and their transitive dependencies.
+- Keep catalog recipe specialization on the exact bytes read by `Lookup`, so
+  replacing or removing a recipe cannot combine a stale digest with new
+  content. A later lookup observes recipe drift, which frozen lock validation
+  rejects.
 - Add `depengine import <recipe.toml>`: preview and validate a recipe before
   writing it into the first catalog root. Import rejects lifecycle hooks,
   command-typed fields and plans that require arbitrary code, requires a

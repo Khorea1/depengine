@@ -133,6 +133,11 @@ catalog recipes participate only for project-declared names and their
 transitive `requires` closure. Lookup never scans the catalog, and a missing
 default root means no catalog rather than an error.
 
+Each lookup retains the recipe bytes privately alongside its canonical digest.
+`Recipe.Specialize` expands host facts from that snapshot rather than rereading
+the path, so replacement or removal cannot mix recipe content with its digest;
+a later lookup observes current content and frozen lock validation detects drift.
+
 ## Install flow
 
 For each tool, in dependency order, the executor:

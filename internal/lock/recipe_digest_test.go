@@ -75,6 +75,55 @@ func TestValidateFrozenV2ChecksRecipeDigest(t *testing.T) {
 	})
 }
 
+func TestFrozenCatalogDigestTracksLookupSnapshot(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "tool.toml")
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("recipe_version = 1\n[packages.tool.http]\nurl = \"https://example.test/tool.tar.gz\"\nchecksum = \"sha256:abc\"\n")
+	catalog := config.NewCatalog([]string{root})
+	original, err := catalog.Lookup("tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func() *config.Schema {
+		project := &config.Schema{Version: 1, Tools: map[string]*config.Tool{"tool": {Name: "tool"}}}
+		resolved, err := config.ResolveLayers(project, nil, catalog, nil, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolved.Schema
+	}
+	originalSchema := resolve()
+	frozen := frozenV2TestLock(t, originalSchema, "tool")
+	if err := frozen.SetRecipeDigests(map[string]string{"tool": original.Digest}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateFrozen(originalSchema, frozen); err != nil {
+		t.Fatalf("ValidateFrozen() rejected lookup snapshot: %v", err)
+	}
+
+	// This changes a recipe field without changing the resolved method intent.
+	write("recipe_version = 1\n[packages.tool.http]\nurl = \"https://example.test/tool.tar.gz\"\nchecksum = \"sha256:abc\"\nextract_to = \"lib\"\n")
+	updated, err := catalog.Lookup("tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Digest == original.Digest {
+		t.Fatal("new lookup did not detect recipe drift")
+	}
+	if err := ValidateFrozen(originalSchema, frozen); err != nil {
+		t.Fatalf("frozen lock rejected its original lookup snapshot: %v", err)
+	}
+	if err := ValidateFrozen(resolve(), frozen); err == nil || !strings.Contains(err.Error(), "recipe content changed for tool \"tool\"") {
+		t.Fatalf("ValidateFrozen() after new lookup error = %v, want recipe content drift", err)
+	}
+}
+
 func TestValidateFrozenV2ChecksVirtualRecipeDigest(t *testing.T) {
 	digestA := "sha256:" + strings.Repeat("a", 64)
 	digestB := "sha256:" + strings.Repeat("b", 64)
