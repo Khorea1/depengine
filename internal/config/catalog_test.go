@@ -279,19 +279,72 @@ func TestResolveLayersCatalogPrecedence(t *testing.T) {
 func TestResolveLayersManifestOnlyNameIsNotCatalogResolved(t *testing.T) {
 	root := t.TempDir()
 	writeRecipe(t, root, "bar", "[packages.bar]\nnative = { pkg = \"catalog-bar\" }\n")
+	writeRecipe(t, root, "helper", "[packages.helper]\nnative = \"helper-pkg\"\n")
 	schema := mustParse(t, writeSchemaInline(t, "[tools]\nfoo = { native = \"foo\" }\n"), ParseProjectSchema)
-	manifest := mustParse(t, writeSchemaInline(t, "[manifest]\nallow_new_tools = true\n[packages]\nbar = { native = { pkg = \"manifest-bar\" } }\n"), ParseManifest)
+	manifest := mustParse(t, writeSchemaInline(t, "[manifest]\nallow_new_tools = true\n[packages]\nbar = { native = { pkg = \"manifest-bar\" }, requires = [\"helper\"] }\n"), ParseManifest)
 
 	res, err := ResolveLayers(schema, manifest, NewCatalog([]string{root}), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.CatalogCount != 0 {
-		t.Fatalf("catalog count = %d, want 0", res.CatalogCount)
+	if res.CatalogCount != 1 {
+		t.Fatalf("catalog count = %d, want 1 (manifest-only bar must not be catalog-resolved)", res.CatalogCount)
+	}
+	if helper := res.Schema.Tools["helper"]; helper == nil || !helper.DependencyOnly {
+		t.Fatalf("catalog helper = %+v, want dependency-only catalog recipe", helper)
 	}
 	pkg, _ := res.Schema.Tools["bar"].Methods[0].Config["pkg"].(string)
 	if pkg != "manifest-bar" {
 		t.Fatalf("bar pkg = %q, want manifest-bar", pkg)
+	}
+}
+
+func TestResolveLayersCatalogRequiresFromLocalTool(t *testing.T) {
+	root := t.TempDir()
+	writeRecipe(t, root, "helper", "[packages.helper]\nrequires = [\"leaf\"]\nnative = \"helper-pkg\"\n")
+	writeRecipe(t, root, "leaf", "[packages.leaf]\nnative = \"leaf-pkg\"\n")
+	schema := mustParse(t, writeSchemaInline(t, "[tools]\napp = { requires = [\"helper\"], native = true }\n"), ParseProjectSchema)
+
+	res, err := ResolveLayers(schema, nil, NewCatalog([]string{root}), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"helper", "leaf"} {
+		tool := res.Schema.Tools[name]
+		if tool == nil {
+			t.Fatalf("catalog dependency %q missing", name)
+		}
+		if !tool.DependencyOnly {
+			t.Errorf("catalog dependency %q must be dependency-only", name)
+		}
+	}
+	if res.Schema.Tools["app"].DependencyOnly {
+		t.Fatal("local root app must not be dependency-only")
+	}
+	if res.CatalogCount != 2 {
+		t.Fatalf("catalog count = %d, want 2", res.CatalogCount)
+	}
+}
+
+func TestResolveLayersSharedCatalogRequiresCycle(t *testing.T) {
+	root := t.TempDir()
+	writeRecipe(t, root, "helper", "[packages.helper]\nrequires = [\"app\"]\nnative = \"helper-pkg\"\n")
+	schema := mustParse(t, writeSchemaInline(t, "[tools]\napp = { requires = [\"helper\"], native = true }\nsidecar = { requires = [\"helper\"], native = true }\n"), ParseProjectSchema)
+
+	res, err := ResolveLayers(schema, nil, NewCatalog([]string{root}), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.CatalogCount != 1 {
+		t.Fatalf("catalog count = %d, want shared helper once", res.CatalogCount)
+	}
+	if helper := res.Schema.Tools["helper"]; helper == nil || !helper.DependencyOnly {
+		t.Fatalf("catalog helper = %+v, want dependency-only recipe", helper)
+	}
+	for _, name := range []string{"app", "sidecar"} {
+		if tool := res.Schema.Tools[name]; tool == nil || tool.DependencyOnly {
+			t.Errorf("local root %q = %+v, want normal root", name, tool)
+		}
 	}
 }
 

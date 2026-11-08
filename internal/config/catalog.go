@@ -469,10 +469,6 @@ func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[strin
 			recipes[name] = tool
 		}
 
-		if len(recipes) == 0 {
-			break
-		}
-
 		// Walk the effective merged tools, not the raw catalog recipes: a
 		// schema or manifest value can override the catalog's requires.
 		catalogSchema := &Schema{Version: schema.Version, Tools: recipes, ProjectRoot: schema.ProjectRoot, layer: LayerCatalog}
