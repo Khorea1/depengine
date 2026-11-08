@@ -140,10 +140,12 @@ recipe that omits `checksum` installs with no integrity check
    to the v1 index-keyed scheme, which is compatibility data and retires under
    the `dep-41b` gate.
 
-7. **Candidate budget at entry.** *(Accepted 2026-10-25; D3 resolved: warn
-   only, provisional threshold 8, revisit with the corpus in dep-ixd.13.)* A
-   per-tool candidate limit is applied where recipes enter, to avoid rebuilding
-   the flat matrix in distributed form. It warns first and does not block.
+7. **Candidate budget at entry.** *(Accepted 2026-10-25; D3 reviewed against
+   the small public corpus in dep-ixd.13: retain warn-only threshold 8 as
+   provisional; evidence is insufficient to calibrate or promote a hard cap.)*
+   A per-tool candidate limit is applied where recipes enter, to avoid
+   rebuilding the flat matrix in distributed form. It warns first and does
+   not block.
 
 8. **Provenance.** *(Accepted 2026-10-25; central contract, not optional
    diagnostics. Implemented 2026-10-27.)* `why --fields` shows the layer a
@@ -215,8 +217,8 @@ only those the project schema declares.
 | # | Question | Decision (2026-10-25) | Evidence and gaps |
 |---|---|---|---|
 | D1 | Pin unit | **Resolved:** per-recipe digest over the whole recipe to verify; catalog revision only to retrieve | A whole-catalog pin is noisy at scale. The `update` behavior was verified (see Context): the lock does not cover recipe content, so `MethodsHash` and the resolved plan cannot stand in for a digest. How many distinct recipe fields stay invisible to the plan across kinds is still unmeasured; the field `Effects` flags are not a reliable proxy. |
-| D3 | Candidate budget | **Resolved:** warn only; provisional threshold of 8, revisit with the corpus in `dep-ixd.13` | Planning costs about 16–20 µs per candidate with the slimmed arbitrary-code gate, so cost does not bind below dozens of candidates; the limit is governance. The largest hand-written tool in the repository has 8 candidates. 38 parseable TOML files, mostly synthetic or test fixtures: not a corpus. |
-| D4 | `distributions` beyond `github` | **Deferred:** no support until a real corpus (`dep-ixd.13`) justifies a decision | No corpus. A schema using another value remains out of contract. |
+| D3 | Candidate budget | **Retained provisionally:** warn-only threshold 8; the one-tool, one-candidate public corpus is insufficient to calibrate it or justify a hard cap | The corpus projection measures 1 candidate and shows no authorship reduction for one recipe (enumerated 8 lines vs intent+catalog 9). This does not measure candidate distributions at scale; the warning remains governance policy, not a data-derived optimum. |
+| D4 | `distributions` beyond `github` | **Deferred:** no support until a broader real corpus justifies a decision | Current public corpus is one package in three repositories; no cross-tool/ecosystem evidence supports new schema values. A schema using another value remains out of contract. |
 | D5 | Trust root for imports | **Resolved:** digest pinned by the importer (decision 5) plus an integrity floor: reject recipes that omit `checksum`, flag `:auto` | `:auto` is Trust On First Use and no checksum means no integrity check. Signature support and the position once v2 allows hooks remain deferred. |
 | D7 | Catalog layers and `allow_new_tools`; transitive `requires` | **Resolved:** a catalog layer never sets `allow_new_tools`; top-level names are only those the project declares; transitive `requires` resolve through the catalog and fail closed when unresolvable | With `allow_new_tools` the manifest keeps every tool, which has no pull-by-name meaning. The closure rule is stated in the layer contract above. |
 

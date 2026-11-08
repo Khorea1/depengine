@@ -1,0 +1,44 @@
+{
+  "scope": "One real package (ripgrep 15.2.0) represented by three public package-manager repositories; recipe files only, no builds or hooks executed.",
+  "sources": [
+    {
+      "manager": "Homebrew",
+      "repository": "Homebrew/homebrew-core",
+      "revision": "defe58540d9ea8f9bd6a41c8478b855e287a8911",
+      "path": "Formula/r/ripgrep.rb",
+      "url": "https://github.com/Homebrew/homebrew-core/blob/defe58540d9ea8f9bd6a41c8478b855e287a8911/Formula/r/ripgrep.rb",
+      "repository_license": "BSD-2-Clause",
+      "repository_license_url": "https://raw.githubusercontent.com/Homebrew/homebrew-core/defe58540d9ea8f9bd6a41c8478b855e287a8911/LICENSE.txt",
+      "sha256": "2e493e50a49a37f7ed090f44019d1c58dd30c90a5c6fe1ecbcd69334dccaa60b"
+    },
+    {
+      "manager": "Scoop",
+      "repository": "ScoopInstaller/Main",
+      "revision": "776adcdfe819887acf6df9bf7f4a57166189d671",
+      "path": "bucket/ripgrep.json",
+      "url": "https://github.com/ScoopInstaller/Main/blob/776adcdfe819887acf6df9bf7f4a57166189d671/bucket/ripgrep.json",
+      "repository_license": "Unlicense",
+      "repository_license_url": "https://raw.githubusercontent.com/ScoopInstaller/Main/776adcdfe819887acf6df9bf7f4a57166189d671/LICENSE",
+      "sha256": "f28790bf5e965c8df9a9318a773f47c0b2a4d6d2866f11a4b4b54ef904e5062c"
+    },
+    {
+      "manager": "WinGet GNU installer",
+      "repository": "microsoft/winget-pkgs",
+      "revision": "dbc5bce24d2394b01b34077ed4d75365f6add71c",
+      "path": "manifests/b/BurntSushi/ripgrep/GNU/15.2.0/ (installer, version, en-US locale YAML)",
+      "url": "https://github.com/microsoft/winget-pkgs/tree/dbc5bce24d2394b01b34077ed4d75365f6add71c/manifests/b/BurntSushi/ripgrep/GNU/15.2.0",
+      "repository_license": "MIT",
+      "repository_license_url": "https://raw.githubusercontent.com/microsoft/winget-pkgs/dbc5bce24d2394b01b34077ed4d75365f6add71c/LICENSE",
+      "files": {
+        "manifest.yaml": "3235a2308587f17e5f014bb5799ab718206af2eaa034b9a64a65a0ec73c081b6",
+        "version.yaml": "21e27fde586df90626a7a9dec1d68dcb0bfd3ae0744545f2abdd6d7e09910499",
+        "locale.yaml": "d1b904d3b8e3f19646bf56ff62e7cceb4f83c4bf46643ed3901b70b816bcd8c9"
+      }
+    }
+  ],
+  "derived_projection": {
+    "source": "Scoop manifest.json architecture.64bit URL, hash, extract_dir",
+    "target": "one x86_64 Windows HTTP candidate in enumerated.toml and catalog/ripgrep.toml",
+    "limits": "Not a lossless converter or universal ripgrep recipe. Homebrew build/dependencies/bottles and additional Scoop/WinGet architectures are retained only in originals; project projection deliberately measures one supported identical candidate."
+  }
+}
