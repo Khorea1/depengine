@@ -17,7 +17,9 @@ func main() {
 	root := "testdata/recipe-corpus/dep-ixd-13"
 	files := []struct{ name, digest string }{
 		{"brew/formula.rb", "2e493e50a49a37f7ed090f44019d1c58dd30c90a5c6fe1ecbcd69334dccaa60b"},
+		{"brew/fd.rb", "533d890e7c136c0b6a32ab805f24e74def0386af19a5c71fee2cd99a2210369d"},
 		{"scoop/manifest.json", "f28790bf5e965c8df9a9318a773f47c0b2a4d6d2866f11a4b4b54ef904e5062c"},
+		{"scoop/fd.json", "52f164fd5d4d182c0062cf11940be66781dcf596da6b42a19602653066b1a7dd"},
 		{"winget/manifest.yaml", "3235a2308587f17e5f014bb5799ab718206af2eaa034b9a64a65a0ec73c081b6"},
 		{"winget/version.yaml", "21e27fde586df90626a7a9dec1d68dcb0bfd3ae0744545f2abdd6d7e09910499"},
 		{"winget/locale.yaml", "d1b904d3b8e3f19646bf56ff62e7cceb4f83c4bf46643ed3901b70b816bcd8c9"},
@@ -66,7 +68,7 @@ func main() {
 		fmt.Printf("projection %-20s lines=%d tools=%d candidates=%d when=%d\n",
 			name, strings.Count(string(data), "\n"), len(resolved.Schema.Tools), methods, conditions)
 	}
-	for _, name := range []string{"intent.toml", "catalog/ripgrep.toml"} {
+	for _, name := range []string{"intent.toml", "catalog/fd.toml", "catalog/ripgrep.toml"} {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
 			fail(err)
