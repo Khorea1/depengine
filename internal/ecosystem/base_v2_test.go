@@ -639,3 +639,43 @@ func TestBaseAdapterV2InstallResolvedRejectsNonCanonicalOperations(t *testing.T)
 		})
 	}
 }
+func TestBaseAdapterSpecializedInventoryObservations(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     string
+		pkg      string
+		stdout   string
+		exitCode int
+		paths    map[string]bool
+		presence plan.PresenceState
+		version  string
+	}{
+		{"apm exact package", "apm", "minimap", "minimap@4.40.0\n", 0, map[string]bool{"apm": true}, plan.PresencePresent, "4.40.0"},
+		{"apm scoped package", "apm", "@scope/minimap", "@scope/minimap@4.40.0\n", 0, map[string]bool{"apm": true}, plan.PresencePresent, "4.40.0"},
+		{"apm malformed unrelated row", "apm", "minimap", "unparsed row\n", 0, map[string]bool{"apm": true}, plan.PresenceBroken, ""},
+		{"apm failed inventory", "apm", "minimap", "", 1, map[string]bool{"apm": true}, plan.PresenceUnknown, ""},
+		{"appman path proves present", "appman", "obsidian", "", 0, map[string]bool{"appman": true, "obsidian": true}, plan.PresencePresent, ""},
+		{"appman missing path is not proof of absence", "appman", "obsidian", "", 1, map[string]bool{"appman": true}, plan.PresenceUnknown, ""},
+		{"cask exact installed inventory", "cask", "firefox", "firefox\n", 0, map[string]bool{"brew": true}, plan.PresencePresent, ""},
+		{"cask complete inventory absent", "cask", "firefox", "google-chrome\n", 0, map[string]bool{"brew": true}, plan.PresenceAbsent, ""},
+		{"cask failed inventory", "cask", "firefox", "firefox\n", 1, map[string]bool{"brew": true}, plan.PresenceUnknown, ""},
+		{"flatpak identity inventory", "flatpak", "org.mozilla.firefox", "org.mozilla.firefox flathub user x86_64 stable\n", 0, map[string]bool{"flatpak": true}, plan.PresencePresent, ""},
+		{"flatpak complete inventory absent", "flatpak", "org.mozilla.firefox", "org.gnome.Builder flathub system x86_64 stable\n", 0, map[string]bool{"flatpak": true}, plan.PresenceAbsent, ""},
+		{"flatpak failed inventory", "flatpak", "org.mozilla.firefox", "", 1, map[string]bool{"flatpak": true}, plan.PresenceUnknown, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &run.FakeRunner{LookPaths: tc.paths, Stdout: tc.stdout, ExitCode: tc.exitCode}
+			pkg := tc.pkg
+			if pkg == "" {
+				pkg = "firefox"
+			}
+			tool := &config.Tool{Name: pkg}
+			mc := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": pkg}}
+			observation, err := NewBaseAdapter(Configs[tc.kind]).Observe(context.Background(), runner, tool, mc)
+			if err != nil || observation.Presence != tc.presence || observation.Identity.Version != tc.version {
+				t.Fatalf("Observe() = %#v, %v; want presence=%q version=%q", observation, err, tc.presence, tc.version)
+			}
+		})
+	}
+}

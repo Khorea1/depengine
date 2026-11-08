@@ -33,6 +33,13 @@ func TestOfficialObservesInstalledPackageSemantically(t *testing.T) {
 	}
 }
 
+func TestOfficialRejectsMalformedUnrelatedInstalledRow(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Name Version Source Updated\nunparsed row\n"}
+	if _, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user"); err == nil {
+		t.Fatal("malformed unrelated row must not establish complete inventory absence")
+	}
+}
+
 func TestOfficialBucketListReturnsSemanticBuckets(t *testing.T) {
 	runner := &run.FakeRunner{Stdout: "Name Source Updated\nmain https://github.com/ScoopInstaller/Main 2026-09-26\nlegacy\nextras https://github.com/ScoopInstaller/Extras 2026-09-26\n"}
 	got, err := NewOfficial().BucketList(context.Background(), runner)

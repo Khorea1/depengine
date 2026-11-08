@@ -226,6 +226,9 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if pkg == "" {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
+	if observation, handled := a.observeSpecializedInventory(ctx, rn, tool, mc, pkg); handled {
+		return observation, nil
+	}
 	absent := plan.Observation{
 		Presence:    plan.PresenceAbsent,
 		Identity:    plan.ObservedIdentity{Package: pkg},
@@ -265,6 +268,80 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	}
 	projectObservedScope(a.config.KindName, mc, &observation)
 	return observation, nil
+}
+
+func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, pkg string) (plan.Observation, bool) {
+	switch a.config.KindName {
+	case "apm":
+		res := a.runConfiguredBinary(ctx, rn, "list", "--installed", "--bare")
+		if err := run.CheckResultCompleteOutput(res, "apm: installed package inventory"); err != nil {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, true
+		}
+		for line := range strings.Lines(string(res.Stdout)) {
+			row := strings.TrimSpace(line)
+			if row == "" {
+				continue
+			}
+			at := strings.LastIndexByte(row, '@')
+			if at <= 0 || at == len(row)-1 {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "apm: malformed installed package row"}, true
+			}
+			name, version := row[:at], row[at+1:]
+			if name == pkg {
+				return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, true
+			}
+		}
+		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+	case "appman":
+		if a.Check(ctx, rn, tool, mc) {
+			return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+		}
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "appman path lookup cannot prove package absence"}, true
+	case "cask":
+		res := a.runConfiguredBinary(ctx, rn, "list", "--cask")
+		if err := run.CheckResultCompleteOutput(res, "brew: cask inventory"); err != nil {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, true
+		}
+		for line := range strings.Lines(string(res.Stdout)) {
+			if strings.TrimSpace(line) == pkg {
+				return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+			}
+		}
+		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+	case "flatpak":
+		args := []string{"list"}
+		if scope := flatpakScopeArg(mc); scope != "" {
+			args = append(args, scope)
+		}
+		args = append(args, "--app", "--columns=application,origin,installation,arch,branch")
+		res := rn.Run(ctx, "flatpak", args...)
+		if err := run.CheckResultCompleteOutput(res, "flatpak: application inventory"); err != nil {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, true
+		}
+		for line := range strings.Lines(string(res.Stdout)) {
+			fields := strings.Fields(line)
+			if len(fields) == 0 || strings.EqualFold(fields[0], "application") || fields[0] != pkg {
+				continue
+			}
+			if len(fields) < 5 {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: malformed application inventory row"}, true
+			}
+			observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{
+				Package: pkg, Source: fields[1], Architecture: fields[3], Revision: fields[4],
+			}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldSource, plan.FieldArchitecture, plan.FieldRevision}}
+			if fields[2] == "user" {
+				observation.Identity.Scope = string(plan.ScopeUser)
+				observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
+			} else if fields[2] == "system" || fields[2] == "default" {
+				observation.Identity.Scope = string(plan.ScopeSystem)
+				observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
+			}
+			return observation, true
+		}
+		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+	default:
+		return plan.Observation{}, false
+	}
 }
 
 func projectObservedScope(kind string, mc *config.MethodCandidate, observation *plan.Observation) {

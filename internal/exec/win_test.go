@@ -531,11 +531,14 @@ func TestChocoInstalledVersion(t *testing.T) {
 
 func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testing.T) {
 	for _, tc := range []struct {
-		kind      string
-		malformed string
+		kind               string
+		absent             string
+		malformed          string
+		malformedUnrelated string
+		malformedState     plan.PresenceState
 	}{
-		{kind: "choco", malformed: "neovim|\n"},
-		{kind: "scoop", malformed: "neovim\n"},
+		{kind: "choco", absent: "", malformed: "neovim|\n", malformedUnrelated: "unparsed row\n", malformedState: plan.PresenceBroken},
+		{kind: "scoop", absent: "Name Version Source Updated\n", malformed: "neovim\n", malformedUnrelated: "unparsed row\n", malformedState: plan.PresenceUnknown},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			adapter := lookupWinAdapter(tc.kind)
@@ -546,9 +549,11 @@ func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testin
 				runner *run.FakeRunner
 				want   plan.PresenceState
 			}{
-				{"failed", &run.FakeRunner{Err: context.DeadlineExceeded, ExitCode: 1}, plan.PresenceUnknown},
-				{"missing", &run.FakeRunner{Stdout: "other 1.0 main\n"}, plan.PresenceAbsent},
-				{"malformed", &run.FakeRunner{Stdout: tc.malformed}, plan.PresenceBroken},
+				{"probe error", &run.FakeRunner{Err: context.DeadlineExceeded, ExitCode: 1}, plan.PresenceUnknown},
+				{"completed nonzero", &run.FakeRunner{ExitCode: 1, Stderr: "access denied"}, plan.PresenceUnknown},
+				{"valid complete absence", &run.FakeRunner{Stdout: tc.absent}, plan.PresenceAbsent},
+				{"malformed target", &run.FakeRunner{Stdout: tc.malformed}, plan.PresenceBroken},
+				{"malformed unrelated row", &run.FakeRunner{Stdout: tc.malformedUnrelated}, tc.malformedState},
 			} {
 				t.Run(probe.name, func(t *testing.T) {
 					got := adapter.observeInstalled(context.Background(), probe.runner, tool, method)
@@ -556,6 +561,23 @@ func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testin
 						t.Fatalf("presence = %q, want %q", got.Presence, probe.want)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestWindowsObserverWaitFailuresStayUnknownWithoutRetry(t *testing.T) {
+	for _, kind := range []string{"scoop", "choco"} {
+		t.Run(kind, func(t *testing.T) {
+			runner := &run.FakeRunner{WaitErr: fmt.Errorf("incomplete child output")}
+			adapter := lookupWinAdapter(kind)
+			method := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim"}}
+			observation := adapter.observeInstalled(context.Background(), runner, &config.Tool{Name: "neovim"}, method)
+			if observation.Presence != plan.PresenceUnknown {
+				t.Fatalf("observeInstalled() = %#v, want unknown", observation)
+			}
+			if len(runner.Calls) != 1 {
+				t.Fatalf("inventory invocations = %d, want one after incomplete output", len(runner.Calls))
 			}
 		})
 	}

@@ -111,13 +111,22 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	}
 	cmd := SubstitutePkg(w.checkCmd, tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, pkg) {
+	if res.Err != nil || res.WaitErr != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
+	}
+	if res.ExitCode == 0 && malformedChocoOutput(res.Stdout) {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned malformed inventory output"}
+	}
+	if res.ExitCode != 0 || !hasChocoVersion(res.Stdout, pkg) {
 		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
 		// fall back for older Chocolatey releases that still require the flag.
 		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
 	}
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.WaitErr != nil || res.ExitCode != 0 {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
+	}
+	if malformedChocoOutput(res.Stdout) {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned malformed inventory output"}
 	}
 	version, ok := chocoVersionFromOutput(res.Stdout, pkg)
 	if !ok {
@@ -127,6 +136,20 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 		return plan.Observation{Presence: plan.PresenceAbsent}
 	}
 	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
+}
+
+func malformedChocoOutput(stdout []byte) bool {
+	for line := range strings.Lines(string(stdout)) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		id, version, ok := strings.Cut(line, "|")
+		if !ok || id == "" || version == "" || strings.ContainsRune(version, '|') {
+			return true
+		}
+	}
+	return false
 }
 
 func outputMentionsPackage(stdout []byte, pkg string) bool {

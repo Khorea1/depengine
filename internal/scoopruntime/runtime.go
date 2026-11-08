@@ -123,15 +123,23 @@ func (Official) ObserveInstalled(ctx context.Context, rn run.Runner, pkg, scope 
 	if err := run.CheckResultCompleteOutput(result, "scoop: installed package check"); err != nil {
 		return InstalledPackage{}, err
 	}
-	for _, line := range strings.Split(string(result.Stdout), "\n") {
+	for line := range strings.Lines(string(result.Stdout)) {
 		fields := strings.Fields(line)
-		if len(fields) == 0 || !strings.EqualFold(fields[0], pkg) {
+		if len(fields) == 0 {
 			continue
 		}
-		if len(fields) < 3 || fields[1] == "" {
-			return InstalledPackage{Present: true, Malformed: true}, nil
+		if strings.EqualFold(fields[0], pkg) {
+			if len(fields) < 3 || fields[1] == "" {
+				return InstalledPackage{Present: true, Malformed: true}, nil
+			}
+			return InstalledPackage{Present: true, Version: fields[1], Bucket: fields[2], Scope: scope}, nil
 		}
-		return InstalledPackage{Present: true, Version: fields[1], Bucket: fields[2], Scope: scope}, nil
+		if strings.EqualFold(fields[0], "name") {
+			continue
+		}
+		if len(fields) < 3 {
+			return InstalledPackage{}, fmt.Errorf("scoop: malformed installed package inventory row")
+		}
 	}
 	return InstalledPackage{Scope: scope}, nil
 }
