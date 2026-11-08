@@ -186,6 +186,9 @@ func TestContainerAdapterV2ObserveDoesNotTreatFailedQueriesAsAbsent(t *testing.T
 			if observation.Presence != plan.PresenceUnknown {
 				t.Fatalf("Observe() presence = %q, want unknown", observation.Presence)
 			}
+			if tc.result.WaitErr != nil && len(runner.calls) != 1 {
+				t.Fatalf("WaitErr must not trigger a second inventory command; calls = %v", runner.calls)
+			}
 		})
 	}
 }
