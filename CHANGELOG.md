@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Add artifact bundle export and frozen install support for locked HTTP/GitHub
+  payloads with literal SHA-256 checksums; signature-backed artifacts and
+  package-manager dependency graphs remain outside the offline bundle boundary.
 - Use complete inventories for Flatpak applications, Homebrew casks, and APM
   packages so failed queries remain Unknown; malformed APM rows are Broken.
 - Enumerate Scoop's documented full installed-package table instead of treating

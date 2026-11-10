@@ -22,6 +22,12 @@ detection still relies on a POSIX shell and standard base utilities.
 .B "depengine [flags]"
 Distro\-agnostic dependency installer
 .TP
+.B "depengine bundle [flags]"
+Manage offline artifact bundles
+.TP
+.B "depengine bundle export [flags]"
+Export artifacts from a v2 lockfile
+.TP
 .B "depengine check <tool> [flags]"
 Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
 .TP
@@ -103,6 +109,20 @@ help for depengine Scope: local. Default: false.
 .TP
 .B "\-v, \-\-version"
 Show version Scope: local. Default: false.
+.SS "depengine bundle flags"
+.TP
+.B "\-h, \-\-help"
+help for bundle Scope: local. Default: false.
+.SS "depengine bundle export flags"
+.TP
+.B "\-h, \-\-help"
+help for export Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+v2 lockfile to read (default depengine.lock) Scope: local. Default: .
+.TP
+.B "\-o, \-\-output <string>"
+new bundle directory to create Scope: local. Default: .
 .SS "depengine check flags"
 .TP
 .B "\-\-catalog <stringArray>"
@@ -260,6 +280,9 @@ path to write (default: schema.toml) Scope: local. Default: .
 .TP
 .B "\-\-allow\-arbitrary\-code"
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
+.TP
+.B "\-\-bundle <string>"
+install locked artifacts from a local frozen artifact bundle Scope: local. Default: .
 .TP
 .B "\-\-catalog <stringArray>"
 path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].

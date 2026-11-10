@@ -285,6 +285,38 @@ same verification rule.
 For containers, `source` is the repository name, including an optional registry
 host. Tags and digests are separate fields.
 
+## Offline artifact bundles
+
+`depengine bundle export --lock <path> --output <directory>` exports eligible
+artifact payloads referenced by a readable v2 lock. The default lock path is
+`depengine.lock`; the output path is required and must not already exist.
+Export currently supports locked HTTP/GitHub artifacts with a URL and a
+literal `sha256:<hex>` checksum. Export downloads each payload with a default
+4 GiB per-artifact limit (overridable via `DEPENGINE_DOWNLOAD_MAX_BYTES`) and
+verifies its bytes against the lock before writing the payload and manifest.
+If an artifact has no fixed SHA-256 checksum, export fails instead of guessing
+or computing a trust-on-first-use pin. Signature-backed artifacts are
+unsupported and cause export to fail; the bundle does not carry signature
+sidecars or signing keys, and does not perform signature verification.
+
+To consume an exported directory, run
+`depengine install --frozen-lockfile --bundle <directory>`. Bundle installation
+requires a readable current v2 lock. It validates the bundle against the locked
+artifact identities and checksums used by the install; invalid, missing, or
+mismatched payload entries fail before execution. The lock and project schema
+remain required.
+
+This feature is an artifact-payload cache for that supported subset, not a
+complete offline installation mode. It does not bundle dependency graphs,
+package-manager metadata or repositories, resolution results beyond the
+locked artifact identities, or other network-dependent inputs. Language and
+system package managers may still contact registries or repositories and may
+resolve or fetch transitive dependencies independently. Frozen-lockfile
+validation rejects detectable drift and missing supported pins, but cannot
+make unrepresented external state immutable. Do not treat a bundle as a
+guarantee that installation or resolution will succeed without network access,
+nor as a substitute for signature verification or upstream trust.
+
 ## What depengine cannot promise
 
 depengine cannot make an external package manager transactional, give it

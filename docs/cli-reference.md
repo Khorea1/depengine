@@ -14,6 +14,24 @@ Distro-agnostic dependency installer
 | `-h, --help` | local | `false` | help for depengine |
 | `-v, --version` | local | `false` | Show version |
 
+## `depengine bundle [flags]`
+
+Manage offline artifact bundles
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for bundle |
+
+## `depengine bundle export [flags]`
+
+Export artifacts from a v2 lockfile
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for export |
+| `--lock <string>` | local | `` | v2 lockfile to read (default depengine.lock) |
+| `-o, --output <string>` | local | `` | new bundle directory to create |
+
 ## `depengine check <tool> [flags]`
 
 Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
@@ -154,6 +172,7 @@ Aliases: `i`.
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
+| `--bundle <string>` | local | `` | install locked artifacts from a local frozen artifact bundle |
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
 | `--dry-run` | local | `false` | show what would be installed |

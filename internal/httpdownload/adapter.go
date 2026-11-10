@@ -23,6 +23,20 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+type bundlePayloadsKey struct{}
+
+// BundleArtifactKey identifies the locked transport identity used by offline
+// installation. It intentionally includes the tool and method as well as URL.
+func BundleArtifactKey(tool, method, url, checksum string) string {
+	return tool + "\x00" + method + "\x00" + url + "\x00" + strings.ToLower(checksum)
+}
+
+// WithBundlePayloads requires matching HTTP artifacts to come from payloads,
+// never from the download cache or network.
+func WithBundlePayloads(ctx context.Context, payloads map[string]string) context.Context {
+	return context.WithValue(ctx, bundlePayloadsKey{}, payloads)
+}
+
 // HTTPAdapter implements exec.AdapterV2 for HTTP(S) downloads.
 // Supports archive extraction, checksum verification, and {latest}
 // resolution via GitHub releases API.
@@ -399,23 +413,31 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	// Authenticated artifacts bypass the URL-only cache. The same URL may
 	// resolve to different content for different credentials, and the secret
 	// value must never become part of a cache key.
-	cacheEnabled := mc == nil || mc.SecretRef == nil
+	bundlePayloads, offline := ctx.Value(bundlePayloadsKey{}).(map[string]string)
+	artifactChecksum, _ := mc.Config["checksum"].(string)
+	payloadPath := ""
+	if offline {
+		payloadPath = bundlePayloads[BundleArtifactKey(tool.Name, mc.Kind, resolvedURL, artifactChecksum)]
+		if payloadPath == "" {
+			return fmt.Errorf("http: offline bundle has no payload for %s/%s", tool.Name, mc.Kind)
+		}
+	}
+	cacheEnabled := !offline && (mc == nil || mc.SecretRef == nil)
 	cachedPath := ""
 	if cacheEnabled {
 		cachedPath = downloadcache.Lookup(resolvedURL)
 	}
 	fromCache := false
-
-	if cachedPath != "" {
-		// Copy the cached file to the temp location.
-		if err := copyLocalFile(cachedPath, tmpFile); err != nil {
-			// Cache read error is non-fatal — fall through to download.
-		} else {
+	if offline {
+		if err := copyLocalFile(payloadPath, tmpFile); err != nil {
+			return fmt.Errorf("http: read offline bundle payload for %s: %w", tool.Name, err)
+		}
+	} else if cachedPath != "" {
+		if err := copyLocalFile(cachedPath, tmpFile); err == nil {
 			fromCache = true
 		}
 	}
-
-	if !fromCache {
+	if !offline && !fromCache {
 		if err := downloadResolvedArtifact(ctx, rn, resolvedURL, tmpFile, bearerCredential, hasBearerCredential); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}

@@ -63,7 +63,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 	cases := map[string][]string{
 		"depengine":         {"help", "version"},
 		"depengine help":    {"help", "man"},
-		"depengine install": {"allow-arbitrary-code", "catalog", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
+		"depengine install": {"allow-arbitrary-code", "bundle", "catalog", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
 		"depengine check":   {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
 		"depengine graph":   {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
 		"depengine remove":  {"all", "dry-run", "force", "help", "only", "schema"},

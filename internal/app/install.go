@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Khorea1/depengine/internal/bundle"
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/container"
 	"github.com/Khorea1/depengine/internal/ecosystem"
@@ -38,6 +40,7 @@ func newInstallCmd() *cobra.Command {
 	installSkip := new(string)
 	installProfile := new(string)
 	installFrozen := new(bool)
+	installBundle := new(string)
 	installDiagnose := new(bool)
 	installLogLevel := new(string)
 	installSortBy := new(string)
@@ -54,7 +57,7 @@ func newInstallCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
-			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
 		},
 	}
 	f := cmd.Flags()
@@ -69,6 +72,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock is missing, detectably stale, or lacks a supported required pin")
+	f.StringVar(installBundle, "bundle", "", "install locked artifacts from a local frozen artifact bundle")
 	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + detailed report")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
@@ -106,11 +110,12 @@ type installPlan struct {
 	allowCode    bool
 	quiet        bool
 	lockDocument *plan.LockDocument
+	bundle       string
 }
 
 // collectInstallPlan resolves flags into an installPlan plus the logger.
 // Returns an ExitError(2) when --sort-by is invalid.
-func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
+func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen *bool, installBundle *string, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
 	lg := log.Default
 	p := installPlan{
 		schema:       *installSchema,
@@ -129,6 +134,7 @@ func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *stri
 		jobs:         *installJobs,
 		allowCode:    *installAllowArbitrary,
 		quiet:        *installQuiet,
+		bundle:       *installBundle,
 	}
 
 	if p.diagnose {
@@ -251,6 +257,9 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 	if err != nil {
 		return nil, err
 	}
+	if p.bundle != "" && (!p.frozen || lk == nil || lk.Version != lock.CurrentVersion) {
+		return nil, fmt.Errorf("--bundle requires a current v2 frozen lockfile")
+	}
 	if lk != nil && lk.Version == lock.CurrentVersion {
 		if _, err := lk.ProjectionDocument(); err != nil {
 			return nil, fmt.Errorf("load universal lock projection: %w", err)
@@ -279,6 +288,46 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 		lock.ApplyLegacyV1(s, lk)
 	}
 	return lk, nil
+}
+
+// validateInstallBundle opens the exported directory, verifies every payload
+// and returns the payload paths keyed by the locked artifact identity that the
+// HTTP adapter will request during execution.
+func validateInstallBundle(root string, document plan.LockDocument) (map[string]string, error) {
+	expected, err := bundle.ArtifactEntries(document)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := bundle.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) != len(expected) {
+		return nil, fmt.Errorf("bundle entries do not exactly match the selected frozen lock projection")
+	}
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bundle path: %w", err)
+	}
+	payloads := make(map[string]string, len(entries))
+	available := make(map[string]bundle.Entry, len(entries))
+	for _, entry := range entries {
+		key := httpdownload.BundleArtifactKey(entry.Tool, entry.Method, entry.URL, entry.Checksum)
+		available[key] = entry
+	}
+	for _, want := range expected {
+		key := httpdownload.BundleArtifactKey(want.Tool, want.Method, want.URL, want.Checksum)
+		got, ok := available[key]
+		if !ok {
+			return nil, fmt.Errorf("bundle is missing or mismatches locked artifact %s/%s", want.Tool, want.Method)
+		}
+		payloadPath := filepath.Join(absoluteRoot, filepath.FromSlash(got.Payload))
+		payloads[key] = payloadPath
+		if want.Method == "android" || want.Method == "appimage" {
+			payloads[httpdownload.BundleArtifactKey(want.Tool, "http", want.URL, want.Checksum)] = payloadPath
+		}
+	}
+	return payloads, nil
 }
 
 // installOutputMode selects the report rendering path. Pure.
@@ -366,8 +415,11 @@ func shouldWarnDeprecatedVerbose(cmd *cobra.Command) bool {
 // runInstall installs tools from schema.toml. Thin orchestrator over the
 // phase helpers above — flag resolution, header, executor build, lock,
 // execute, render, finish.
-func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
-	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen *bool, installBundle *string, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
+	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+	if p.bundle != "" && !p.frozen {
+		return fmt.Errorf("--bundle requires --frozen-lockfile")
+	}
 
 	ctx := cmd.Context()
 
@@ -433,6 +485,33 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		}
 		p.lockDocument = &document
 		exec.WithLockDocument(document)(ex)
+		if p.bundle != "" {
+			payloads, err := validateInstallBundle(p.bundle, document)
+			if err != nil {
+				return fmt.Errorf("validate offline bundle: %w", err)
+			}
+			for _, entry := range document.Entries {
+				hasDownload := false
+				for _, artifact := range entry.Identity.Artifacts {
+					if artifact.URL != "" {
+						hasDownload = true
+						break
+					}
+				}
+				if !hasDownload {
+					continue
+				}
+				switch entry.Candidate.Method {
+				case "http", "android", "appimage", "github":
+				default:
+					return fmt.Errorf("--bundle cannot safely execute download method %q for tool %q", entry.Candidate.Method, entry.Tool.Name)
+				}
+			}
+			if len(payloads) == 0 {
+				return fmt.Errorf("--bundle has no locked downloadable artifacts")
+			}
+			ctx = httpdownload.WithBundlePayloads(ctx, payloads)
+		}
 	}
 
 	if !p.dryRun {

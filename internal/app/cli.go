@@ -90,6 +90,7 @@ func newRootCmd() *cobra.Command {
 		newUpdateCmd(),
 		newSBOMCmd(),
 		newVersionCmd(),
+		newBundleCmd(),
 	)
 	root.SetHelpCommand(newHelpCmd(root))
 

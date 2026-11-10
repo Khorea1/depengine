@@ -202,8 +202,46 @@ adapters or hooks and without writing state, lock data, package-source changes,
 or download-cache entries. Planning may still perform read-only probes and
 network resolution.
 
-See [support boundaries](docs/support-boundary.md) for the current
-reproducibility limits.
+See [support boundaries](docs/support-boundary.md) for the current reproducibility limits.
+
+## Offline artifact bundles
+
+An offline bundle carries the payloads for eligible artifacts already identified
+by a v2 `depengine.lock`. First create or refresh the lock, then export its
+locked artifacts to a new directory:
+
+```sh
+depengine update
+depengine bundle export --lock depengine.lock --output ./depengine-bundle
+```
+
+Export requires a readable v2 lock and a destination directory that does not
+already exist. It fetches each eligible locked artifact, verifies its literal
+SHA-256 checksum, and writes the payloads and bundle manifest. Only HTTP/GitHub
+locked artifacts with a fixed `sha256:<hex>` checksum are eligible. Missing
+checksums and signature-backed artifacts are rejected; signature material is
+not included or verified by this bundle format.
+
+The bundle is bounded to these artifact bytes. It does not make dependency
+resolution or external package managers offline: package-manager metadata,
+transitive package graphs, repositories, and other install inputs may still
+need network access. A frozen lock constrains only identities represented by
+the lock; it is not a universal offline or reproducibility guarantee.
+
+See [support boundaries](docs/support-boundary.md#offline-artifact-bundles) for
+the exact limits.
+
+On the target machine, make the project's schema, v2 lockfile, and exported
+directory available, then consume matching locked artifact payloads with:
+
+```sh
+depengine install --frozen-lockfile --bundle ./depengine-bundle
+```
+
+Bundle use requires a current frozen v2 lock. Installation checks that the
+bundle artifact identities and checksums match the locked artifacts it will
+use; invalid, missing, or mismatched entries fail before execution. The bundle
+does not replace the schema or lockfile.
 
 ## Downloads and trust
 
