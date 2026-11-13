@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine tutorial`: a guided, read-only tour that creates a disposable
+  project, walks `validate`/`why`/`update --dry-run`/`install --dry-run` with
+  explanations, and removes the directory. `--keep` preserves it and `--json`
+  exposes the steps under the machine-output envelope.
 - Make CLI localization explicitly opt-in through `DEPENGINE_LANG` and stop
   deriving the interface language from POSIX locale variables. Only command
   summaries are localized; flags, errors and logs stay English, and the

@@ -178,6 +178,16 @@ Examples:
   depengine status \-\-format json
 .fi
 .TP
+.B "depengine tutorial [flags]"
+Creates a temporary project, shows a schema, runs validate/why/update/install \-\-dry\-run with an explanation of each output, and removes everything at the end. No step mutates the host.
+.PP
+Examples:
+.nf
+  depengine tutorial             # guided tour, cleans up afterwards
+  depengine tutorial \-\-keep      # keep the temporary project for inspection
+  depengine tutorial \-\-json      # machine\-readable steps
+.fi
+.TP
 .B "depengine undo [flags]"
 Revert to a previous state snapshot
 Aliases: rollback.
@@ -616,6 +626,19 @@ suppress layer and manifest header lines Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 override schema path Scope: local. Default: .
+.SS "depengine tutorial flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for tutorial Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-keep"
+keep the temporary project directory Scope: local. Default: false.
 .SS "depengine undo flags"
 .TP
 .B "\-\-format <string>"

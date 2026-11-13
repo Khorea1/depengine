@@ -385,6 +385,25 @@ Examples:
 | `--quiet` | local | `false` | suppress layer and manifest header lines |
 | `--schema <string>` | local | `` | override schema path |
 
+## `depengine tutorial [flags]`
+
+Creates a temporary project, shows a schema, runs validate/why/update/install --dry-run with an explanation of each output, and removes everything at the end. No step mutates the host.
+
+Examples:
+
+```sh
+  depengine tutorial             # guided tour, cleans up afterwards
+  depengine tutorial --keep      # keep the temporary project for inspection
+  depengine tutorial --json      # machine-readable steps
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for tutorial |
+| `--json` | local | `false` | shorthand for --format=json |
+| `--keep` | local | `false` | keep the temporary project directory |
+
 ## `depengine undo [flags]`
 
 Revert to a previous state snapshot
@@ -601,6 +620,16 @@ was installed, not necessarily the minimum method set the project should
 declare. The two flags cannot be combined with each other, with `--interactive`,
 or with `--add`.
 
+## Guided tutorial
+
+`depengine tutorial` creates a disposable project in a temporary directory,
+writes a schema declaring one HTTP tool with a fixed checksum, and walks
+`validate`, `why`, `update --dry-run` and `install --dry-run`, printing each
+output with a one-line explanation. It never mutates the host, isolates state
+inside the temporary directory, and removes it afterwards. `--keep` preserves
+the directory for inspection, and `--json` emits the steps under the
+machine-output envelope with `<tutorial>` placeholders instead of random paths.
+
 ## `audit` consistency gate
 
 `audit` answers "is this project consistent?" without changing anything. It
@@ -654,6 +683,7 @@ shapes by command:
 | `install` | execution report |
 | `remove` | `dry_run`, `removed`, `failed` |
 | `status` | array of tool status entries |
+| `tutorial` | `schema`, `directory`, `steps` |
 | `undo` | `snapshot`, `removed`, `failed`; with `--list`, `snapshots` |
 | `update` | `lock_path`, `lock_version`, `dry_run`, `pinned`, `tools` |
 | `upgrade` | counters and per-tool `results` |

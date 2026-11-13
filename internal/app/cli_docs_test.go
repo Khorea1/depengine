@@ -49,7 +49,7 @@ func TestCLIDocsCoverCommandTree(t *testing.T) {
 		"depengine", "depengine audit", "depengine check", "depengine completion",
 		"depengine diff", "depengine doctor", "depengine forget", "depengine graph", "depengine help",
 		"depengine import", "depengine init", "depengine install", "depengine remove", "depengine sbom",
-		"depengine status", "depengine undo", "depengine update", "depengine upgrade",
+		"depengine status", "depengine tutorial", "depengine undo", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine version", "depengine why",
 	} {
 		if commandDocByPath(normalizeCLI(root), path) == nil {
@@ -64,7 +64,7 @@ func TestCLIDocsRenderCommandExamples(t *testing.T) {
 	for _, path := range []string{
 		"depengine audit", "depengine check", "depengine diff", "depengine doctor", "depengine forget", "depengine graph",
 		"depengine import", "depengine init", "depengine install", "depengine remove",
-		"depengine sbom", "depengine status", "depengine undo", "depengine update",
+		"depengine sbom", "depengine status", "depengine tutorial", "depengine undo", "depengine update",
 		"depengine upgrade", "depengine validate", "depengine why",
 	} {
 		doc := commandDocByPath(docs, path)
@@ -101,6 +101,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 		"depengine remove":  {"all", "dry-run", "force", "format", "help", "json", "only", "quiet", "schema"},
 		"depengine diff":    {"format", "help", "json", "other"},
 		"depengine sbom":    {"format", "help"}, "depengine audit": {"catalog", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
+		"depengine tutorial":      {"format", "help", "json", "keep"},
 		"depengine validate":      {"catalog", "check-env", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
 		"depengine update":        {"catalog", "dry-run", "format", "frozen-lockfile", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "profile", "quiet", "schema", "verbose"},
 		"depengine undo":          {"format", "help", "json", "list", "snapshot"},
