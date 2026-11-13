@@ -50,7 +50,7 @@ adapter registration, and the final exit code. CLI behavior lives in
 | `internal/scoopruntime` | Scoop-specific runtime operations shared by Windows package execution and bucket source management |
 | `internal/msi` | Windows MSI install/remove lifecycle |
 | `internal/lock` | `depengine.lock` persistence and validation, with bounded legacy v1 resolution |
-| `internal/state` | Installed-tool state and cross-platform file locking |
+| `internal/state` | Installed-tool state, append-only mutation journal, and cross-platform file locking |
 | `internal/validate` | Structural, semantic, and environment validation |
 | `internal/sbom` | CycloneDX and SPDX export |
 

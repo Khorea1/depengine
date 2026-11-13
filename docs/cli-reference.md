@@ -336,6 +336,30 @@ Examples:
 | `--sort-by <string>` | local | `` | sort output by: name, status, method |
 | `--verbose` | local | `false` | deprecated compatibility flag; detailed output is already the default |
 
+## `depengine journal [flags]`
+
+Shows the durable install/remove/upgrade/update/undo history, filterable by tool, command, result, and time window. The journal lives in journal.jsonl next to state.json and contains no secrets.
+
+Examples:
+
+```sh
+  depengine journal                          # recent mutations
+  depengine journal --tool nvim --since 7d   # one tool, last week
+  depengine journal --result failed --json   # failures as machine output
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--command <string>` | local | `` | only entries from this command (install, remove, upgrade, update, undo) |
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for journal |
+| `--json` | local | `false` | shorthand for --format=json |
+| `--limit <int>` | local | `50` | maximum entries to show, most recent first; 0 means all |
+| `--result <string>` | local | `` | only entries with this result (success, already, failed, skipped, updated, removed, reverted) |
+| `--since <string>` | local | `` | start of the time window (RFC3339, YYYY-MM-DD, or duration such as 7d/24h) |
+| `--tool <string>` | local | `` | only entries for this tool |
+| `--until <string>` | local | `` | end of the time window (same formats as --since) |
+
 ## `depengine remove [tool...] [flags]`
 
 Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail.
@@ -573,6 +597,37 @@ Examples:
 
 For non-frozen installs using a missing or v1 lockfile, depengine resolves and validates the legacy lock before executing tools. If resolution fails, installation stops; the successful preflight identity is the one saved after execution.
 
+## Mutation journal
+
+`install`, `remove`, `upgrade`, `update`, and `undo` append one redacted
+record per tool outcome to `journal.jsonl` next to `state.json`. Records carry
+the UTC timestamp, trace id (`DEPENGINE_TRACE_ID`), command, tool, method,
+result, exit code, elevation decision, effective schema hash, and the resolved
+package/version/revision/source identity. Dry runs are not recorded because
+they do not mutate the host.
+
+The file is append-only, owner-only (`0600`), written under its own lock so it
+cannot deadlock against a held state lock, and rotated to `journal.jsonl.1` at
+8 MiB; queries read both generations. Malformed lines are skipped so one damaged
+record cannot hide the rest of the trail. Secrets are redacted before
+persistence.
+
+`depengine journal` queries it:
+
+```sh
+depengine journal                          # recent mutations
+depengine journal --tool nvim --since 7d   # one tool, last week
+depengine journal --result failed --json   # failures as machine output
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--tool` | `` | only entries for this tool |
+| `--command` | `` | only entries from `install`, `remove`, `upgrade`, `update`, or `undo` |
+| `--result` | `` | only entries with this result (stable result vocabulary) |
+| `--since` / `--until` | `` | RFC3339, `YYYY-MM-DD`, or a duration such as `7d`/`24h`, relative to now |
+| `--limit` | `50` | most recent matching entries; `0` means all |
+
 ## Dry-run plan preview
 
 With `install --dry-run`, each resolved candidate reports the install step's
@@ -735,6 +790,7 @@ shapes by command:
 | `explain` | `query`, `matches` |
 | `forget` | `tool` |
 | `install` | execution report |
+| `journal` | `path`, `count`, `entries` |
 | `remove` | `dry_run`, `removed`, `failed` |
 | `status` | array of tool status entries |
 | `tutorial` | `schema`, `directory`, `steps` |

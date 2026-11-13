@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Add an append-only mutation journal (`journal.jsonl` next to `state.json`)
+  recording install/remove/upgrade/update/undo outcomes with trace id,
+  elevation decision, effective schema hash, and resolved identity. Entries are
+  redacted, written under a dedicated lock, rotated at 8 MiB, and queried with
+  `depengine journal --tool/--command/--result/--since/--until/--limit`.
 - Make strict schema-shape errors actionable: each line now carries the TOML
   `line:column`, a `did you mean` suggestion for unknown fields (`tagz` →
   `tags`), a minimal valid example for the failing location, and a

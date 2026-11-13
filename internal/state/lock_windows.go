@@ -26,6 +26,10 @@ const (
 	errorLockViolation        = syscall.Errno(33)
 )
 
+// exclusiveLockMode is the platform value passed to lockFilePathContext for an
+// exclusive (writer) lock.
+const exclusiveLockMode = true
+
 type overlapped struct {
 	Internal, InternalHigh uintptr
 	Offset, OffsetHigh     uint32
@@ -47,13 +51,18 @@ func lockSharedContext(ctx context.Context) (io.Closer, error) {
 	return lockWithModeContext(ctx, false, "acquire shared lock")
 }
 func lockWithModeContext(ctx context.Context, exclusive bool, desc string) (io.Closer, error) {
+	return lockFilePathContext(ctx, DefaultPath()+".lock", exclusive, desc)
+}
+
+// lockFilePathContext locks an arbitrary private lock file. Journal writes use
+// their own lock so appending cannot deadlock against a held state lock.
+func lockFilePathContext(ctx context.Context, path string, exclusive bool, desc string) (io.Closer, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path := DefaultPath() + ".lock"
 	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}

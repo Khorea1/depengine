@@ -559,12 +559,18 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	if err != nil {
 		if report != nil {
 			renderInstallReport(report, p, cs)
+			if !p.dryRun {
+				recordInstallJournal(report, s)
+			}
 		}
 		lg.Error("execute failed", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
 
 	renderInstallReport(report, p, cs)
+	if !p.dryRun {
+		recordInstallJournal(report, s)
+	}
 
 	return finishInstallRun(ctx, report, p, s, lockPath, lk, lg, cs)
 }

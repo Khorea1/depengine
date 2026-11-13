@@ -143,6 +143,9 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 	if err := persistRemoveState(ls, *removeDryRun); err != nil {
 		return err
 	}
+	if !*removeDryRun {
+		recordRemoveJournal("remove", sess.schemaTools, sess.removedThisRun, sess.requestedRemoval, sess.state.Tools)
+	}
 
 	if *removeJSON {
 		payload := removeMachineResult{

@@ -151,6 +151,11 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON
 	}
 	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
 	saveErr := finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
+	requested := make(map[string]bool, len(toRemove))
+	for _, name := range toRemove {
+		requested[name] = true
+	}
+	recordRemoveJournal("undo", nil, succeeded, requested, originalTools)
 	if *undoJSON && (saveErr == nil || hadFailure) {
 		if err := writeUndoReport(snapPath, sortedBoolKeys(succeeded), missingStringKeys(toRemove, succeeded)); err != nil {
 			return exitWithCode(3)

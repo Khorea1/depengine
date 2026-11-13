@@ -159,6 +159,16 @@ Examples:
   depengine install \-\-allow\-arbitrary\-code   # run pre_install/post_install hooks
 .fi
 .TP
+.B "depengine journal [flags]"
+Shows the durable install/remove/upgrade/update/undo history, filterable by tool, command, result, and time window. The journal lives in journal.jsonl next to state.json and contains no secrets.
+.PP
+Examples:
+.nf
+  depengine journal                          # recent mutations
+  depengine journal \-\-tool nvim \-\-since 7d   # one tool, last week
+  depengine journal \-\-result failed \-\-json   # failures as machine output
+.fi
+.TP
 .B "depengine remove [tool...] [flags]"
 Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
 Aliases: rm, uninstall.
@@ -581,6 +591,34 @@ sort output by: name, status, method Scope: local. Default: .
 .TP
 .B "\-\-verbose"
 deprecated compatibility flag; detailed output is already the default Scope: local. Default: false.
+.SS "depengine journal flags"
+.TP
+.B "\-\-command <string>"
+only entries from this command (install, remove, upgrade, update, undo) Scope: local. Default: .
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for journal Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-limit <int>"
+maximum entries to show, most recent first; 0 means all Scope: local. Default: 50.
+.TP
+.B "\-\-result <string>"
+only entries with this result (success, already, failed, skipped, updated, removed, reverted) Scope: local. Default: .
+.TP
+.B "\-\-since <string>"
+start of the time window (RFC3339, YYYY\-MM\-DD, or duration such as 7d/24h) Scope: local. Default: .
+.TP
+.B "\-\-tool <string>"
+only entries for this tool Scope: local. Default: .
+.TP
+.B "\-\-until <string>"
+end of the time window (same formats as \-\-since) Scope: local. Default: .
 .SS "depengine remove flags"
 .TP
 .B "\-\-all"

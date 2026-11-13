@@ -305,6 +305,9 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 
+	if !*updateDryRun {
+		recordCommandJournal("update", state.JournalUpdated, s, "")
+	}
 	if hint := updateNextStepHint(*updateDryRun, newLock); hint != "" {
 		printNextStep(c, quiet, false, hint)
 	}

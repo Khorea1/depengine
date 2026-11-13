@@ -592,6 +592,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		ls = nil
 	}
 	results, counts := runUpgradeLoop(ctx, ex, clan, outdated, discoveryFailures, opts, c)
+	recordUpgradeJournal(results, project.Schema, opts.dryRun)
 
 	err = writeUpgradeReport(opts.jsonOut, opts.dryRun, counts, results)
 	if counts.upgraded > 0 && !opts.dryRun {
