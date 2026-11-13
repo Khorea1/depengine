@@ -45,7 +45,15 @@ func newJournalCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runJournal(cmd.Context(), *journalTool, *journalCommand, *journalResult, *journalSince, *journalUntil, *journalLimit, *journalJSON)
+			return runJournal(journalOptions{
+				tool:    *journalTool,
+				command: *journalCommand,
+				result:  *journalResult,
+				since:   *journalSince,
+				until:   *journalUntil,
+				limit:   *journalLimit,
+				jsonOut: *journalJSON,
+			})
 		},
 	}
 	f := cmd.Flags()
@@ -60,37 +68,46 @@ func newJournalCmd() *cobra.Command {
 	return cmd
 }
 
-func runJournal(ctx context.Context, tool, command, result, since, until string, limit int, jsonOut bool) error {
-	if limit < 0 {
+type journalOptions struct {
+	tool    string
+	command string
+	result  string
+	since   string
+	until   string
+	limit   int
+	jsonOut bool
+}
+
+func runJournal(opts journalOptions) error {
+	if opts.limit < 0 {
 		fmt.Fprintln(os.Stderr, "error: --limit must not be negative")
 		return exitWithCode(2)
 	}
 	now := time.Now().UTC()
-	sinceTime, err := parseJournalBound(since, now)
+	since, err := parseJournalBound(opts.since, now)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: --since: %v\n", err)
 		return exitWithCode(2)
 	}
-	untilTime, err := parseJournalBound(until, now)
+	until, err := parseJournalBound(opts.until, now)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: --until: %v\n", err)
 		return exitWithCode(2)
 	}
-	filter := state.JournalFilter{
-		Tool:    tool,
-		Command: command,
-		Result:  result,
-		Since:   sinceTime,
-		Until:   untilTime,
-		Limit:   limit,
-	}
 	path := state.DefaultJournalPath()
-	entries, err := state.QueryJournal(ctx, path, filter)
+	entries, err := state.QueryJournal(path, state.JournalFilter{
+		Tool:    opts.tool,
+		Command: opts.command,
+		Result:  opts.result,
+		Since:   since,
+		Until:   until,
+		Limit:   opts.limit,
+	})
 	if err != nil {
 		log.Default.Error("read journal", "error", err)
 		return exitWithCode(3)
 	}
-	if jsonOut {
+	if opts.jsonOut {
 		return writeMachineOutput(os.Stdout, "journal", journalMachineReport{Path: path, Count: len(entries), Entries: entries})
 	}
 	printJournalEntries(path, entries)
@@ -149,16 +166,13 @@ func parseJournalBound(raw string, now time.Time) (time.Time, error) {
 // them: the mutation already happened and must not be reported as failed just
 // because its audit record could not be written.
 func recordJournal(entries ...state.JournalEntry) {
-	if len(entries) == 0 {
-		return
-	}
 	if err := state.AppendJournal(context.Background(), entries...); err != nil {
 		log.Default.Warn("journal append failed", "error", err)
 	}
 }
 
 func journalIdentity(p *plan.ResolvedInstallPlan) *state.JournalIdentity {
-	if p == nil || p.Identity == (plan.ResolvedIdentity{}) {
+	if p == nil {
 		return nil
 	}
 	identity := &state.JournalIdentity{

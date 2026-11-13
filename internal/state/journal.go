@@ -173,7 +173,7 @@ type JournalFilter struct {
 // QueryJournal reads the rotated generation and the current file, returning
 // matching entries in chronological order. Malformed lines are skipped: a
 // damaged record must not hide the rest of the audit trail.
-func QueryJournal(_ context.Context, path string, filter JournalFilter) ([]JournalEntry, error) {
+func QueryJournal(path string, filter JournalFilter) ([]JournalEntry, error) {
 	var entries []JournalEntry
 	for _, candidate := range []string{path + ".1", path} {
 		batch, err := readJournalFile(candidate)

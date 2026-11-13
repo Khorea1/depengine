@@ -35,7 +35,7 @@ func TestJournalAppendQueryFiltersAndLimit(t *testing.T) {
 	if err := AppendJournalTo(context.Background(), path, entries...); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	all, err := QueryJournal(context.Background(), path, JournalFilter{})
+	all, err := QueryJournal(path, JournalFilter{})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -46,20 +46,20 @@ func TestJournalAppendQueryFiltersAndLimit(t *testing.T) {
 		t.Fatalf("entries are not chronological: %+v", all)
 	}
 
-	byTool, err := QueryJournal(context.Background(), path, JournalFilter{Tool: "jq"})
+	byTool, err := QueryJournal(path, JournalFilter{Tool: "jq"})
 	if err != nil || len(byTool) != 2 {
 		t.Fatalf("tool filter = %d entries, err=%v", len(byTool), err)
 	}
-	failed, err := QueryJournal(context.Background(), path, JournalFilter{Result: JournalFailed})
+	failed, err := QueryJournal(path, JournalFilter{Result: JournalFailed})
 	if err != nil || len(failed) != 1 || failed[0].Tool != "rg" {
 		t.Fatalf("result filter = %+v, err=%v", failed, err)
 	}
 	since, _ := time.Parse(time.RFC3339, "2026-01-02T00:00:00Z")
-	windowed, err := QueryJournal(context.Background(), path, JournalFilter{Since: since})
+	windowed, err := QueryJournal(path, JournalFilter{Since: since})
 	if err != nil || len(windowed) != 2 {
 		t.Fatalf("since filter = %d entries, err=%v", len(windowed), err)
 	}
-	limited, err := QueryJournal(context.Background(), path, JournalFilter{Limit: 1})
+	limited, err := QueryJournal(path, JournalFilter{Limit: 1})
 	if err != nil || len(limited) != 1 || limited[0].Tool != "jq" || limited[0].Command != "remove" {
 		t.Fatalf("limit filter kept the wrong entry: %+v, err=%v", limited, err)
 	}
@@ -81,7 +81,7 @@ func TestJournalRedactsSecretsAndSkipsMalformedLines(t *testing.T) {
 	}
 	_ = f.Close()
 
-	entries, err := QueryJournal(context.Background(), path, JournalFilter{})
+	entries, err := QueryJournal(path, JournalFilter{})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestJournalReadsRotatedGeneration(t *testing.T) {
 	if err := AppendJournalTo(context.Background(), path, newer); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := QueryJournal(context.Background(), path, JournalFilter{})
+	entries, err := QueryJournal(path, JournalFilter{})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestJournalConcurrentAppendsStayParseable(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	entries, err := QueryJournal(context.Background(), path, JournalFilter{})
+	entries, err := QueryJournal(path, JournalFilter{})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}

@@ -67,7 +67,7 @@ func TestRecordInstallJournalWritesPerToolEntries(t *testing.T) {
 	}}
 	recordInstallJournal(report, &config.Schema{Tools: map[string]*config.Tool{"jq": {Name: "jq"}}})
 
-	entries, err := state.QueryJournal(context.Background(), state.DefaultJournalPath(), state.JournalFilter{})
+	entries, err := state.QueryJournal(state.DefaultJournalPath(), state.JournalFilter{})
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}

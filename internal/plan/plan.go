@@ -515,36 +515,38 @@ func ownershipPathKey(value string) (string, error) {
 // resolution boundary, never on persisted state, so state round-trips keep
 // exactly the bytes they were given.
 func (p *ResolvedInstallPlan) NormalizePreviewElevation() {
-	normalizeOperation := func(operation Operation) Operation {
-		if operation.Effect == EffectMutation && operation.Elevation == "" {
-			operation.Elevation = ElevationUnknown
-		}
-		return operation
-	}
-	normalize := func(operations []Operation) {
-		for i := range operations {
-			operations[i] = normalizeOperation(operations[i])
-		}
-	}
-	normalize(p.Operations)
-	normalize(p.SourceMutations)
+	normalizeOperations(p.Operations)
+	normalizeOperations(p.SourceMutations)
 	for i := range p.Hooks {
-		p.Hooks[i].Operation = normalizeOperation(p.Hooks[i].Operation)
+		normalizeOperationElevation(&p.Hooks[i].Operation)
 	}
 	for i := range p.Ensures {
-		p.Ensures[i].Check = normalizeOperation(p.Ensures[i].Check)
-		p.Ensures[i].Apply = normalizeOperation(p.Ensures[i].Apply)
+		normalizeOperationElevation(&p.Ensures[i].Check)
+		normalizeOperationElevation(&p.Ensures[i].Apply)
 	}
-	if p.Preparation != nil {
-		normalize(p.Preparation.Probe)
-		normalize(p.Preparation.Commit)
-		for i := range p.Preparation.Prepare {
-			p.Preparation.Prepare[i].Apply = normalizeOperation(p.Preparation.Prepare[i].Apply)
-			if p.Preparation.Prepare[i].Rollback != nil {
-				rollback := normalizeOperation(*p.Preparation.Prepare[i].Rollback)
-				p.Preparation.Prepare[i].Rollback = &rollback
-			}
+	if p.Preparation == nil {
+		return
+	}
+	normalizeOperations(p.Preparation.Probe)
+	normalizeOperations(p.Preparation.Commit)
+	for i := range p.Preparation.Prepare {
+		mutation := &p.Preparation.Prepare[i]
+		normalizeOperationElevation(&mutation.Apply)
+		if mutation.Rollback != nil {
+			normalizeOperationElevation(mutation.Rollback)
 		}
+	}
+}
+
+func normalizeOperations(operations []Operation) {
+	for i := range operations {
+		normalizeOperationElevation(&operations[i])
+	}
+}
+
+func normalizeOperationElevation(operation *Operation) {
+	if operation.Effect == EffectMutation && operation.Elevation == "" {
+		operation.Elevation = ElevationUnknown
 	}
 }
 
