@@ -202,9 +202,8 @@ func newWhyCmd() *cobra.Command {
 	whyNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "why [tool]",
-		Aliases: []string{"explain"},
-		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
+		Use:   "why [tool]",
+		Short: ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
 		Example: `  depengine why nvim --fields   # method, provenance and catalog impact
   depengine why nvim --json
   depengine why --all           # one line per tool in the schema`,

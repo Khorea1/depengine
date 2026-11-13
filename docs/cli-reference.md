@@ -179,6 +179,26 @@ Examples:
 | `--no-manifest` | local | `false` | ignore the personal manifest |
 | `--schema <string>` | local | `schema.toml` | schema path to inspect |
 
+## `depengine explain [term...] [flags]`
+
+Answers depengine's vocabulary without leaving the terminal: schema fields, installation methods, and error codes, with the valid form, a minimal example, and the matching document. It reads neither the project schema, the host, nor the network.
+
+Examples:
+
+```sh
+  depengine explain                 # list every known term
+  depengine explain requires_when   # one field
+  depengine explain http            # one method
+  depengine explain E_DUPE_TOOL     # one error code
+  depengine explain --json http     # machine-readable answer
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for explain |
+| `--json` | local | `false` | shorthand for --format=json |
+
 ## `depengine forget <tool> [flags]`
 
 Forget a tool from state without removing it from the system
@@ -526,8 +546,6 @@ Visibility: hidden (documented compatibility command).
 
 Explain how a tool would be installed
 
-Aliases: `explain`.
-
 Examples:
 
 ```sh
@@ -620,6 +638,24 @@ was installed, not necessarily the minimum method set the project should
 declare. The two flags cannot be combined with each other, with `--interactive`,
 or with `--add`.
 
+## Vocabulary lookup
+
+`depengine explain [term...]` answers questions about the vocabulary offline:
+fields (`requires_when`, `distro_version_min`, `arch_map`), installation
+methods (`http`, `github`, `aur`, native manager aliases such as `apt`), and
+the error codes `validate`/`install --dry-run` already emit (`E_DUPE_TOOL`,
+`W_AUTO_CHECKSUM`) together with the resolver error classes
+(`unavailable_candidate`, `auth_requirement`).
+
+Each answer carries a one-line definition, the valid form, a minimal example,
+and the document anchor that explains it in full. The command reads the
+generated JSON Schema and the method contracts only: it does not load
+`schema.toml`, probe the host, or touch the network. With no argument it lists
+every known term; an unknown term exits `2` and suggests close matches.
+
+The `why` command no longer answers to `explain`; that name now belongs to this
+command.
+
 ## Guided tutorial
 
 `depengine tutorial` creates a disposable project in a temporary directory,
@@ -679,6 +715,7 @@ shapes by command:
 | `check` | one `tool`, `method`, `status`, `verification` object |
 | `diff` | array of changed fields |
 | `doctor` | report object |
+| `explain` | `query`, `matches` |
 | `forget` | `tool` |
 | `install` | execution report |
 | `remove` | `dry_run`, `removed`, `failed` |

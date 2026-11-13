@@ -92,6 +92,18 @@ Examples:
   depengine doctor \-\-schema ./schema.toml \-\-no\-manifest
 .fi
 .TP
+.B "depengine explain [term...] [flags]"
+Answers depengine's vocabulary without leaving the terminal: schema fields, installation methods, and error codes, with the valid form, a minimal example, and the matching document. It reads neither the project schema, the host, nor the network.
+.PP
+Examples:
+.nf
+  depengine explain                 # list every known term
+  depengine explain requires_when   # one field
+  depengine explain http            # one method
+  depengine explain E_DUPE_TOOL     # one error code
+  depengine explain \-\-json http     # machine\-readable answer
+.fi
+.TP
 .B "depengine forget <tool> [flags]"
 Forget a tool from state without removing it from the system
 .PP
@@ -236,7 +248,6 @@ Hidden compatibility command.
 .TP
 .B "depengine why [tool] [flags]"
 Explain how a tool would be installed
-Aliases: explain.
 .PP
 Examples:
 .nf
@@ -398,6 +409,16 @@ ignore the personal manifest Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 schema path to inspect Scope: local. Default: schema.toml.
+.SS "depengine explain flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for explain Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine forget flags"
 .TP
 .B "\-\-format <string>"

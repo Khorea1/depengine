@@ -53,19 +53,24 @@ func GenerateJSONSchema() ([]byte, error) {
 }
 
 func documentJSONSchema(section string, manifest bool) map[string]any {
+	sectionDescription := "Tools declared by name; a plain string is shorthand for `{ native = \"<name>\" }`."
+	if manifest {
+		sectionDescription = "Packages declared by name; a plain string is shorthand for a native package of the same name."
+	}
 	properties := map[string]any{
 		"schema_version": map[string]any{"const": 1, "description": "depengine grammar version."},
 		"defaults":       map[string]any{"$ref": "#/definitions/defaults"},
 		section: map[string]any{
-			"type": "object",
+			"type":        "object",
+			"description": sectionDescription,
 			"properties": map[string]any{
-				"simple": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"simple": map[string]any{"type": "array", "description": "Bare package names for the inferred native manager.", "items": map[string]any{"type": "string"}},
 			},
 			"additionalProperties": map[string]any{"$ref": "#/definitions/tool"},
 		},
 	}
 	if manifest {
-		properties["manifest"] = map[string]any{"$ref": "#/definitions/manifestOptions"}
+		properties["manifest"] = map[string]any{"$ref": "#/definitions/manifestOptions", "description": "Operator-local controls for treating this file as a personal manifest."}
 	}
 	return map[string]any{
 		"type":                 "object",
@@ -79,12 +84,12 @@ func defaultsJSONSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"manager":       map[string]any{"type": "string", "minLength": 1, "default": "native"},
-			"aur_helper":    map[string]any{"type": "string", "minLength": 1, "default": "paru"},
-			"method_prefer": stringArrayJSONSchema(),
-			"method_order":  stringArrayJSONSchema(), // compatibility alias
-			"arch_map":      stringMapJSONSchema(),
-			"os_map":        stringMapJSONSchema(),
+			"manager":       map[string]any{"type": "string", "minLength": 1, "default": "native", "description": "Native package manager used when the native method is selected (default native)."},
+			"aur_helper":    map[string]any{"type": "string", "minLength": 1, "default": "paru", "description": "AUR helper the aur method drives (default paru)."},
+			"method_prefer": map[string]any{"type": "array", "description": "Global method priority prefix; methods not listed stay available as fallbacks.", "items": map[string]any{"type": "string"}},
+			"method_order":  map[string]any{"type": "array", "description": "Compatibility alias for method_prefer; set only one of the two.", "items": map[string]any{"type": "string"}}, // compatibility alias
+			"arch_map":      map[string]any{"type": "object", "description": "Map host architecture to the package or asset architecture name.", "additionalProperties": map[string]any{"type": "string"}},
+			"os_map":        map[string]any{"type": "object", "description": "Map host operating system to the package or asset OS name.", "additionalProperties": map[string]any{"type": "string"}},
 		},
 		"allOf": []any{
 			map[string]any{"not": map[string]any{"required": []string{"method_prefer", "method_order"}}},
@@ -97,7 +102,7 @@ func manifestOptionsJSONSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"allow_new_tools": map[string]any{"type": "boolean", "default": false},
+			"allow_new_tools": map[string]any{"type": "boolean", "default": false, "description": "Let this manifest contribute tools the project schema does not declare."},
 		},
 		"additionalProperties": false,
 	}
@@ -105,14 +110,14 @@ func manifestOptionsJSONSchema() map[string]any {
 
 func toolJSONSchema() map[string]any {
 	properties := map[string]any{
-		"requires":        stringArrayJSONSchema(),
-		"requires_when":   map[string]any{"type": "object", "additionalProperties": map[string]any{"$ref": "#/definitions/condition"}},
-		"pre_install":     map[string]any{"$ref": "#/definitions/hook"},
-		"post_install":    map[string]any{"$ref": "#/definitions/hook"},
-		"tags":            stringArrayJSONSchema(),
-		"method_prefer":   stringArrayJSONSchema(),
-		"method_only":     stringArrayJSONSchema(),
-		"dependency_only": map[string]any{"type": "boolean", "default": false},
+		"requires":        map[string]any{"type": "array", "description": "Tools that must be installed before this one; each name must also be declared.", "items": map[string]any{"type": "string"}},
+		"requires_when":   map[string]any{"type": "object", "description": "Per-dependency conditions: install the named dependency only when its condition matches.", "additionalProperties": map[string]any{"$ref": "#/definitions/condition"}},
+		"pre_install":     map[string]any{"$ref": "#/definitions/hook", "description": "Command that runs before the selected method is executed."},
+		"post_install":    map[string]any{"$ref": "#/definitions/hook", "description": "Command that runs after the selected method succeeds."},
+		"tags":            map[string]any{"type": "array", "description": "Labels selected by `depengine install --tag`.", "items": map[string]any{"type": "string"}},
+		"method_prefer":   map[string]any{"type": "array", "description": "Per-tool method priority prefix; methods not listed stay available.", "items": map[string]any{"type": "string"}},
+		"method_only":     map[string]any{"type": "array", "description": "Exclusive method list: only these methods are considered, in this order.", "items": map[string]any{"type": "string"}},
+		"dependency_only": map[string]any{"type": "boolean", "default": false, "description": "Declare a virtual tool that groups dependencies and has no install method."},
 	}
 	for _, kind := range methodkind.KnownKinds() {
 		contract, ok := methodkind.Lookup(kind)
@@ -214,14 +219,18 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		"properties":           properties,
 		"additionalProperties": false,
 	}
+	description := methodkind.Describe(contract.Kind)
 	if capabilities := methodkind.CapabilityNames(contract.Capabilities); len(capabilities) > 0 {
-		description := "Method capabilities: " + strings.Join(capabilities, ", ") + "."
+		capabilityText := "Method capabilities: " + strings.Join(capabilities, ", ") + "."
+		description = strings.TrimSpace(description + " " + capabilityText)
 		if contract.Capabilities&methodkind.CapabilityImmutableLock != 0 {
 			// The capability only says a concrete identity mechanism exists.
 			// depengine.lock pins far less than that; never imply otherwise in
 			// editor-facing text (see docs/support-boundary.md).
 			description += " immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages."
 		}
+	}
+	if description != "" {
 		schema["description"] = description
 	}
 	if len(required) > 0 {
@@ -321,12 +330,11 @@ func distributionsJSONSchema(distributable []string) map[string]any {
 }
 
 func secretReferenceJSONSchema() map[string]any {
-	field := map[string]any{"type": "string", "minLength": 1, "pattern": `^[^\s\u0000](?:[^\u0000]*[^\s\u0000])?$`}
 	return map[string]any{
 		"type": "object", "required": []string{"provider", "name"},
 		"properties": map[string]any{
-			"provider": field,
-			"name":     field,
+			"provider": map[string]any{"type": "string", "minLength": 1, "pattern": `^[^\s\u0000](?:[^\u0000]*[^\s\u0000])?$`, "description": "Secret provider; env is the supported provider."},
+			"name":     map[string]any{"type": "string", "minLength": 1, "pattern": `^[^\s\u0000](?:[^\u0000]*[^\s\u0000])?$`, "description": "Provider-specific secret name, for example an environment variable."},
 		},
 		"additionalProperties": false,
 	}
@@ -378,17 +386,43 @@ func methodFieldJSONSchema(field methodkind.Field) map[string]any {
 	return schema
 }
 
+// conditionFieldNotes documents each condition dimension for editors and for
+// `depengine explain`. The semantics live in docs/schema-reference.md.
+var conditionFieldNotes = map[string]string{
+	"distro_family":      "Resolved distro clan such as debian or arch, not the raw distro ID.",
+	"distro_id":          "Raw distro ID such as ubuntu or fedora; use distro_family for the clan.",
+	"distro_version":     "Exact normalized distro version; numeric runs ignore leading zeroes.",
+	"distro_version_min": "Inclusive minimum distro version.",
+	"distro_version_max": "Inclusive maximum distro version.",
+	"arch":               "Host CPU architecture.",
+	"os":                 "Host operating system; Termux reports linux, so use is_android there.",
+	"target_family":      "Portable family: unix (linux, darwin, BSDs, termux) or windows.",
+	"kernel":             "Exact kernel release, not a range; use kernel_min/kernel_max for ranges.",
+	"kernel_min":         "Inclusive minimum kernel version.",
+	"kernel_max":         "Inclusive maximum kernel version.",
+	"libc":               "libc family token (glibc, musl), matched by prefix with no version.",
+	"init_system":        "Init system such as systemd, openrc, runit, or sysvinit.",
+	"is_wsl":             "Three-state WSL fact: true needs a positive detection, false a conclusive negative.",
+	"is_container":       "Three-state container fact; same rule as is_wsl.",
+	"is_android":         "Three-state Termux/Android fact, detected from Termux environment variables.",
+}
+
 func conditionJSONSchema() map[string]any {
 	properties := make(map[string]any, len(conditionFields))
 	for name, fieldType := range conditionFields {
+		var property map[string]any
 		switch fieldType {
 		case "bool":
-			properties[name] = map[string]any{"type": "boolean"}
+			property = map[string]any{"type": "boolean"}
 		case "string":
-			properties[name] = map[string]any{"type": "string", "minLength": 1}
+			property = map[string]any{"type": "string", "minLength": 1}
 		default:
-			properties[name] = stringArrayJSONSchema()
+			property = stringArrayJSONSchema()
 		}
+		if note := conditionFieldNotes[name]; note != "" {
+			property["description"] = note
+		}
+		properties[name] = property
 	}
 	return map[string]any{
 		"type":                 "object",
@@ -406,9 +440,9 @@ func hookJSONSchema() map[string]any {
 			map[string]any{"required": []string{"run"}},
 		},
 		"properties": map[string]any{
-			"cmd":  map[string]any{"type": "string", "minLength": 1},
-			"run":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}},
-			"when": map[string]any{"$ref": "#/definitions/condition"},
+			"cmd":  map[string]any{"type": "string", "minLength": 1, "description": "Shell string; a shell interprets it."},
+			"run":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "argv form: the first element is the executable and no shell is involved."},
+			"when": map[string]any{"$ref": "#/definitions/condition", "description": "Run the hook only when this condition matches."},
 		},
 		"additionalProperties": false,
 	}

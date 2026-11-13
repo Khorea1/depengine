@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine explain [term...]`: offline vocabulary for schema fields,
+  installation methods, and the `validate`/resolver error codes, with the valid
+  form, a minimal example, and the document anchor. `why` no longer accepts
+  `explain` as an alias. The generated JSON Schema now documents every `tool`,
+  `condition`, `defaults`, `manifest`, and `secret_ref` field plus each method
+  kind, which also improves editor completion.
 - Add `depengine tutorial`: a guided, read-only tour that creates a disposable
   project, walks `validate`/`why`/`update --dry-run`/`install --dry-run` with
   explanations, and removes the directory. `--keep` preserves it and `--json`

@@ -134,6 +134,7 @@ behavior.
 | `depengine status` | Show recorded install state |
 | `depengine doctor` | Diagnose the host, layers, managers, elevation, and lock |
 | `depengine why <tool>` | Show which method would be chosen and why |
+| `depengine explain <term>` | Look up a schema field, method, or error code offline |
 | `depengine remove <tool>` | Remove a tool |
 | `depengine forget <tool>` | Remove a tool from state without uninstalling it |
 | `depengine update` | Resolve lockable mutable references and write `depengine.lock` |

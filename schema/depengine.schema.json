@@ -91,79 +91,95 @@
       "minProperties": 1,
       "properties": {
         "arch": {
+          "description": "Host CPU architecture.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "distro_family": {
+          "description": "Resolved distro clan such as debian or arch, not the raw distro ID.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "distro_id": {
+          "description": "Raw distro ID such as ubuntu or fedora; use distro_family for the clan.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "distro_version": {
+          "description": "Exact normalized distro version; numeric runs ignore leading zeroes.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "distro_version_max": {
+          "description": "Inclusive maximum distro version.",
           "minLength": 1,
           "type": "string"
         },
         "distro_version_min": {
+          "description": "Inclusive minimum distro version.",
           "minLength": 1,
           "type": "string"
         },
         "init_system": {
+          "description": "Init system such as systemd, openrc, runit, or sysvinit.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "is_android": {
+          "description": "Three-state Termux/Android fact, detected from Termux environment variables.",
           "type": "boolean"
         },
         "is_container": {
+          "description": "Three-state container fact; same rule as is_wsl.",
           "type": "boolean"
         },
         "is_wsl": {
+          "description": "Three-state WSL fact: true needs a positive detection, false a conclusive negative.",
           "type": "boolean"
         },
         "kernel": {
+          "description": "Exact kernel release, not a range; use kernel_min/kernel_max for ranges.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "kernel_max": {
+          "description": "Inclusive maximum kernel version.",
           "minLength": 1,
           "type": "string"
         },
         "kernel_min": {
+          "description": "Inclusive minimum kernel version.",
           "minLength": 1,
           "type": "string"
         },
         "libc": {
+          "description": "libc family token (glibc, musl), matched by prefix with no version.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "os": {
+          "description": "Host operating system; Termux reports linux, so use is_android there.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "target_family": {
+          "description": "Portable family: unix (linux, darwin, BSDs, termux) or windows.",
           "items": {
             "type": "string"
           },
@@ -189,25 +205,30 @@
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Map host architecture to the package or asset architecture name.",
           "type": "object"
         },
         "aur_helper": {
           "default": "paru",
+          "description": "AUR helper the aur method drives (default paru).",
           "minLength": 1,
           "type": "string"
         },
         "manager": {
           "default": "native",
+          "description": "Native package manager used when the native method is selected (default native).",
           "minLength": 1,
           "type": "string"
         },
         "method_order": {
+          "description": "Compatibility alias for method_prefer; set only one of the two.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "method_prefer": {
+          "description": "Global method priority prefix; methods not listed stay available as fallbacks.",
           "items": {
             "type": "string"
           },
@@ -217,6 +238,7 @@
           "additionalProperties": {
             "type": "string"
           },
+          "description": "Map host operating system to the package or asset OS name.",
           "type": "object"
         }
       },
@@ -244,10 +266,12 @@
           ],
           "properties": {
             "cmd": {
+              "description": "Shell string; a shell interprets it.",
               "minLength": 1,
               "type": "string"
             },
             "run": {
+              "description": "argv form: the first element is the executable and no shell is involved.",
               "items": {
                 "type": "string"
               },
@@ -255,7 +279,8 @@
               "type": "array"
             },
             "when": {
-              "$ref": "#/definitions/condition"
+              "$ref": "#/definitions/condition",
+              "description": "Run the hook only when this condition matches."
             }
           },
           "type": "object"
@@ -277,10 +302,12 @@
             ],
             "properties": {
               "cmd": {
+                "description": "Shell string; a shell interprets it.",
                 "minLength": 1,
                 "type": "string"
               },
               "run": {
+                "description": "argv form: the first element is the executable and no shell is involved.",
                 "items": {
                   "type": "string"
                 },
@@ -288,7 +315,8 @@
                 "type": "array"
               },
               "when": {
-                "$ref": "#/definitions/condition"
+                "$ref": "#/definitions/condition",
+                "description": "Run the hook only when this condition matches."
               }
             },
             "type": "object"
@@ -305,14 +333,17 @@
           "$ref": "#/definitions/defaults"
         },
         "manifest": {
-          "$ref": "#/definitions/manifestOptions"
+          "$ref": "#/definitions/manifestOptions",
+          "description": "Operator-local controls for treating this file as a personal manifest."
         },
         "packages": {
           "additionalProperties": {
             "$ref": "#/definitions/tool"
           },
+          "description": "Packages declared by name; a plain string is shorthand for a native package of the same name.",
           "properties": {
             "simple": {
+              "description": "Bare package names for the inferred native manager.",
               "items": {
                 "type": "string"
               },
@@ -337,6 +368,7 @@
       "properties": {
         "allow_new_tools": {
           "default": false,
+          "description": "Let this manifest contribute tools the project schema does not declare.",
           "type": "boolean"
         }
       },
@@ -384,7 +416,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Download an .apk and hand it to Termux's package installer. Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -549,7 +581,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -636,7 +668,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Atom packages via the legacy apm CLI. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -755,7 +787,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Portable .AppImage binaries installed under a stable name. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -948,7 +980,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "AppImage packages through AM/AppMan. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1083,7 +1115,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed per-user AppX package tracked by package name and publisher. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -1261,7 +1293,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1348,7 +1380,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "asdf plugins and versions, optionally through a mise backend. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1445,7 +1477,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Arch User Repository packages through the configured AUR helper. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1526,7 +1558,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1613,7 +1645,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global bun packages. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1777,7 +1809,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Rust crates from crates.io or a Git source, via cargo install. Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1908,7 +1940,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Homebrew Cask applications on macOS. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1989,7 +2021,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Chocolatey packages on Windows. Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2088,7 +2120,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global PHP Composer packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2195,7 +2227,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Conda packages, optionally into a named environment or prefix. Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2332,7 +2364,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Container images pulled with docker or podman. Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2496,7 +2528,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, arbitrary-code, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A .deb package installed and tracked by its exact dpkg identity. Method capabilities: exact-version, arbitrary-code, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -2723,7 +2755,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "One declared .app bundle copied from a read-only disk image. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -2897,7 +2929,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2984,7 +3016,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3071,7 +3103,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3212,7 +3244,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A Windows executable installer tracked by Add/Remove Programs identity. Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -3402,7 +3434,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Flatpak applications, optionally from a named remote and branch. Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3498,7 +3530,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Ruby gems via gem install. Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3605,7 +3637,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Clone a Git repository and optionally build it. Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3798,7 +3830,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A GitHub release asset or branch tarball, resolved from the real asset list. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "required": [
@@ -4043,7 +4075,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Go packages via go install. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4166,7 +4198,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "An HTTP artifact that is downloaded, checked, and extracted. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -4385,7 +4417,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Install a project-vendored file or archive without network access. Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4535,7 +4567,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed macOS Installer package tracked by receipt package ID; removal is manual. Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -4705,7 +4737,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Mac App Store applications. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4840,7 +4872,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A Windows Installer product tracked by exact registry identity. Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -5064,7 +5096,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed per-user MSIX package tracked by package name and publisher. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -5242,7 +5274,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5329,7 +5361,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Nix user-profile packages via nix profile. Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5414,7 +5446,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global npm packages. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5503,7 +5535,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5590,7 +5622,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5677,7 +5709,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Pacstall packages on Debian-based systems. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5758,7 +5790,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Arch User Repository packages through the configured AUR helper. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5839,7 +5871,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Python packages via pip. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5928,7 +5960,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Isolated Python CLI tools via pipx. Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6024,7 +6056,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6111,7 +6143,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6198,7 +6230,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global pnpm packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6283,7 +6315,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6370,7 +6402,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6457,7 +6489,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Scoop packages on Windows. Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6561,7 +6593,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "SDKMAN! JVM SDKs. Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6672,7 +6704,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, source-mutation, check, remove.",
+          "description": "Snap packages, with risk shorthand or structured track/risk/branch. Method capabilities: channel, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6787,7 +6819,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "SteamCMD app IDs; ordinary installs fail closed before mutation. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6868,7 +6900,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Python CLI tools via uv tool. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6957,7 +6989,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "VS Code extensions. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7038,7 +7070,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "VSCodium extensions. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7119,7 +7151,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Windows Package Manager (winget). Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7241,7 +7273,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7328,7 +7360,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global Yarn Classic packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7413,7 +7445,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Global Yarn Berry (v2+) packages. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7494,7 +7526,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Arch User Repository packages through the configured AUR helper. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7575,7 +7607,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7662,7 +7694,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7791,7 +7823,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Download an .apk and hand it to Termux's package installer. Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -7960,7 +7992,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Atom packages via the legacy apm CLI. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8077,7 +8109,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Portable .AppImage binaries installed under a stable name. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -8274,7 +8306,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "AppImage packages through AM/AppMan. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8407,7 +8439,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed per-user AppX package tracked by package name and publisher. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -8591,7 +8623,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "asdf plugins and versions, optionally through a mise backend. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8692,7 +8724,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Arch User Repository packages through the configured AUR helper. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8777,7 +8809,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global bun packages. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8945,7 +8977,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Rust crates from crates.io or a Git source, via cargo install. Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9080,7 +9112,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Homebrew Cask applications on macOS. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9165,7 +9197,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Chocolatey packages on Windows. Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9268,7 +9300,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global PHP Composer packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9379,7 +9411,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Conda packages, optionally into a named environment or prefix. Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9514,7 +9546,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Container images pulled with docker or podman. Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9678,7 +9710,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, arbitrary-code, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A .deb package installed and tracked by its exact dpkg identity. Method capabilities: exact-version, arbitrary-code, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -9903,7 +9935,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "One declared .app bundle copied from a read-only disk image. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -10131,7 +10163,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A Windows executable installer tracked by Add/Remove Programs identity. Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -10327,7 +10359,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Flatpak applications, optionally from a named remote and branch. Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10427,7 +10459,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Ruby gems via gem install. Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10532,7 +10564,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Clone a Git repository and optionally build it. Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10725,7 +10757,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A GitHub release asset or branch tarball, resolved from the real asset list. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "required": [
@@ -10976,7 +11008,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Go packages via go install. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -11097,7 +11129,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "An HTTP artifact that is downloaded, checked, and extracted. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -11314,7 +11346,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Install a project-vendored file or archive without network access. Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -11464,7 +11496,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed macOS Installer package tracked by receipt package ID; removal is manual. Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -11640,7 +11672,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "Mac App Store applications. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -11773,7 +11805,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A Windows Installer product tracked by exact registry identity. Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -11997,7 +12029,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "A signed per-user MSIX package tracked by package name and publisher. Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -12181,7 +12213,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Install through the host's own package manager (apt, dnf, pacman, brew, port, pkg, ...). Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12272,7 +12304,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "description": "Nix user-profile packages via nix profile. Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12361,7 +12393,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global npm packages. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12454,7 +12486,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Pacstall packages on Debian-based systems. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12539,7 +12571,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Python packages via pip. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12632,7 +12664,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Isolated Python CLI tools via pipx. Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12732,7 +12764,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global pnpm packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12821,7 +12853,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Scoop packages on Windows. Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -12929,7 +12961,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "SDKMAN! JVM SDKs. Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13044,7 +13076,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, source-mutation, check, remove.",
+          "description": "Snap packages, with risk shorthand or structured track/risk/branch. Method capabilities: channel, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13163,7 +13195,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "SteamCMD app IDs; ordinary installs fail closed before mutation. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13248,7 +13280,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Python CLI tools via uv tool. Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13341,7 +13373,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "VS Code extensions. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13426,7 +13458,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove.",
+          "description": "VSCodium extensions. Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13511,7 +13543,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Windows Package Manager (winget). Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13637,7 +13669,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Global Yarn Classic packages. Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13726,7 +13758,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Global Yarn Berry (v2+) packages. Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -13815,8 +13847,10 @@
           "additionalProperties": {
             "$ref": "#/definitions/tool"
           },
+          "description": "Tools declared by name; a plain string is shorthand for `{ native = \"<name>\" }`.",
           "properties": {
             "simple": {
+              "description": "Bare package names for the inferred native manager.",
               "items": {
                 "type": "string"
               },
@@ -13836,11 +13870,13 @@
       "additionalProperties": false,
       "properties": {
         "name": {
+          "description": "Provider-specific secret name, for example an environment variable.",
           "minLength": 1,
           "pattern": "^[^\\s\\u0000](?:[^\\u0000]*[^\\s\\u0000])?$",
           "type": "string"
         },
         "provider": {
+          "description": "Secret provider; env is the supported provider.",
           "minLength": 1,
           "pattern": "^[^\\s\\u0000](?:[^\\u0000]*[^\\s\\u0000])?$",
           "type": "string"
@@ -13913,6 +13949,7 @@
         },
         "dependency_only": {
           "default": false,
+          "description": "Declare a virtual tool that groups dependencies and has no install method.",
           "type": "boolean"
         },
         "dmg": {
@@ -13958,12 +13995,14 @@
           "$ref": "#/definitions/method_mas"
         },
         "method_only": {
+          "description": "Exclusive method list: only these methods are considered, in this order.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "method_prefer": {
+          "description": "Per-tool method priority prefix; methods not listed stay available.",
           "items": {
             "type": "string"
           },
@@ -14021,15 +14060,18 @@
           "$ref": "#/definitions/method_native"
         },
         "post_install": {
-          "$ref": "#/definitions/hook"
+          "$ref": "#/definitions/hook",
+          "description": "Command that runs after the selected method succeeds."
         },
         "pre_install": {
-          "$ref": "#/definitions/hook"
+          "$ref": "#/definitions/hook",
+          "description": "Command that runs before the selected method is executed."
         },
         "python": {
           "$ref": "#/definitions/bucketMethod"
         },
         "requires": {
+          "description": "Tools that must be installed before this one; each name must also be declared.",
           "items": {
             "type": "string"
           },
@@ -14039,6 +14081,7 @@
           "additionalProperties": {
             "$ref": "#/definitions/condition"
           },
+          "description": "Per-dependency conditions: install the named dependency only when its condition matches.",
           "type": "object"
         },
         "scoop": {
@@ -14054,6 +14097,7 @@
           "$ref": "#/definitions/method_steamcmd"
         },
         "tags": {
+          "description": "Labels selected by `depengine install --tag`.",
           "items": {
             "type": "string"
           },
