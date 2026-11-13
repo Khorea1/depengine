@@ -114,16 +114,16 @@ func printJournalEntries(path string, entries []state.JournalEntry) {
 		widths[2] = max(widths[2], len(entry.Tool))
 		widths[3] = max(widths[3], len(entry.Method))
 	}
-	fmt.Fprintf(os.Stdout, "%-*s  %-*s  %-*s  %-*s  %s\n", widths[0], "TIME (UTC)", widths[1], "COMMAND", widths[2], "TOOL", widths[3], "METHOD", "RESULT")
+	_, _ = fmt.Fprintf(os.Stdout, "%-*s  %-*s  %-*s  %-*s  %s\n", widths[0], "TIME (UTC)", widths[1], "COMMAND", widths[2], "TOOL", widths[3], "METHOD", "RESULT")
 	for _, entry := range entries {
 		stamp := entry.Timestamp
 		if parsed, err := time.Parse(time.RFC3339Nano, entry.Timestamp); err == nil {
 			stamp = parsed.UTC().Format("2006-01-02 15:04:05")
 		}
-		fmt.Fprintf(os.Stdout, "%-*s  %-*s  %-*s  %-*s  %s\n",
+		_, _ = fmt.Fprintf(os.Stdout, "%-*s  %-*s  %-*s  %-*s  %s\n",
 			widths[0], stamp, widths[1], entry.Command, widths[2], entry.Tool, widths[3], entry.Method, entry.Result)
 	}
-	fmt.Fprintf(os.Stderr, "%s\n", cs.dim(fmt.Sprintf("%d entries · %s", len(entries), path)))
+	_, _ = fmt.Fprintf(os.Stderr, "%s\n", cs.dim(fmt.Sprintf("%d entries · %s", len(entries), path)))
 }
 
 // parseJournalBound accepts an absolute timestamp, a date, or a duration

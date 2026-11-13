@@ -72,7 +72,7 @@ func TestJournalRedactsSecretsAndSkipsMalformedLines(t *testing.T) {
 	if err := AppendJournalTo(context.Background(), path, entry); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- test temp file.
 	if err != nil {
 		t.Fatal(err)
 	}
