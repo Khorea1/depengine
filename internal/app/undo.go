@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,8 @@ func relativeTime(t time.Time) string {
 func newUndoCmd() *cobra.Command {
 	undoList := new(bool)
 	undoSpecific := new(string)
+	undoJSON := new(bool)
+	undoFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "undo",
@@ -84,21 +87,27 @@ func newUndoCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUndo(cmd.Context(), undoList, undoSpecific)
+			if err := normalizeOutputFormat(undoFormat, undoJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runUndo(cmd.Context(), undoList, undoSpecific, undoJSON)
 		},
 	}
 	f := cmd.Flags()
 	f.BoolVar(undoList, "list", false, "list available snapshots")
 	f.StringVar(undoSpecific, "snapshot", "", "revert to specific snapshot file path")
+	f.BoolVar(undoJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(undoFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
 // runUndo reverts to a previous state snapshot. Thin orchestrator over the
 // phase helpers below: list/target-selection → load → diff → remove →
 // restore/report. Every exit code matches the pre-split behavior.
-func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
+func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON *bool) error {
 	if *undoList {
-		return runUndoList()
+		return runUndoList(*undoJSON)
 	}
 
 	snapPath, err := resolveUndoSnapshotPath(*undoSpecific)
@@ -126,6 +135,9 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		// removed after the snapshot exist in snapState but not in curState;
 		// restoring snapState.Tools would reintroduce phantom entries.
 		log.Default.Info("nothing to undo (no tools were added since snapshot)")
+		if *undoJSON {
+			return writeUndoReport(snapPath, []string{}, []string{})
+		}
 		return nil
 	}
 
@@ -138,15 +150,48 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
 	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
-	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
+	saveErr := finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
+	if *undoJSON && (saveErr == nil || hadFailure) {
+		if err := writeUndoReport(snapPath, sortedBoolKeys(succeeded), missingStringKeys(toRemove, succeeded)); err != nil {
+			return exitWithCode(3)
+		}
+	}
+	return saveErr
+}
+
+// undoMachineReport is the `undo --format json` payload for an executed undo.
+type undoMachineReport struct {
+	Snapshot string   `json:"snapshot"`
+	Removed  []string `json:"removed"`
+	Failed   []string `json:"failed"`
+}
+
+func writeUndoReport(snapshot string, removed, failed []string) error {
+	return writeMachineOutput(os.Stdout, "undo", undoMachineReport{Snapshot: snapshot, Removed: removed, Failed: failed})
+}
+
+// missingStringKeys returns the sorted names present in want and absent from
+// done, so a machine consumer can retry exactly the failed removals.
+func missingStringKeys(want []string, done map[string]bool) []string {
+	missing := make([]string, 0, len(want))
+	for _, name := range want {
+		if !done[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // runUndoList prints available snapshots newest-first.
-func runUndoList() error {
+func runUndoList(jsonOut bool) error {
 	snapshots, err := state.ListSnapshots()
 	if err != nil {
 		log.Default.Error("list snapshots", "error", err)
 		return exitWithCode(3)
+	}
+	if jsonOut {
+		return writeUndoListReport(snapshots)
 	}
 	if len(snapshots) == 0 {
 		fmt.Fprintln(os.Stderr, "No snapshots available.")
@@ -167,6 +212,35 @@ func runUndoList() error {
 			c.dim(fmt.Sprintf("(%s)", plural(s.ToolCount, "tool"))))
 	}
 	return nil
+}
+
+// undoListMachineReport is the `undo --list --format json` payload. Snapshots
+// keep the newest-first order the text view uses, so index N in the report is
+// the index accepted by --snapshot.
+type undoListMachineReport struct {
+	Snapshots []undoSnapshotEntry `json:"snapshots"`
+}
+
+type undoSnapshotEntry struct {
+	Index     int    `json:"index"`
+	Path      string `json:"path"`
+	Timestamp string `json:"timestamp"`
+	Age       string `json:"age"`
+	Tools     int    `json:"tools"`
+}
+
+func writeUndoListReport(snapshots []state.SnapshotInfo) error {
+	report := undoListMachineReport{Snapshots: make([]undoSnapshotEntry, 0, len(snapshots))}
+	for i, s := range snapshots {
+		report.Snapshots = append(report.Snapshots, undoSnapshotEntry{
+			Index:     i + 1,
+			Path:      s.Path,
+			Timestamp: s.Timestamp.UTC().Format(time.RFC3339),
+			Age:       relativeTime(s.Timestamp),
+			Tools:     s.ToolCount,
+		})
+	}
+	return writeMachineOutput(os.Stdout, "undo", report)
 }
 
 // selectUndoSnapshotPath resolves a --snapshot spec against an already-listed

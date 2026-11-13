@@ -124,6 +124,18 @@ working with a warning through the 1.x line. Removal is scheduled no earlier
 than 2027-06-30; until then, scripts may keep passing it, and new code should
 use `--quiet` instead.
 
+## Machine-output envelope
+
+Every command that emits records writes one JSON document to stdout with the
+shape `{"version": 1, "command": "<path>", "data": <payload>}` (see the
+[machine-output section](cli-reference.md#machine-output)). `version` is the
+envelope version and is independent of the schema, lock, and state versions
+above.
+
+Adding fields inside `data` is a compatible change. Removing or renaming a
+field, changing a `command` value, or moving a payload out of `data` is an
+incompatible change and requires a new envelope version.
+
 ## Legacy host-detector override retirement gate
 
 `DEPENGINE_DETECT_SCRIPT` remains supported by `internal/platform` as a compatibility shell around native Go detection. Do not remove the variable or its behavior until all of these conditions hold:

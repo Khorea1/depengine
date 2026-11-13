@@ -109,6 +109,12 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		runViaCobra(newWhyCmd(), args)
 	case "check":
 		runViaCobra(newCheckCmd(), args)
+	case "status":
+		runViaCobra(newStatusCmd(), args)
+	case "diff":
+		runViaCobra(newDiffCmd(), args)
+	case "doctor":
+		runViaCobra(newDoctorCmd(), args)
 	default:
 		os.Exit(99)
 	}

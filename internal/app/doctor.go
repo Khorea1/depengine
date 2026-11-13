@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -90,6 +89,7 @@ func newDoctorCmd() *cobra.Command {
 	doctorCatalog := new([]string)
 	doctorNoCatalog := new(bool)
 	doctorJSON := new(bool)
+	doctorFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -101,6 +101,10 @@ func newDoctorCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(doctorFormat, doctorJSON); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			return runDoctor(cmd, doctorSchema, doctorManifest, doctorNoManifest, doctorCatalog, doctorNoCatalog, doctorJSON)
 		},
 	}
@@ -109,7 +113,8 @@ func newDoctorCmd() *cobra.Command {
 	f.StringVar(doctorManifest, "manifest", "", "personal manifest path to inspect (default: auto-detect)")
 	f.BoolVar(doctorNoManifest, "no-manifest", false, "ignore the personal manifest")
 	addCatalogFlags(cmd, doctorCatalog, doctorNoCatalog)
-	f.BoolVar(doctorJSON, "json", false, "output as JSON")
+	f.BoolVar(doctorJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(doctorFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
@@ -143,9 +148,7 @@ func runDoctor(cmd *cobra.Command, schema, manifest *string, noManifest *bool, c
 	report := buildDoctorReport(cmd.Context(), run.OSExecRunner{}, opts)
 	w := cmd.OutOrStdout()
 	if *jsonOut {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(report); err != nil {
+		if err := writeMachineOutput(w, "doctor", report); err != nil {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error encoding JSON: %v\n", err)
 			return exitWithCode(3)
 		}

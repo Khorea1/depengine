@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,6 +55,12 @@ func schemaNotFound(path string) error { return &schemaNotFoundError{path: path}
 // validation object `validate --json` uses, so machine consumers parse one
 // shape.
 func presentSchemaLoadError(err error, jsonMode bool) error {
+	return presentSchemaLoadErrorFor("error", err, jsonMode)
+}
+
+// presentSchemaLoadErrorFor is presentSchemaLoadError with the command name
+// carried into the machine-output envelope.
+func presentSchemaLoadErrorFor(command string, err error, jsonMode bool) error {
 	var missing *schemaNotFoundError
 	if !errors.As(err, &missing) {
 		log.Default.Error("load schema", "error", err)
@@ -67,9 +72,7 @@ func presentSchemaLoadError(err error, jsonMode bool) error {
 			Field:   "schema",
 			Message: missing.Error(),
 		}}}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if encErr := enc.Encode(out); encErr != nil {
+		if encErr := writeMachineOutput(os.Stdout, command, out); encErr != nil {
 			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", encErr)
 			return exitWithCode(3)
 		}

@@ -61,8 +61,8 @@ func TestStatusCommandSurfacesLockLoadError(t *testing.T) {
 	}
 
 	manifest, noManifest, format := "", true, "text"
-	jsonFlag, orphans, quiet := false, false, false
-	err := runStatus(context.Background(), &schemaPath, &manifest, &noManifest, &format, &jsonFlag, &orphans, &quiet, nil)
+	orphans, quiet := false, false
+	err := runStatus(context.Background(), &schemaPath, &manifest, &noManifest, &format, &orphans, &quiet, nil)
 	if err == nil {
 		t.Fatal("runStatus succeeded with an invalid lock; want runtime error")
 	}

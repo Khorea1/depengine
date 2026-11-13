@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
@@ -43,12 +42,16 @@ func newStatusCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(statusFormat, statusJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans, statusQuiet, catalog)
+			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusOrphans, statusQuiet, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -57,16 +60,14 @@ func newStatusCmd() *cobra.Command {
 	f.BoolVar(statusNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, statusCatalog, statusNoCatalog)
 	f.StringVar(statusFormat, "format", "text", "output format: text or json")
-	f.BoolVar(statusJSON, "json", false, "JSON output (shorthand for --format=json)")
+	f.BoolVar(statusJSON, "json", false, "shorthand for --format=json")
 	f.BoolVar(statusOrphans, "orphans", false, "show only orphaned tools")
 	f.BoolVar(statusQuiet, "quiet", false, "suppress layer and manifest header lines")
 	return cmd
 }
 
 // runStatus compares tracked and observed host state with the current schema.
-func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans, statusQuiet *bool, catalog *config.Catalog) error {
-	normalizeStatusFormat(statusFormat, statusJSON)
-
+func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusOrphans, statusQuiet *bool, catalog *config.Catalog) error {
 	ls, err := openStatusState(ctx)
 	if err != nil {
 		return err
@@ -111,16 +112,6 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return renderStatusJSON(tools)
 	}
 	return renderStatusTable(tools, *statusOrphans)
-}
-
-// normalizeStatusFormat folds the deprecated --json shorthand into --format.
-func normalizeStatusFormat(statusFormat *string, statusJSON *bool) {
-	if *statusJSON {
-		if *statusFormat == "text" {
-			*statusFormat = "json"
-		}
-		fmt.Fprintln(os.Stderr, "depengine: --json is deprecated; use --format=json instead")
-	}
 }
 
 // openStatusState loads the shared state file for reading.
@@ -324,9 +315,7 @@ func classifyStatusTools(installed map[string]state.ToolState, s *config.Schema,
 
 // renderStatusJSON emits the report as indented JSON on stdout.
 func renderStatusJSON(tools []toolStatus) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(tools); err != nil {
+	if err := writeMachineOutput(os.Stdout, "status", tools); err != nil {
 		log.Default.Error("json output", "error", err)
 		return exitWithCode(3)
 	}

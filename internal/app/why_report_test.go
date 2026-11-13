@@ -167,9 +167,13 @@ func TestWhyJSONAuditReportsRecipeProvenanceAndOverrides(t *testing.T) {
 		}
 	})
 
+	envelope := decodeEnvelope(t, out)
+	if envelope.Command != "why" {
+		t.Fatalf("envelope command = %q, want why", envelope.Command)
+	}
 	var report whyReport
-	if err := json.Unmarshal([]byte(out), &report); err != nil {
-		t.Fatalf("why --json is not the documented object: %v\n%s", err, out)
+	if err := json.Unmarshal(envelope.Data, &report); err != nil {
+		t.Fatalf("why --json data is not the documented object: %v\n%s", err, out)
 	}
 	if report.Tool != "nvim" {
 		t.Fatalf("tool = %q, want nvim", report.Tool)
@@ -227,7 +231,7 @@ func TestWhyJSONAuditReportsRecipeProvenanceAndOverrides(t *testing.T) {
 	}
 
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+	if err := json.Unmarshal(envelope.Data, &raw); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"tool", "recipe", "field_provenance", "catalog_update", "candidates"} {

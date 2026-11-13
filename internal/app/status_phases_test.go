@@ -156,33 +156,6 @@ func TestReconcileStatusToolsUsesV2ProjectionInsteadOfLegacyPin(t *testing.T) {
 	}
 }
 
-func TestNormalizeStatusFormat_JSONShorthand(t *testing.T) {
-	format := "text"
-	isJSON := true
-	normalizeStatusFormat(&format, &isJSON)
-	if format != "json" {
-		t.Fatalf("format = %q, want %q", format, "json")
-	}
-}
-
-func TestNormalizeStatusFormat_ExplicitFormatKept(t *testing.T) {
-	format := "json"
-	isJSON := true
-	normalizeStatusFormat(&format, &isJSON)
-	if format != "json" {
-		t.Fatalf("format = %q, want %q", format, "json")
-	}
-}
-
-func TestNormalizeStatusFormat_NoJSONFlag(t *testing.T) {
-	format := "text"
-	isJSON := false
-	normalizeStatusFormat(&format, &isJSON)
-	if format != "text" {
-		t.Fatalf("format = %q, want %q", format, "text")
-	}
-}
-
 func TestResolveStatusSchemaPath_FlagOverride(t *testing.T) {
 	st := &state.State{SchemaPath: "state.toml"}
 	flag := "flag.toml"

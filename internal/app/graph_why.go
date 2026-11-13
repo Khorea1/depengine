@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -111,7 +110,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 	}
 	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, false)
+		return presentSchemaLoadErrorFor("graph", err, false)
 	}
 	project.presentWarnings("")
 	*graphSchema = project.SchemaPath
@@ -196,6 +195,7 @@ func newWhyCmd() *cobra.Command {
 	whyManifest := new(string)
 	whyNoManifest := new(bool)
 	whyJSON := new(bool)
+	whyFormat := new(string)
 	whyFields := new(bool)
 	whyAll := new(bool)
 	whyCatalog := new([]string)
@@ -216,6 +216,10 @@ func newWhyCmd() *cobra.Command {
 			return cobra.ExactArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(whyFormat, whyJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -232,7 +236,8 @@ func newWhyCmd() *cobra.Command {
 	f.StringVar(whyManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(whyNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, whyCatalog, whyNoCatalog)
-	f.BoolVar(whyJSON, "json", false, "JSON audit report: tool, recipe identity, field provenance, candidates and catalog-update impact")
+	f.BoolVar(whyJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(whyFormat, "format", "text", "output format: text or json")
 	f.BoolVar(whyFields, "fields", false, "show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact")
 	f.BoolVar(whyAll, "all", false, "explain every tool in the schema, one line each")
 	return cmd
@@ -376,7 +381,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	}
 	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, WarningTool: toolName, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, *whyJSON)
+		return presentSchemaLoadErrorFor("why", err, *whyJSON)
 	}
 	project.presentWarnings(toolName)
 	*whySchema = project.SchemaPath
@@ -395,9 +400,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	attempts := ex.ExplainTool(ctx, tool, clan)
 	report := buildWhyReport(toolName, tool, s.Provenance[toolName], attempts)
 	if *whyJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(report); err != nil {
+		if err := writeMachineOutput(os.Stdout, "why", report); err != nil {
 			log.Default.Error("JSON encode", "error", err)
 			return exitWithCode(3)
 		}
@@ -471,7 +474,7 @@ func runWhyAll(ctx context.Context, whySchema, whyManifest *string, whyNoManifes
 	}
 	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, *whyJSON)
+		return presentSchemaLoadErrorFor("why", err, *whyJSON)
 	}
 	project.presentWarnings("")
 	*whySchema = project.SchemaPath
@@ -490,9 +493,7 @@ func runWhyAll(ctx context.Context, whySchema, whyManifest *string, whyNoManifes
 	}
 
 	if *whyJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(reports); err != nil {
+		if err := writeMachineOutput(os.Stdout, "why", reports); err != nil {
 			log.Default.Error("JSON encode", "error", err)
 			return exitWithCode(3)
 		}

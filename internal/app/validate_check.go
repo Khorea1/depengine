@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,6 +28,7 @@ func newValidateCmd() *cobra.Command {
 	validateNoManifest := new(bool)
 	validateCheckEnv := new(bool)
 	validateFormat := new(string)
+	validateJSON := new(bool)
 	validateStrict := new(bool)
 	validateCatalog := new([]string)
 	validateNoCatalog := new(bool)
@@ -43,6 +43,10 @@ func newValidateCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(validateFormat, validateJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict, validateCatalog, validateNoCatalog)
 		},
 	}
@@ -54,6 +58,7 @@ func newValidateCmd() *cobra.Command {
 	f.BoolVar(validateNoCatalog, "no-catalog", false, "disable the recipe catalog (default: auto-detect)")
 	f.BoolVar(validateCheckEnv, "check-env", false, "check system environment for required tools")
 	f.StringVar(validateFormat, "format", "text", "output format: text or json")
+	f.BoolVar(validateJSON, "json", false, "shorthand for --format=json")
 	f.BoolVar(validateStrict, "strict", false, "treat warnings as errors")
 	return cmd
 }
@@ -62,7 +67,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return presentSchemaLoadError(schemaNotFound(*validateSchema), *validateFormat == "json")
+			return presentSchemaLoadErrorFor("validate", schemaNotFound(*validateSchema), *validateFormat == "json")
 		}
 		var sce *config.SchemaCodeError
 		if errors.As(err, &sce) && *validateFormat == "json" {
@@ -73,9 +78,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 					Message: sce.Msg,
 				}},
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(out); err != nil {
+			if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 				return exitWithCode(3)
 			}
@@ -129,9 +132,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 					Message: err.Error(),
 				}},
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(out); err != nil {
+			if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 				return exitWithCode(3)
 			}
@@ -169,9 +170,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			Errors:   result.Errors,
 			Warnings: result.Warnings,
 		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 			return exitWithCode(3)
 		}
@@ -235,12 +234,16 @@ func newCheckCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(checkFormat, checkJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive, catalog)
+			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkFormat, checkLive, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -248,8 +251,8 @@ func newCheckCmd() *cobra.Command {
 	f.StringVar(checkManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(checkNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, checkCatalog, checkNoCatalog)
-	f.BoolVar(checkJSON, "json", false, "JSON output")
-	f.StringVar(checkFormat, "format", "", "output format (json)")
+	f.BoolVar(checkJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(checkFormat, "format", "text", "output format: text or json")
 	f.BoolVar(checkLive, "live", false, "check via adapter (may run subprocesses)")
 	return cmd
 }
@@ -262,7 +265,7 @@ type checkOutput struct {
 }
 
 // runCheck reports whether a single tool satisfies its resolved desired state.
-func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool, catalog *config.Catalog) error {
+func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest *bool, checkFormat *string, checkLive *bool, catalog *config.Catalog) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
@@ -273,10 +276,10 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
-	useJSON := *checkJSON || *checkFormat == "json"
+	useJSON := *checkFormat == "json"
 	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, useJSON)
+		return presentSchemaLoadErrorFor("check", err, useJSON)
 	}
 	project.presentWarnings("")
 	*checkSchema = project.SchemaPath
@@ -300,7 +303,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		checked.Verification = plan.VerificationResult{State: plan.StateBroken, Detail: checkErr.Error()}
 	}
 	if useJSON {
-		_ = json.NewEncoder(os.Stdout).Encode(checkOutput{Tool: toolName, Method: checked.Method, Status: checked.Verification.State, Verification: checked.Verification})
+		_ = writeMachineOutput(os.Stdout, "check", checkOutput{Tool: toolName, Method: checked.Method, Status: checked.Verification.State, Verification: checked.Verification})
 	} else if checked.Verification.State == plan.StateSatisfied {
 		newCLIStyle(os.Stderr).ok("%s satisfies desired state (via %s)", toolName, checked.Method)
 	} else {

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -42,6 +41,7 @@ func newUpgradeCmd() *cobra.Command {
 	upgradeSkip := new(string)
 	upgradeForce := new(bool)
 	upgradeJSON := new(bool)
+	upgradeFormat := new(string)
 	upgradeQuiet := new(bool)
 	upgradeAllowArbitrary := new(bool)
 	upgradeCatalog := new([]string)
@@ -56,6 +56,10 @@ func newUpgradeCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(upgradeFormat, upgradeJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -73,7 +77,8 @@ func newUpgradeCmd() *cobra.Command {
 	f.StringVar(upgradeOnly, "only", "", "only upgrade specific tool")
 	f.StringVar(upgradeSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.BoolVar(upgradeForce, "force", false, "skip confirmation prompt")
-	f.BoolVar(upgradeJSON, "json", false, "JSON output")
+	f.BoolVar(upgradeJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(upgradeFormat, "format", "text", "output format: text or json")
 	f.BoolVar(upgradeQuiet, "quiet", false, "suppress per-tool status lines")
 	f.BoolVar(upgradeAllowArbitrary, "allow-arbitrary-code", false, "permit hooks, build scripts, and other arbitrary code execution")
 	return cmd
@@ -460,8 +465,7 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 			"would_upgrade": counts.wouldUpgrade,
 			"results":       results,
 		}
-		b, _ := json.MarshalIndent(out, "", "  ")
-		fmt.Println(string(b))
+		_ = writeMachineOutput(os.Stdout, "upgrade", out)
 	} else {
 		c := newCLIStyle(os.Stderr)
 		fmt.Fprintln(os.Stderr)
@@ -502,7 +506,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 
 	project, err := loadProject(opts.schema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: opts.catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, opts.jsonOut)
+		return presentSchemaLoadErrorFor("upgrade", err, opts.jsonOut)
 	}
 	if err := validateToolSelectors(project.Schema, opts.only, opts.skip, ""); err != nil {
 		return err

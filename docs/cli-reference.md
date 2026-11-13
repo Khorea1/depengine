@@ -40,7 +40,9 @@ Examples:
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for export |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--lock <string>` | local | `` | v2 lockfile to read (default depengine.lock) |
 | `-o, --output <string>` | local | `` | new bundle directory to create |
 
@@ -58,9 +60,9 @@ Examples:
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
-| `--format <string>` | local | `` | output format (json) |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for check |
-| `--json` | local | `false` | JSON output |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--live` | local | `false` | check via adapter (may run subprocesses) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
@@ -124,8 +126,9 @@ Examples:
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for diff |
-| `--json` | local | `false` | output as JSON |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--other <string>` | local | `` | path to other state file (used when no args) |
 
 ## `depengine doctor [flags]`
@@ -143,8 +146,9 @@ Examples:
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for doctor |
-| `--json` | local | `false` | output as JSON |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--manifest <string>` | local | `` | personal manifest path to inspect (default: auto-detect) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | ignore the personal manifest |
@@ -162,7 +166,9 @@ Examples:
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for forget |
+| `--json` | local | `false` | shorthand for --format=json |
 
 ## `depengine graph [flags]`
 
@@ -263,10 +269,11 @@ Examples:
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
 | `--dry-run` | local | `false` | show what would be installed |
+| `--format <string>` | local | `text` | output format: text or json |
 | `--frozen-lockfile` | local | `false` | fail if depengine.lock is missing, detectably stale, or lacks a supported required pin |
 | `-h, --help` | local | `false` | help for install |
 | `--jobs <int>` | local | `1` | max concurrent installations (default 1 = sequential) |
-| `--json` | local | `false` | JSON output |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--log-level <string>` | local | `` | log level: debug, info, warn, error |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
@@ -298,7 +305,9 @@ Examples:
 | `--all` | local | `false` | remove all tools |
 | `--dry-run` | local | `false` | show what would be removed |
 | `--force` | local | `false` | skip confirmation when removing all tools |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for remove |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--only <string>` | local | `` | only remove specific tool (alternative to positional arg) |
 | `--quiet` | local | `false` | suppress per-tool status lines |
 | `--schema <string>` | local | `` | path to schema.toml (optional, for validation) |
@@ -338,7 +347,7 @@ Examples:
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for status |
-| `--json` | local | `false` | JSON output (shorthand for --format=json) |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -361,7 +370,9 @@ Examples:
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for undo |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--list` | local | `false` | list available snapshots |
 | `--snapshot <string>` | local | `` | revert to specific snapshot file path |
 
@@ -383,8 +394,10 @@ Examples:
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--dry-run` | local | `false` | show what would be updated without writing lock |
+| `--format <string>` | local | `text` | output format: text or json |
 | `--frozen-lockfile` | local | `false` | abort if depengine.lock does not exist |
 | `-h, --help` | local | `false` | help for update |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--lock <string>` | local | `` | path to depengine.lock (default: alongside schema.toml) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
@@ -412,8 +425,9 @@ Examples:
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--dry-run` | local | `false` | show what would be upgraded without making changes |
 | `--force` | local | `false` | skip confirmation prompt |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for upgrade |
-| `--json` | local | `false` | JSON output |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -442,6 +456,7 @@ Examples:
 | `--check-env` | local | `false` | check system environment for required tools |
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for validate |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -477,8 +492,9 @@ Examples:
 | `--all` | local | `false` | explain every tool in the schema, one line each |
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--fields` | local | `false` | show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for why |
-| `--json` | local | `false` | JSON audit report: tool, recipe identity, field provenance, candidates and catalog-update impact |
+| `--json` | local | `false` | shorthand for --format=json |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -507,7 +523,8 @@ declared layers were overridden;
 - what a catalog update would still change, and which fields are shielded by a
   more specific layer.
 
-`why --json` emits one object with these stable keys:
+`why --json` emits one object under the machine-output `data` field with these
+stable keys:
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -533,6 +550,50 @@ many earlier candidates were rejected. `why --all --json` emits an array of
 the per-tool objects described above, ordered by tool name. `--fields` adds the
 full audit block under each line.
 
+## Machine output
+
+Every command that renders machine-readable output accepts `--format json` and
+the `--json` shorthand, and writes exactly one JSON document to stdout. Human
+progress and warnings stay on stderr. The document is a versioned envelope:
+
+```json
+{
+  "version": 1,
+  "command": "status",
+  "data": []
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `version` | Envelope version, independent of the schema, lock, and state format versions |
+| `command` | Canonical command path that produced the payload (`bundle export` for subcommands) |
+| `data` | Command-specific payload |
+
+New fields are added inside `data`; envelope fields do not change. Payload
+shapes by command:
+
+| Command | `data` |
+|---|---|
+| `bundle export` | `lock_path`, `output`, `artifacts` |
+| `check` | one `tool`, `method`, `status`, `verification` object |
+| `diff` | array of changed fields |
+| `doctor` | report object |
+| `forget` | `tool` |
+| `install` | execution report |
+| `remove` | `dry_run`, `removed`, `failed` |
+| `status` | array of tool status entries |
+| `undo` | `snapshot`, `removed`, `failed`; with `--list`, `snapshots` |
+| `update` | `lock_path`, `lock_version`, `dry_run`, `pinned`, `tools` |
+| `upgrade` | counters and per-tool `results` |
+| `validate` | `errors`, `warnings` |
+| `why` | audit object; an array with `--all` |
+
+An unknown `--format` value exits `2`. Schema-loading failures still produce an
+envelope, with `E_SCHEMA_*` codes inside `data`. `sbom` and `graph` keep their
+command-specific format families (`--format spdx|cyclonedx` and
+`--format text|graph`) because their output is not a generic record shape.
+
 ## Flag conventions
 
 Flags keep the same name and meaning across commands. A command omits a flag
@@ -545,7 +606,7 @@ only when the behavior does not apply, and the exceptions are deliberate:
 | Progress | `--quiet` | Suppresses progress and auxiliary headers, never errors, warnings, or the primary result. |
 | Confirmation | `--force` | Skips an interactive confirmation. Only commands that prompt (`remove`, `upgrade`) accept it. |
 | Detail | `--verbose` | Adds diagnostic detail. On `install` detailed output is already the default, so the flag is a deprecated no-op with a documented removal window. |
-| Machine output | `--format text\|json`, `--json` | Stable machine-readable output; `--json` is a shorthand for `--format json`. |
+| Machine output | `--format text\|json`, `--json` | Every command that emits records accepts both flags; output is the versioned envelope described above. `--json` is a shorthand for `--format json`. |
 
 ## Exit codes
 

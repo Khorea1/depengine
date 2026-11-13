@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ func newRemoveCmd() *cobra.Command {
 	removeOnly := new(string)
 	removeForce := new(bool)
 	removeQuiet := new(bool)
+	removeJSON := new(bool)
+	removeFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "remove [tool...]",
@@ -40,7 +43,11 @@ func newRemoveCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeQuiet)
+			if err := normalizeOutputFormat(removeFormat, removeJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeQuiet, removeJSON)
 		},
 	}
 	f := cmd.Flags()
@@ -50,6 +57,8 @@ func newRemoveCmd() *cobra.Command {
 	f.StringVar(removeOnly, "only", "", "only remove specific tool (alternative to positional arg)")
 	f.BoolVar(removeForce, "force", false, "skip confirmation when removing all tools")
 	f.BoolVar(removeQuiet, "quiet", false, "suppress per-tool status lines")
+	f.BoolVar(removeJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(removeFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
@@ -71,7 +80,7 @@ type removeSession struct {
 
 // runRemove validates flags and configures a run-scoped executor before
 // delegating the state, selection, removal, ownership, and persistence flow.
-func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeQuiet *bool) error {
+func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeQuiet, removeJSON *bool) error {
 	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
 		return err
 	}
@@ -88,13 +97,13 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
-	return runRemoveWithExecutor(ctx, removeArgs, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, executor, facts)
+	return runRemoveWithExecutor(ctx, removeArgs, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeJSON, executor, facts)
 }
 
 // runRemoveWithExecutor runs the complete state-driven removal flow using the
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
-func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *platform.Facts) error {
+func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeJSON *bool, executor *exec.Executor, facts *platform.Facts) error {
 	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err
@@ -135,10 +144,47 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		return err
 	}
 
+	if *removeJSON {
+		payload := removeMachineResult{
+			DryRun:  *removeDryRun,
+			Removed: sortedBoolKeys(sess.removedThisRun),
+			Failed:  missingBoolKeys(sess.requestedRemoval, sess.removedThisRun),
+		}
+		if err := writeMachineOutput(os.Stdout, "remove", payload); err != nil {
+			return exitWithCode(3)
+		}
+	}
+
 	if hadFailure {
 		return exitWithCode(1)
 	}
 	return nil
+}
+
+type removeMachineResult struct {
+	DryRun  bool     `json:"dry_run"`
+	Removed []string `json:"removed"`
+	Failed  []string `json:"failed"`
+}
+
+func sortedBoolKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func missingBoolKeys(all, done map[string]bool) []string {
+	keys := make([]string, 0)
+	for key := range all {
+		if !done[key] {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // validateRemoveFlags rejects mutually exclusive flag combinations.
@@ -178,7 +224,7 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, 
 	}
 	s, _, _, err := loadSchema(schemaPath)
 	if err != nil {
-		return nil, "", presentSchemaLoadError(err, false)
+		return nil, "", presentSchemaLoadErrorFor("remove", err, false)
 	}
 	return s.Tools, s.Defaults.AurHelper, nil
 }

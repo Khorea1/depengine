@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -36,6 +37,7 @@ func newInstallCmd() *cobra.Command {
 	installDryRun := new(bool)
 	installVerbose := new(bool)
 	installJSON := new(bool)
+	installFormat := new(string)
 	installOnly := new(string)
 	installSkip := new(string)
 	installProfile := new(string)
@@ -62,6 +64,10 @@ func newInstallCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(installFormat, installJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
 		},
 	}
@@ -72,7 +78,8 @@ func newInstallCmd() *cobra.Command {
 	addCatalogFlags(cmd, installCatalog, installNoCatalog)
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
 	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
-	f.BoolVar(installJSON, "json", false, "JSON output")
+	f.BoolVar(installJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(installFormat, "format", "text", "output format: text or json")
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
@@ -353,7 +360,7 @@ func installOutputMode(json, quiet, verbose bool) string {
 func renderInstallReport(report *exec.ExecReport, p installPlan, cs *cliStyle) {
 	switch installOutputMode(p.json, p.quiet, p.verbose) {
 	case "json":
-		fmt.Println(report.JSON())
+		_ = writeMachineOutput(os.Stdout, "install", json.RawMessage(report.JSON()))
 	case "detail":
 		fmt.Fprint(os.Stderr, report.Detail())
 	default:
@@ -458,7 +465,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 
 	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, p.json)
+		return presentSchemaLoadErrorFor("install", err, p.json)
 	}
 	project.presentWarnings("")
 	p.schema = project.SchemaPath

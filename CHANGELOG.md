@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Emit one versioned machine-output envelope (`version`, `command`, `data`)
+  from every command that produces machine-readable output, and give
+  `update`, `undo`, `forget`, `bundle export`, `validate`, `check`, `remove`,
+  and `diff` the same `--format text|json` / `--json` surface. Payloads that
+  were previously top-level JSON objects or arrays now live under `data`; the
+  envelope version is documented in the compatibility contract.
 - Add artifact bundle export and frozen install support for locked HTTP/GitHub
   payloads with literal SHA-256 checksums; signature-backed artifacts and
   package-manager dependency graphs remain outside the offline bundle boundary.

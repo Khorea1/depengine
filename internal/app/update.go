@@ -28,6 +28,8 @@ func newUpdateCmd() *cobra.Command {
 	updateDryRun := new(bool)
 	updateVerbose := new(bool)
 	updateQuiet := new(bool)
+	updateJSON := new(bool)
+	updateFormat := new(string)
 	updateCatalog := new([]string)
 	updateNoCatalog := new(bool)
 
@@ -41,12 +43,16 @@ func newUpdateCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(updateFormat, updateJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, updateQuiet, catalog)
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -60,10 +66,12 @@ func newUpdateCmd() *cobra.Command {
 	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
 	f.BoolVarP(updateVerbose, "verbose", "v", false, "include the resolved lock projection in the output")
 	f.BoolVar(updateQuiet, "quiet", false, "suppress progress and the Next hint")
+	f.BoolVar(updateJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(updateFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose, updateQuiet *bool, catalog *config.Catalog) error {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON *bool, catalog *config.Catalog) error {
 	lg := log.Default
 	quiet := *updateQuiet
 
@@ -79,7 +87,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 
 	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
-		return presentSchemaLoadError(err, false)
+		return presentSchemaLoadErrorFor("update", err, *updateJSON)
 	}
 	if err := validateToolSelectors(project.Schema, "", "", *updateProfile); err != nil {
 		return err
@@ -300,7 +308,59 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if hint := updateNextStepHint(*updateDryRun, newLock); hint != "" {
 		printNextStep(c, quiet, false, hint)
 	}
+	if *updateJSON {
+		report := buildUpdateMachineReport(lockPath, newLock, projection, *updateDryRun, nativeFallback)
+		if err := writeMachineOutput(os.Stdout, "update", report); err != nil {
+			return exitWithCode(3)
+		}
+	}
 	return nil
+}
+
+// updateMachineReport is the `update --format json` payload: every pin the
+// resolved lock now carries, in stable tool order.
+type updateMachineReport struct {
+	LockPath       string             `json:"lock_path"`
+	LockVersion    int                `json:"lock_version"`
+	DryRun         bool               `json:"dry_run"`
+	Pinned         int                `json:"pinned"`
+	Tools          []updateMachinePin `json:"tools"`
+	NativeFallback []string           `json:"native_fallback,omitempty"`
+}
+
+type updateMachinePin struct {
+	Tool string `json:"tool"`
+	Pin  string `json:"pin"`
+}
+
+// buildUpdateMachineReport projects either lock representation into the same
+// machine payload. Universal locks expose their projection entries; legacy v1
+// locks expose sorted pin keys.
+func buildUpdateMachineReport(lockPath string, newLock *lock.Lock, projection *plan.LockDocument, dryRun bool, nativeFallback []string) updateMachineReport {
+	report := updateMachineReport{
+		LockPath:       lockPath,
+		LockVersion:    newLock.Version,
+		DryRun:         dryRun,
+		Tools:          []updateMachinePin{},
+		NativeFallback: nativeFallback,
+	}
+	if projection != nil {
+		for _, entry := range projection.Entries {
+			report.Tools = append(report.Tools, updateMachinePin{Tool: entry.Tool.Name, Pin: updateProjectionValue(entry)})
+		}
+		report.Pinned = len(report.Tools)
+	} else {
+		keys := make([]string, 0, len(newLock.Tools))
+		for key := range newLock.Tools {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			report.Tools = append(report.Tools, updateMachinePin{Tool: key, Pin: updatePinValue(newLock.Tools[key])})
+		}
+		report.Pinned = len(keys)
+	}
+	return report
 }
 
 // updateNextStepHint returns the command that applies a freshly written lock.

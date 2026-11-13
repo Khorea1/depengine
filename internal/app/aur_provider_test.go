@@ -27,7 +27,7 @@ func TestRunRemoveAURWithoutSchemaUsesPersistedProvider(t *testing.T) {
 	executor := exec.New()
 	all, dryRun, force := false, false, false
 	schema, only := "", "demo"
-	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil); err != nil {
+	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, new(bool), executor, nil); err != nil {
 		t.Fatalf("runRemove without schema: %v", err)
 	}
 	if _, err := os.Stat(installedPath); !os.IsNotExist(err) {

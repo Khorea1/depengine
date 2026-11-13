@@ -417,20 +417,30 @@ func TestUpgradeJSONOutput(t *testing.T) {
 	if jsonStart < 0 {
 		t.Fatalf("no JSON in output: %s", out)
 	}
-	var result map[string]any
+	var result struct {
+		Version int    `json:"version"`
+		Command string `json:"command"`
+		Data    struct {
+			Upgraded int `json:"upgraded"`
+			Results  []struct {
+				Status string `json:"status"`
+			} `json:"results"`
+		} `json:"data"`
+	}
 	if err := json.Unmarshal([]byte(out[jsonStart:]), &result); err != nil {
 		t.Fatalf("invalid JSON output: %v (raw: %s)", err, out)
 	}
-	if result["upgraded"].(float64) != 0 {
-		t.Fatalf("upgraded = %v, want 0 (dry-run)", result["upgraded"])
+	if result.Version != 1 || result.Command != "upgrade" {
+		t.Fatalf("envelope = v%d %q, want v1 upgrade", result.Version, result.Command)
 	}
-	results := result["results"].([]any)
-	if len(results) != 1 {
-		t.Fatalf("results length = %d, want 1", len(results))
+	if result.Data.Upgraded != 0 {
+		t.Fatalf("upgraded = %v, want 0 (dry-run)", result.Data.Upgraded)
 	}
-	r := results[0].(map[string]any)
-	if r["status"] != "would_upgrade" {
-		t.Fatalf("status = %v, want would_upgrade", r["status"])
+	if len(result.Data.Results) != 1 {
+		t.Fatalf("results length = %d, want 1", len(result.Data.Results))
+	}
+	if got := result.Data.Results[0].Status; got != "would_upgrade" {
+		t.Fatalf("status = %v, want would_upgrade", got)
 	}
 }
 

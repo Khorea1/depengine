@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"os"
+
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -9,19 +12,28 @@ import (
 
 // newForgetCmd builds `depengine forget`.
 func newForgetCmd() *cobra.Command {
-	return &cobra.Command{
+	forgetJSON := new(bool)
+	forgetFormat := new(string)
+	cmd := &cobra.Command{
 		Use:     "forget <tool>",
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
 		Example: `  depengine forget nvim   # drop install state; the system is untouched`,
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runForgetContext(cmd.Context(), args[0])
+			if err := normalizeOutputFormat(forgetFormat, forgetJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runForgetContext(cmd.Context(), args[0], *forgetJSON)
 		},
 	}
+	cmd.Flags().BoolVar(forgetJSON, "json", false, "shorthand for --format=json")
+	cmd.Flags().StringVar(forgetFormat, "format", "text", "output format: text or json")
+	return cmd
 }
 
-func runForgetContext(ctx context.Context, toolName string) error {
+func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error {
 	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
@@ -41,5 +53,10 @@ func runForgetContext(ctx context.Context, toolName string) error {
 	}
 
 	log.Default.Info("forgotten", "tool", toolName)
+	if jsonOut {
+		if err := writeMachineOutput(os.Stdout, "forget", map[string]string{"tool": toolName}); err != nil {
+			return exitWithCode(3)
+		}
+	}
 	return nil
 }

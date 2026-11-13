@@ -63,7 +63,7 @@ the usual cause, the fix, and the command that shows more detail.
 | `No tools in state. Run 'depengine install' first.` | 0 | `status` has no tracked tools to compare | Run `depengine install` | `depengine doctor` |
 | `No orphan tools.` | 0 | `status --orphans` found nothing outside the schema | No action needed | `depengine status` |
 | `default native manager` | 1 | `doctor` cannot find the clan's default manager on `PATH` | Install the manager or choose another method | `depengine doctor` |
-| `native installs need elevation` | 1 | `doctor` found no working `sudo`/`doas`/`pkexec`/`run0` | Install an elevation helper or run as root | `depengine doctor` || `--json is deprecated; use --format=json instead` | 0 | A command still accepts the legacy `--json` shorthand | Switch scripts to `--format json` | `depengine status --help` |
+| `native installs need elevation` | 1 | `doctor` found no working `sudo`/`doas`/`pkexec`/`run0` | Install an elevation helper or run as root | `depengine doctor` |
 | `--verbose is deprecated` | 0 | Detailed output is the default now | Use `--quiet` to suppress per-tool lines | `depengine install --help` |
 
 ## Diagnose by exit code

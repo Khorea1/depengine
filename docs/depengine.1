@@ -235,8 +235,14 @@ Show version Scope: local. Default: false.
 help for bundle Scope: local. Default: false.
 .SS "depengine bundle export flags"
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for export Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-lock <string>"
 v2 lockfile to read (default depengine.lock) Scope: local. Default: .
@@ -249,13 +255,13 @@ new bundle directory to create Scope: local. Default: .
 path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-format <string>"
-output format (json) Scope: local. Default: .
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for check Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-live"
 check via adapter (may run subprocesses) Scope: local. Default: false.
@@ -305,11 +311,14 @@ help for zsh Scope: local. Default: false.
 disable completion descriptions Scope: local. Default: false.
 .SS "depengine diff flags"
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for diff Scope: local. Default: false.
 .TP
 .B "\-\-json"
-output as JSON Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-other <string>"
 path to other state file (used when no args) Scope: local. Default: .
@@ -318,11 +327,14 @@ path to other state file (used when no args) Scope: local. Default: .
 .B "\-\-catalog <stringArray>"
 path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for doctor Scope: local. Default: false.
 .TP
 .B "\-\-json"
-output as JSON Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 personal manifest path to inspect (default: auto\-detect) Scope: local. Default: .
@@ -337,8 +349,14 @@ ignore the personal manifest Scope: local. Default: false.
 schema path to inspect Scope: local. Default: schema.toml.
 .SS "depengine forget flags"
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for forget Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine graph flags"
 .TP
 .B "\-\-catalog <stringArray>"
@@ -435,6 +453,9 @@ diagnostic mode: DEBUG + dry\-run + detailed report Scope: local. Default: false
 .B "\-\-dry\-run"
 show what would be installed Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-\-frozen\-lockfile"
 fail if depengine.lock is missing, detectably stale, or lacks a supported required pin Scope: local. Default: false.
 .TP
@@ -445,7 +466,7 @@ help for install Scope: local. Default: false.
 max concurrent installations (default 1 = sequential) Scope: local. Default: 1.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-log\-level <string>"
 log level: debug, info, warn, error Scope: local. Default: .
@@ -490,8 +511,14 @@ show what would be removed Scope: local. Default: false.
 .B "\-\-force"
 skip confirmation when removing all tools Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for remove Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-only <string>"
 only remove specific tool (alternative to positional arg) Scope: local. Default: .
@@ -520,7 +547,7 @@ output format: text or json Scope: local. Default: text.
 help for status Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output (shorthand for \-\-format=json) Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
@@ -541,8 +568,14 @@ suppress layer and manifest header lines Scope: local. Default: false.
 override schema path Scope: local. Default: .
 .SS "depengine undo flags"
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for undo Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-list"
 list available snapshots Scope: local. Default: false.
@@ -557,11 +590,17 @@ path to a recipe catalog root (repeatable; default: platform config dir/depengin
 .B "\-\-dry\-run"
 show what would be updated without writing lock Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-\-frozen\-lockfile"
 abort if depengine.lock does not exist Scope: local. Default: false.
 .TP
 .B "\-h, \-\-help"
 help for update Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-lock <string>"
 path to depengine.lock (default: alongside schema.toml) Scope: local. Default: .
@@ -600,11 +639,14 @@ show what would be upgraded without making changes Scope: local. Default: false.
 .B "\-\-force"
 skip confirmation prompt Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for upgrade Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
@@ -640,6 +682,9 @@ output format: text or json Scope: local. Default: text.
 .B "\-h, \-\-help"
 help for validate Scope: local. Default: false.
 .TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
 .TP
@@ -669,11 +714,14 @@ path to a recipe catalog root (repeatable; default: platform config dir/depengin
 .B "\-\-fields"
 show the full audit: recipe identity, field provenance, selected candidate and catalog\-update impact Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for why Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON audit report: tool, recipe identity, field provenance, candidates and catalog\-update impact Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .

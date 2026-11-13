@@ -92,15 +92,20 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 	setEnglishLocale(t)
 	docs := normalizeCLI(newRootCmd())
 	cases := map[string][]string{
-		"depengine":         {"help", "version"},
-		"depengine help":    {"help", "man"},
-		"depengine install": {"allow-arbitrary-code", "bundle", "catalog", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
-		"depengine check":   {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
-		"depengine doctor":  {"catalog", "help", "json", "manifest", "no-catalog", "no-manifest", "schema"},
-		"depengine graph":   {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
-		"depengine remove":  {"all", "dry-run", "force", "help", "only", "quiet", "schema"},
-		"depengine diff":    {"help", "json", "other"},
-		"depengine sbom":    {"format", "help"},
+		"depengine":               {"help", "version"},
+		"depengine help":          {"help", "man"},
+		"depengine install":       {"allow-arbitrary-code", "bundle", "catalog", "diagnose", "dry-run", "format", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
+		"depengine check":         {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
+		"depengine doctor":        {"catalog", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema"},
+		"depengine graph":         {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
+		"depengine remove":        {"all", "dry-run", "force", "format", "help", "json", "only", "quiet", "schema"},
+		"depengine diff":          {"format", "help", "json", "other"},
+		"depengine sbom":          {"format", "help"},
+		"depengine validate":      {"catalog", "check-env", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
+		"depengine update":        {"catalog", "dry-run", "format", "frozen-lockfile", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "profile", "quiet", "schema", "verbose"},
+		"depengine undo":          {"format", "help", "json", "list", "snapshot"},
+		"depengine forget":        {"format", "help", "json"},
+		"depengine bundle export": {"format", "help", "json", "lock", "output"},
 	}
 	for path, want := range cases {
 		doc := commandDocByPath(docs, path)
