@@ -261,12 +261,17 @@ Examples:
 ```sh
   depengine init                          # interactive scaffold
   depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --from-state             # adopt installed tools from tracked state
+  depengine init --from-manifest --dry-run  # adopt personal manifest entries without writing
   depengine init --schema path/to/schema.toml
 ```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--add <string>` | local | `` | comma-separated tool names to pre-populate (e.g. 'zsh,bat,nvim') |
+| `--dry-run` | local | `false` | print the resulting schema without writing it |
+| `--from-manifest <string>` | local | `` | adopt tools from the personal manifest (optional manifest path) |
+| `--from-state <string>` | local | `` | adopt tools from tracked state (optional state file path) |
 | `-h, --help` | local | `false` | help for init |
 | `--interactive` | local | `false` | interactive mode: walk through adding tools |
 | `--schema <string>` | local | `` | path to write (default: schema.toml) |
@@ -574,6 +579,27 @@ prints one line per tool: the selected candidate, the reason it won, and how
 many earlier candidates were rejected. `why --all --json` emits an array of
 the per-tool objects described above, ordered by tool name. `--fields` adds the
 full audit block under each line.
+
+## Adopting an existing project
+
+`depengine init --from-state` and `--from-manifest` generate `schema.toml` from
+installation knowledge that already exists instead of asking you to retype tool
+names:
+
+- `--from-state [path]` adopts tracked installations (default: the state file),
+  recording the method that installed each tool and its package/artifact
+  config.
+- `--from-manifest [path]` adopts personal manifest entries (default:
+  `~/.config/depengine/manifest.toml`).
+
+Both modes print the result with `--dry-run`, merge into an existing schema
+without rewriting declared tools or unrelated comments, and leave `# TODO`
+comments where the source does not record enough to declare a method. Alias
+labels are normalized to their canonical method kind, and the original provider
+is kept as a comment. Review the TODOs before committing: adoption records what
+was installed, not necessarily the minimum method set the project should
+declare. The two flags cannot be combined with each other, with `--interactive`,
+or with `--add`.
 
 ## `audit` consistency gate
 

@@ -129,6 +129,8 @@ Examples:
 .nf
   depengine init                          # interactive scaffold
   depengine init \-\-add "zsh,bat,nvim"     # non\-interactive tool list
+  depengine init \-\-from\-state             # adopt installed tools from tracked state
+  depengine init \-\-from\-manifest \-\-dry\-run  # adopt personal manifest entries without writing
   depengine init \-\-schema path/to/schema.toml
 .fi
 .TP
@@ -466,6 +468,15 @@ help for import Scope: local. Default: false.
 .TP
 .B "\-\-add <string>"
 comma\-separated tool names to pre\-populate (e.g. 'zsh,bat,nvim') Scope: local. Default: .
+.TP
+.B "\-\-dry\-run"
+print the resulting schema without writing it Scope: local. Default: false.
+.TP
+.B "\-\-from\-manifest <string>"
+adopt tools from the personal manifest (optional manifest path) Scope: local. Default: .
+.TP
+.B "\-\-from\-state <string>"
+adopt tools from tracked state (optional state file path) Scope: local. Default: .
 .TP
 .B "\-h, \-\-help"
 help for init Scope: local. Default: false.

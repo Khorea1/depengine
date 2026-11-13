@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine init --from-state [path]` and `--from-manifest [path]` to adopt
+  tools that are already installed or declared in the personal manifest.
+  Adoption merges into an existing schema without rewriting declared tools,
+  supports `--dry-run`, and leaves TODO comments where the source lacks enough
+  detail to declare a method.
 - Add `depengine audit`: one read-only report reconciling the effective schema,
   layer merge, lockfile and tracked state/host identity. Each divergence carries
   a remediation, `--strict` turns warnings into a failing gate, and `--json`

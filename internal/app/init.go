@@ -44,16 +44,37 @@ func newInitCmd() *cobra.Command {
 	output := new(string)
 	addTools := new(string)
 	interactive := new(bool)
+	fromState := new(string)
+	fromManifest := new(string)
+	dryRun := new(bool)
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: ifPT("Inicializar schema.toml para um projeto", "Initialize a schema.toml for a new project"),
 		Example: `  depengine init                          # interactive scaffold
   depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --from-state             # adopt installed tools from tracked state
+  depengine init --from-manifest --dry-run  # adopt personal manifest entries without writing
   depengine init --schema path/to/schema.toml`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
+			if *fromState != "" && *fromManifest != "" {
+				fmt.Fprintln(os.Stderr, "error: --from-state and --from-manifest are mutually exclusive")
+				return exitWithCode(2)
+			}
+			if (*fromState != "" || *fromManifest != "") && (*interactive || *addTools != "") {
+				fmt.Fprintln(os.Stderr, "error: --from-state/--from-manifest cannot be combined with --interactive or --add")
+				return exitWithCode(2)
+			}
+			if *fromState != "" || *fromManifest != "" {
+				return runInitAdopt(initAdoptOptions{
+					Output:       *output,
+					FromState:    *fromState,
+					FromManifest: *fromManifest,
+					DryRun:       *dryRun,
+				})
+			}
 			return runInit(output, addTools, interactive)
 		},
 	}
@@ -61,6 +82,11 @@ func newInitCmd() *cobra.Command {
 	f.StringVar(output, "schema", "", "path to write (default: schema.toml)")
 	f.StringVar(addTools, "add", "", "comma-separated tool names to pre-populate (e.g. 'zsh,bat,nvim')")
 	f.BoolVar(interactive, "interactive", false, "interactive mode: walk through adding tools")
+	f.StringVar(fromState, "from-state", "", "adopt tools from tracked state (optional state file path)")
+	f.Lookup("from-state").NoOptDefVal = "auto"
+	f.StringVar(fromManifest, "from-manifest", "", "adopt tools from the personal manifest (optional manifest path)")
+	f.Lookup("from-manifest").NoOptDefVal = "auto"
+	f.BoolVar(dryRun, "dry-run", false, "print the resulting schema without writing it")
 	return cmd
 }
 
