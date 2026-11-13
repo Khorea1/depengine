@@ -197,22 +197,32 @@ func newWhyCmd() *cobra.Command {
 	whyNoManifest := new(bool)
 	whyJSON := new(bool)
 	whyFields := new(bool)
+	whyAll := new(bool)
 	whyCatalog := new([]string)
 	whyNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "why <tool>",
+		Use:     "why [tool]",
 		Aliases: []string{"explain"},
 		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
 		Example: `  depengine why nvim --fields   # method, provenance and catalog impact
-  depengine why nvim --json`,
+  depengine why nvim --json
+  depengine why --all           # one line per tool in the schema`,
 		GroupID: groupInspect,
-		Args:    cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if *whyAll {
+				return cobra.NoArgs(cmd, args)
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			catalog, err := catalogFromCommand(cmd)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
+			}
+			if *whyAll {
+				return runWhyAll(cmd.Context(), whySchema, whyManifest, whyNoManifest, whyJSON, whyFields, catalog)
 			}
 			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields, catalog)
 		},
@@ -224,6 +234,7 @@ func newWhyCmd() *cobra.Command {
 	addCatalogFlags(cmd, whyCatalog, whyNoCatalog)
 	f.BoolVar(whyJSON, "json", false, "JSON audit report: tool, recipe identity, field provenance, candidates and catalog-update impact")
 	f.BoolVar(whyFields, "fields", false, "show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact")
+	f.BoolVar(whyAll, "all", false, "explain every tool in the schema, one line each")
 	return cmd
 }
 
@@ -443,4 +454,102 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		renderWhyAudit(c.w, report)
 	}
 	return nil
+}
+
+// runWhyAll explains every tool in the effective schema with one compact line
+// per tool. It reuses the single-tool report so the batch and per-tool
+// contracts cannot drift.
+func runWhyAll(ctx context.Context, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool, catalog *config.Catalog) error {
+	noManifest := *whyNoManifest
+	manifestPath := *whyManifest
+	manifestAuto := false
+	if !noManifest && manifestPath == "" {
+		manifestPath = config.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, Catalog: catalog})
+	if err != nil {
+		return presentSchemaLoadError(err, *whyJSON)
+	}
+	project.presentWarnings("")
+	*whySchema = project.SchemaPath
+	s, facts, clan := project.Schema, project.Facts, project.Clan
+	if project.ManifestCount > 0 && project.ManifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+	}
+
+	names := sortedToolNames(s.Tools)
+	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
+	reports := make([]*whyReport, 0, len(names))
+	for _, name := range names {
+		tool := s.Tools[name]
+		attempts := ex.ExplainTool(ctx, tool, clan)
+		reports = append(reports, buildWhyReport(name, tool, s.Provenance[name], attempts))
+	}
+
+	if *whyJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(reports); err != nil {
+			log.Default.Error("JSON encode", "error", err)
+			return exitWithCode(3)
+		}
+		return nil
+	}
+
+	renderWhyAll(os.Stdout, reports)
+	if *whyFields {
+		c := newCLIStyle(os.Stdout)
+		for _, report := range reports {
+			_, _ = fmt.Fprintf(c.w, "\n%s\n", c.bold(report.Tool))
+			renderWhyAudit(c.w, report)
+		}
+	}
+	return nil
+}
+
+// renderWhyAll prints one deterministic line per tool. The line names the
+// selected candidate and how many earlier candidates were rejected, so a
+// host that picked a fallback is visible without a second query.
+func renderWhyAll(w *os.File, reports []*whyReport) {
+	c := newCLIStyle(w)
+	_, _ = fmt.Fprintf(c.w, "%s\n\n", c.bold(fmt.Sprintf("Why all %d tools?", len(reports))))
+	nameW := 0
+	for _, report := range reports {
+		if len(report.Tool) > nameW {
+			nameW = len(report.Tool)
+		}
+	}
+	for _, report := range reports {
+		selected, reason := whyAllSummary(report)
+		_, _ = fmt.Fprintf(c.w, "  %s  →  %-20s  %s\n", padRight(report.Tool, nameW), selected, c.dim(reason))
+	}
+}
+
+// whyAllSummary reduces one report to the selected candidate and a readable
+// reason. It is pure so the batch view stays testable without a terminal.
+func whyAllSummary(report *whyReport) (selected, reason string) {
+	selected = "none"
+	reason = "no candidate can install on this host"
+	if report.Selected != nil {
+		selected = fmt.Sprintf("%s #%d", report.Selected.displayName(), report.Selected.Candidate)
+		reason = report.Selected.Reason
+		rejected := 0
+		for _, candidate := range report.Candidates {
+			if candidate.Kind == report.Selected.Kind && candidate.Candidate == report.Selected.Candidate {
+				break
+			}
+			rejected++
+		}
+		if rejected > 0 {
+			reason = fmt.Sprintf("%s; %d earlier candidate(s) rejected", reason, rejected)
+		}
+		return selected, reason
+	}
+	if len(report.Candidates) > 0 && report.Candidates[0].ReasonCode != "" {
+		reason = "no candidate can install (" + report.Candidates[0].ReasonCode + ")"
+	}
+	return selected, reason
 }

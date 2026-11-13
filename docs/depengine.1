@@ -211,7 +211,7 @@ Examples:
 Show version
 Hidden compatibility command.
 .TP
-.B "depengine why <tool> [flags]"
+.B "depengine why [tool] [flags]"
 Explain how a tool would be installed
 Aliases: explain.
 .PP
@@ -219,6 +219,7 @@ Examples:
 .nf
   depengine why nvim \-\-fields   # method, provenance and catalog impact
   depengine why nvim \-\-json
+  depengine why \-\-all           # one line per tool in the schema
 .fi
 .SH OPTIONS
 .SS "depengine flags"
@@ -646,6 +647,9 @@ treat warnings as errors Scope: local. Default: false.
 .B "\-h, \-\-help"
 help for version Scope: local. Default: false.
 .SS "depengine why flags"
+.TP
+.B "\-\-all"
+explain every tool in the schema, one line each Scope: local. Default: false.
 .TP
 .B "\-\-catalog <stringArray>"
 path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].

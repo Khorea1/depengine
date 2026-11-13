@@ -454,7 +454,7 @@ Visibility: hidden (documented compatibility command).
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for version |
 
-## `depengine why <tool> [flags]`
+## `depengine why [tool] [flags]`
 
 Explain how a tool would be installed
 
@@ -465,10 +465,12 @@ Examples:
 ```sh
   depengine why nvim --fields   # method, provenance and catalog impact
   depengine why nvim --json
+  depengine why --all           # one line per tool in the schema
 ```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--all` | local | `false` | explain every tool in the schema, one line each |
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--fields` | local | `false` | show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact |
 | `-h, --help` | local | `false` | help for why |
@@ -520,6 +522,12 @@ derived from `detail` text: `when_not_matched`, `no_distribution`,
 `source_probe_failed`, `blocked_by_terminal_error`, `method_only` and `virtual`.
 Secret references are reported as `<secret reference>` and credential-bearing
 values stay redacted.
+
+`why --all` runs the same audit for every tool in the effective schema and
+prints one line per tool: the selected candidate, the reason it won, and how
+many earlier candidates were rejected. `why --all --json` emits an array of
+the per-tool objects described above, ordered by tool name. `--fields` adds the
+full audit block under each line.
 
 ## Exit codes
 
