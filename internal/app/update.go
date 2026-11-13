@@ -27,6 +27,7 @@ func newUpdateCmd() *cobra.Command {
 	updateFrozen := new(bool)
 	updateDryRun := new(bool)
 	updateVerbose := new(bool)
+	updateQuiet := new(bool)
 	updateCatalog := new([]string)
 	updateNoCatalog := new(bool)
 
@@ -45,7 +46,7 @@ func newUpdateCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, catalog)
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, updateQuiet, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -57,12 +58,14 @@ func newUpdateCmd() *cobra.Command {
 	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
 	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
-	f.BoolVarP(updateVerbose, "verbose", "v", false, "detailed output")
+	f.BoolVarP(updateVerbose, "verbose", "v", false, "include the resolved lock projection in the output")
+	f.BoolVar(updateQuiet, "quiet", false, "suppress progress and the Next hint")
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool, catalog *config.Catalog) error {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose, updateQuiet *bool, catalog *config.Catalog) error {
 	lg := log.Default
+	quiet := *updateQuiet
 
 	noManifest := *updateNoManifest
 	manifestPath := *updateManifest
@@ -108,11 +111,13 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	// plan (what schema, which target, how many tools) reads in one glance
 	// before the spinner takes over the line below.
 	c := newCLIStyle(os.Stderr)
-	printKV(c, "depengine update",
-		[2]string{"schema", *updateSchema},
-		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
-		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
-	)
+	if !quiet {
+		printKV(c, "depengine update",
+			[2]string{"schema", *updateSchema},
+			[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
+			[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
+		)
+	}
 
 	lockPath := *updateLock
 	if lockPath == "" {
@@ -129,7 +134,10 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		lg.Warn("existing lock unreadable; pins not carried over", "path", lockPath, "error", err)
 		oldLock = nil
 	}
-	done := spinner(ctx, "Resolving lockable selectors")
+	done := func(string) {}
+	if !quiet {
+		done = spinner(ctx, "Resolving lockable selectors")
+	}
 	var newLock *lock.Lock
 	legacy := !canPersistProjection(oldLock, *updateProfile)
 	var nativeFallback []string
@@ -257,7 +265,9 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	// Warn about installed tools whose versions no longer match the pins
 	// that were just resolved. Warn-only: applying the new versions is a
 	// separate install step.
-	reportVersionDrift(ctx, s, newLock)
+	if !quiet {
+		reportVersionDrift(ctx, s, newLock)
+	}
 
 	if *updateVerbose && projection != nil {
 		for _, entry := range projection.Entries {
@@ -288,7 +298,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 
 	if hint := updateNextStepHint(*updateDryRun, newLock); hint != "" {
-		printNextStep(c, false, false, hint)
+		printNextStep(c, quiet, false, hint)
 	}
 	return nil
 }

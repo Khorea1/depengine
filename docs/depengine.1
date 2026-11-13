@@ -496,6 +496,9 @@ help for remove Scope: local. Default: false.
 .B "\-\-only <string>"
 only remove specific tool (alternative to positional arg) Scope: local. Default: .
 .TP
+.B "\-\-quiet"
+suppress per\-tool status lines Scope: local. Default: false.
+.TP
 .B "\-\-schema <string>"
 path to schema.toml (optional, for validation) Scope: local. Default: .
 .SS "depengine sbom flags"
@@ -530,6 +533,9 @@ disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-orphans"
 show only orphaned tools Scope: local. Default: false.
+.TP
+.B "\-\-quiet"
+suppress layer and manifest header lines Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 override schema path Scope: local. Default: .
@@ -572,11 +578,14 @@ disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .B "\-\-profile <string>"
 only re\-resolve tools with matching tag; other pins from a readable lock are preserved Scope: local. Default: .
 .TP
+.B "\-\-quiet"
+suppress progress and the Next hint Scope: local. Default: false.
+.TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
 .TP
 .B "\-v, \-\-verbose"
-detailed output Scope: local. Default: false.
+include the resolved lock projection in the output Scope: local. Default: false.
 .SS "depengine upgrade flags"
 .TP
 .B "\-\-allow\-arbitrary\-code"
@@ -614,6 +623,9 @@ suppress per\-tool status lines Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
+.TP
+.B "\-\-skip <string>"
+skip specific tools (comma\-separated) Scope: local. Default: .
 .SS "depengine validate flags"
 .TP
 .B "\-\-catalog <stringArray>"

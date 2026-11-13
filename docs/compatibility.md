@@ -116,6 +116,14 @@ Automatic state migration is only safe when it is deterministic,
 transactional, and preserves the original data on failure. Otherwise migration
 should be explicit.
 
+## CLI flag deprecations
+
+`depengine install --verbose` is a deprecated no-op: detailed per-tool output is
+already the default, and `--quiet` selects the quieter mode. The flag keeps
+working with a warning through the 1.x line. Removal is scheduled no earlier
+than 2027-06-30; until then, scripts may keep passing it, and new code should
+use `--quiet` instead.
+
 ## Legacy host-detector override retirement gate
 
 `DEPENGINE_DETECT_SCRIPT` remains supported by `internal/platform` as a compatibility shell around native Go detection. Do not remove the variable or its behavior until all of these conditions hold:

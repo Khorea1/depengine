@@ -39,6 +39,7 @@ func newUpgradeCmd() *cobra.Command {
 	upgradeNoManifest := new(bool)
 	upgradeDryRun := new(bool)
 	upgradeOnly := new(string)
+	upgradeSkip := new(string)
 	upgradeForce := new(bool)
 	upgradeJSON := new(bool)
 	upgradeQuiet := new(bool)
@@ -60,7 +61,7 @@ func newUpgradeCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
+			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeSkip, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -70,6 +71,7 @@ func newUpgradeCmd() *cobra.Command {
 	addCatalogFlags(cmd, upgradeCatalog, upgradeNoCatalog)
 	f.BoolVar(upgradeDryRun, "dry-run", false, "show what would be upgraded without making changes")
 	f.StringVar(upgradeOnly, "only", "", "only upgrade specific tool")
+	f.StringVar(upgradeSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.BoolVar(upgradeForce, "force", false, "skip confirmation prompt")
 	f.BoolVar(upgradeJSON, "json", false, "JSON output")
 	f.BoolVar(upgradeQuiet, "quiet", false, "suppress per-tool status lines")
@@ -96,6 +98,7 @@ type upgradeOptions struct {
 	schema         string
 	manifest       string
 	only           string
+	skip           string
 	noManifest     bool
 	dryRun         bool
 	force          bool
@@ -114,11 +117,12 @@ type upgradeCounts struct {
 }
 
 // newUpgradeOptions dereferences the CLI flag pointers into one value.
-func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) upgradeOptions {
+func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly, upgradeSkip *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) upgradeOptions {
 	return upgradeOptions{
 		schema:         *upgradeSchema,
 		manifest:       *upgradeManifest,
 		only:           *upgradeOnly,
+		skip:           *upgradeSkip,
 		noManifest:     *upgradeNoManifest,
 		dryRun:         *upgradeDryRun,
 		force:          *upgradeForce,
@@ -490,9 +494,9 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 // runUpgrade reconciles installed tools against depengine.lock, then executes
 // exact targets for drifted candidates. It orchestrates schema/lock loading,
 // executor wiring, discovery, confirmation, execution, and reporting.
-func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) error {
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly, upgradeSkip *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) error {
 	lg := log.Default
-	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
+	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeSkip, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
 
 	manifestPath, manifestAuto := resolveUpgradeManifestPath(opts.noManifest, opts.manifest)
 
@@ -500,7 +504,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	if err != nil {
 		return presentSchemaLoadError(err, opts.jsonOut)
 	}
-	if err := validateToolSelectors(project.Schema, opts.only, "", ""); err != nil {
+	if err := validateToolSelectors(project.Schema, opts.only, opts.skip, ""); err != nil {
 		return err
 	}
 	project.presentWarnings("")
@@ -555,6 +559,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 
 	outdated, discoveryFailures := collectOutdatedTools(ctx, st, s, lk, opts.only, ex, clan)
+	outdated, discoveryFailures = filterSkippedUpgradeTools(outdated, discoveryFailures, opts.skip)
 	if len(outdated) == 0 && len(discoveryFailures) == 0 {
 		return reportUpgradeUpToDate(opts.jsonOut)
 	}
@@ -639,4 +644,32 @@ func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, selected 
 		display = candidate.Label
 	}
 	return nil, fmt.Errorf("tracked candidate %q (kind %q) is not selected by the current schema", display, candidate.Kind)
+}
+
+// filterSkippedUpgradeTools removes --skip names from both result lists. The
+// selector was validated against the effective schema before collection.
+func filterSkippedUpgradeTools(outdated []upgradeOutdatedTool, failures []upgradeResult, skip string) ([]upgradeOutdatedTool, []upgradeResult) {
+	set := make(map[string]bool)
+	for _, name := range strings.Split(skip, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			set[name] = true
+		}
+	}
+	if len(set) == 0 {
+		return outdated, failures
+	}
+	keptOutdated := outdated[:0]
+	for _, tool := range outdated {
+		if !set[tool.name] {
+			keptOutdated = append(keptOutdated, tool)
+		}
+	}
+	keptFailures := failures[:0]
+	for _, failure := range failures {
+		if !set[failure.Tool] {
+			keptFailures = append(keptFailures, failure)
+		}
+	}
+	return keptOutdated, keptFailures
 }

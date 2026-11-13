@@ -91,12 +91,13 @@ func BenchmarkUpdateCommand(b *testing.B) {
 
 			manifest, lockFlag, profile := "", "", ""
 			noManifest, frozen, dryRun, verbose := true, false, false, false
+			quiet := false
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = os.Remove(lock.DefaultPath(schemaPath))
 				path := schemaPath
-				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
+				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, nil); err != nil {
 					b.Fatalf("runUpdate: %v", err)
 				}
 			}
@@ -111,15 +112,16 @@ func BenchmarkUpdateCommand(b *testing.B) {
 
 			manifest, lockFlag, profile := "", "", ""
 			noManifest, frozen, dryRun, verbose := true, false, false, false
+			quiet := false
 			path := schemaPath
-			if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
+			if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, nil); err != nil {
 				b.Fatalf("warm-up runUpdate: %v", err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				path := schemaPath
-				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
+				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, nil); err != nil {
 					b.Fatalf("runUpdate: %v", err)
 				}
 			}

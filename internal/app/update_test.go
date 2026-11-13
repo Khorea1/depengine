@@ -29,8 +29,9 @@ func writeUpdateTestSchema(t *testing.T, dir, content string) string {
 func runTestUpdateResult(t *testing.T, schemaPath, profile string) error {
 	t.Helper()
 	noManifest, frozen, dryRun, verbose := true, false, false, false
+	quiet := false
 	manifest, lockFlag := "", ""
-	return runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil)
+	return runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, nil)
 }
 
 func runTestUpdate(t *testing.T, schemaPath, profile string) {
@@ -104,6 +105,7 @@ func TestRunUpdateDryRunPreviewsUniversalProjection(t *testing.T) {
 	}
 
 	noManifest, frozen, dryRun, verbose := true, false, true, false
+	quiet := false
 	manifest, lockFlag, profile := "", "", ""
 	oldStderr := os.Stderr
 	reader, writer, err := os.Pipe()
@@ -111,7 +113,7 @@ func TestRunUpdateDryRunPreviewsUniversalProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = writer
-	runErr := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil)
+	runErr := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, nil)
 	_ = writer.Close()
 	os.Stderr = oldStderr
 	output, readErr := io.ReadAll(reader)

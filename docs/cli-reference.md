@@ -300,6 +300,7 @@ Examples:
 | `--force` | local | `false` | skip confirmation when removing all tools |
 | `-h, --help` | local | `false` | help for remove |
 | `--only <string>` | local | `` | only remove specific tool (alternative to positional arg) |
+| `--quiet` | local | `false` | suppress per-tool status lines |
 | `--schema <string>` | local | `` | path to schema.toml (optional, for validation) |
 
 ## `depengine sbom [flags]`
@@ -342,6 +343,7 @@ Examples:
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--orphans` | local | `false` | show only orphaned tools |
+| `--quiet` | local | `false` | suppress layer and manifest header lines |
 | `--schema <string>` | local | `` | override schema path |
 
 ## `depengine undo [flags]`
@@ -388,8 +390,9 @@ Examples:
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
+| `--quiet` | local | `false` | suppress progress and the Next hint |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
-| `-v, --verbose` | local | `false` | detailed output |
+| `-v, --verbose` | local | `false` | include the resolved lock projection in the output |
 
 ## `depengine upgrade [flags]`
 
@@ -417,6 +420,7 @@ Examples:
 | `--only <string>` | local | `` | only upgrade specific tool |
 | `--quiet` | local | `false` | suppress per-tool status lines |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 
 ## `depengine validate [flags]`
 
@@ -528,6 +532,20 @@ prints one line per tool: the selected candidate, the reason it won, and how
 many earlier candidates were rejected. `why --all --json` emits an array of
 the per-tool objects described above, ordered by tool name. `--fields` adds the
 full audit block under each line.
+
+## Flag conventions
+
+Flags keep the same name and meaning across commands. A command omits a flag
+only when the behavior does not apply, and the exceptions are deliberate:
+
+| Family | Flags | Contract |
+|---|---|---|
+| Layer scope | `--schema`, `--manifest`, `--no-manifest`, `--catalog`, `--no-catalog` | Project commands resolve the same three layers. `remove` is state-first and uses `--schema` only for legacy v1 pin compatibility. |
+| Tool selector | `--only`, `--skip`, `--profile` | Selectors are validated against the effective schema before execution; a value that matches nothing exits `2`. |
+| Progress | `--quiet` | Suppresses progress and auxiliary headers, never errors, warnings, or the primary result. |
+| Confirmation | `--force` | Skips an interactive confirmation. Only commands that prompt (`remove`, `upgrade`) accept it. |
+| Detail | `--verbose` | Adds diagnostic detail. On `install` detailed output is already the default, so the flag is a deprecated no-op with a documented removal window. |
+| Machine output | `--format text\|json`, `--json` | Stable machine-readable output; `--json` is a shorthand for `--format json`. |
 
 ## Exit codes
 

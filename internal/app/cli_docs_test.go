@@ -98,7 +98,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 		"depengine check":   {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
 		"depengine doctor":  {"catalog", "help", "json", "manifest", "no-catalog", "no-manifest", "schema"},
 		"depengine graph":   {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
-		"depengine remove":  {"all", "dry-run", "force", "help", "only", "schema"},
+		"depengine remove":  {"all", "dry-run", "force", "help", "only", "quiet", "schema"},
 		"depengine diff":    {"help", "json", "other"},
 		"depengine sbom":    {"format", "help"},
 	}

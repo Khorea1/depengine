@@ -27,6 +27,7 @@ func newRemoveCmd() *cobra.Command {
 	removeSchema := new(string)
 	removeOnly := new(string)
 	removeForce := new(bool)
+	removeQuiet := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "remove [tool...]",
@@ -39,7 +40,7 @@ func newRemoveCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
+			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeQuiet)
 		},
 	}
 	f := cmd.Flags()
@@ -48,6 +49,7 @@ func newRemoveCmd() *cobra.Command {
 	f.StringVar(removeSchema, "schema", "", "path to schema.toml (optional, for validation)")
 	f.StringVar(removeOnly, "only", "", "only remove specific tool (alternative to positional arg)")
 	f.BoolVar(removeForce, "force", false, "skip confirmation when removing all tools")
+	f.BoolVar(removeQuiet, "quiet", false, "suppress per-tool status lines")
 	return cmd
 }
 
@@ -69,7 +71,7 @@ type removeSession struct {
 
 // runRemove validates flags and configures a run-scoped executor before
 // delegating the state, selection, removal, ownership, and persistence flow.
-func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
+func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeQuiet *bool) error {
 	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
 		return err
 	}
@@ -77,6 +79,9 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	facts := gatherRemoveFacts()
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
+	if *removeQuiet {
+		exec.WithQuiet()(executor)
+	}
 	if facts != nil {
 		clan := platform.ResolveFamily(facts)
 		exec.WithFacts(facts)(executor)
