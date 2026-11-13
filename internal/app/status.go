@@ -86,6 +86,21 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		log.Default.Error("load lock for status", "error", err)
 		return exitWithCode(3)
 	}
+	tools, err := statusRows(ctx, project, lk, st.Tools, *statusOrphans)
+	if err != nil {
+		return err
+	}
+
+	if *statusFormat == "json" {
+		return renderStatusJSON(tools)
+	}
+	return renderStatusTable(tools, *statusOrphans)
+}
+
+// statusRows builds the tracked/observed rows shared by `status` and `audit`:
+// classification against the schema, then host reconciliation for tools the
+// schema expects. orphansOnly keeps the cheap classification-only path.
+func statusRows(ctx context.Context, project *loadedProject, lk *lock.Lock, installed map[string]state.ToolState, orphansOnly bool) ([]toolStatus, error) {
 	var s *config.Schema
 	if project != nil {
 		s = project.Schema
@@ -94,24 +109,20 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 	if lk != nil && lk.Version == lock.CurrentVersion {
 		document, err := lk.ProjectionDocument()
 		if err != nil {
-			return fmt.Errorf("load universal lock projection for status: %w", err)
+			return nil, fmt.Errorf("load universal lock projection for status: %w", err)
 		}
 		lockDocument = &document
 	}
 
-	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
-	if project != nil && !*statusOrphans {
+	tools := classifyStatusTools(installed, s, lk, orphansOnly)
+	if project != nil && !orphansOnly {
 		ex := newProjectExecutor(s, project.Clan, project.Facts, run.OSExecRunner{})
 		if lockDocument != nil {
 			exec.WithLockDocument(*lockDocument)(ex)
 		}
-		tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, project.Clan)
+		tools = reconcileStatusTools(ctx, tools, installed, s, lk, ex, project.Clan)
 	}
-
-	if *statusFormat == "json" {
-		return renderStatusJSON(tools)
-	}
-	return renderStatusTable(tools, *statusOrphans)
+	return tools, nil
 }
 
 // openStatusState loads the shared state file for reading.

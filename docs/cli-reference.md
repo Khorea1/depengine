@@ -14,6 +14,31 @@ Distro-agnostic dependency installer
 | `-h, --help` | local | `false` | help for depengine |
 | `-v, --version` | local | `false` | Show version |
 
+## `depengine audit [flags]`
+
+Reconciles the effective schema, the lockfile, tracked state and observed host identity. Every divergence carries a remediation, and one exit code aggregates the result (0 without errors, 1 with errors, 2 invalid schema, 3 runtime failure).
+
+Examples:
+
+```sh
+  depengine audit                       # full consistency report
+  depengine audit --strict              # warnings also fail the gate
+  depengine audit --json                # machine-readable report
+  depengine audit --schema ci/schema.toml --no-manifest
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for audit |
+| `--json` | local | `false` | shorthand for --format=json |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--schema <string>` | local | `` | path to schema.toml (default: the path recorded in state) |
+| `--strict` | local | `false` | treat warnings as errors |
+
 ## `depengine bundle [flags]`
 
 Manage offline artifact bundles
@@ -550,6 +575,25 @@ many earlier candidates were rejected. `why --all --json` emits an array of
 the per-tool objects described above, ordered by tool name. `--fields` adds the
 full audit block under each line.
 
+## `audit` consistency gate
+
+`audit` answers "is this project consistent?" without changing anything. It
+runs four checks and reports one finding per divergence, each with a suggested
+remediation:
+
+| Check | Verifies |
+|---|---|
+| `schema` | The effective schema parses and validates |
+| `layers` | Manifest/catalog merge facts and layer warnings |
+| `lock` | `depengine.lock` is readable, decodable, and still matches the schema; a method, package-source, or recipe change reports `E_LOCK_STALE` |
+| `state` | Tracked tools are installed, not outdated, and their host identity is verifiable; state entries missing from the schema are reported |
+
+Exit codes aggregate the checks: `0` without errors (warnings alone do not
+fail), `1` with at least one error, and `--strict` promotes warnings to
+failures. An invalid schema exits `2`; a runtime failure exits `3`. `--json`
+returns the report under the machine-output envelope with `findings` and
+`summary` counts, so a CI gate can assert on codes instead of text.
+
 ## Machine output
 
 Every command that renders machine-readable output accepts `--format json` and
@@ -575,6 +619,7 @@ shapes by command:
 
 | Command | `data` |
 |---|---|
+| `audit` | `schema`, `lock_path`, `lock_version`, `findings`, `summary` |
 | `bundle export` | `lock_path`, `output`, `artifacts` |
 | `check` | one `tool`, `method`, `status`, `verification` object |
 | `diff` | array of changed fields |

@@ -22,6 +22,17 @@ detection still relies on a POSIX shell and standard base utilities.
 .B "depengine [flags]"
 Distro\-agnostic dependency installer
 .TP
+.B "depengine audit [flags]"
+Reconciles the effective schema, the lockfile, tracked state and observed host identity. Every divergence carries a remediation, and one exit code aggregates the result (0 without errors, 1 with errors, 2 invalid schema, 3 runtime failure).
+.PP
+Examples:
+.nf
+  depengine audit                       # full consistency report
+  depengine audit \-\-strict              # warnings also fail the gate
+  depengine audit \-\-json                # machine\-readable report
+  depengine audit \-\-schema ci/schema.toml \-\-no\-manifest
+.fi
+.TP
 .B "depengine bundle [flags]"
 Manage offline artifact bundles
 .PP
@@ -229,6 +240,34 @@ help for depengine Scope: local. Default: false.
 .TP
 .B "\-v, \-\-version"
 Show version Scope: local. Default: false.
+.SS "depengine audit flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for audit Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml (default: the path recorded in state) Scope: local. Default: .
+.TP
+.B "\-\-strict"
+treat warnings as errors Scope: local. Default: false.
 .SS "depengine bundle flags"
 .TP
 .B "\-h, \-\-help"

@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine audit`: one read-only report reconciling the effective schema,
+  layer merge, lockfile and tracked state/host identity. Each divergence carries
+  a remediation, `--strict` turns warnings into a failing gate, and `--json`
+  exposes the findings under the machine-output envelope.
 - Serialize installs that target the same package manager when `--jobs` is
   greater than one, so the parallel fallback path cannot turn a valid plan into
   `apt-get`/`pacman` lock contention. Installs for different managers still run

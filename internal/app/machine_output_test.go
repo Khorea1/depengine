@@ -59,6 +59,21 @@ func TestMachineOutputEnvelope(t *testing.T) {
 		assert  func(t *testing.T, data map[string]any)
 	}{
 		{
+			name:    "audit",
+			command: "audit",
+			args: func(*testing.T) ([]string, []string) {
+				return []string{"XDG_STATE_HOME=" + t.TempDir()}, []string{"--schema", schemaPath, "--no-manifest", "--no-catalog", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if _, ok := data["summary"]; !ok {
+					t.Errorf("audit data missing summary: %v", data)
+				}
+				if _, ok := data["findings"]; !ok {
+					t.Errorf("audit data missing findings: %v", data)
+				}
+			},
+		},
+		{
 			name:    "validate",
 			command: "validate",
 			args: func(*testing.T) ([]string, []string) {

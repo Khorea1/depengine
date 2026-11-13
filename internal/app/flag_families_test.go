@@ -12,7 +12,7 @@ func TestCommandFlagFamilies(t *testing.T) {
 
 	// Every project command accepts an explicit schema.
 	requireFlags(t, docs, []string{
-		"depengine check", "depengine doctor", "depengine graph", "depengine install",
+		"depengine audit", "depengine check", "depengine doctor", "depengine graph", "depengine install",
 		"depengine remove", "depengine status", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine why",
 	}, "schema")
@@ -21,7 +21,7 @@ func TestCommandFlagFamilies(t *testing.T) {
 	// the schema only for legacy v1 pin compatibility and never merges the
 	// manifest or catalog, so it is excluded here.
 	requireFlags(t, docs, []string{
-		"depengine check", "depengine doctor", "depengine graph", "depengine install",
+		"depengine audit", "depengine check", "depengine doctor", "depengine graph", "depengine install",
 		"depengine status", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine why",
 	}, "manifest", "no-manifest", "catalog", "no-catalog")
