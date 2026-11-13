@@ -318,6 +318,7 @@ does not fall back to shared temporary paths or the current working directory.
 | [`docs/schema-reference.md`](docs/schema-reference.md) | Schema syntax and install methods |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Commands and flags |
 | [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable examples |
+| [`docs/troubleshooting.md`](docs/troubleshooting.md) | Exit codes and fixes for common messages |
 | [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine can and cannot guarantee |
 | [`docs/security.md`](docs/security.md) | Trust, arbitrary code, checksums, credentials |
 | [`docs/compatibility.md`](docs/compatibility.md) | File-format version policy |

@@ -530,6 +530,9 @@ values stay redacted.
 | `2` | Schema error (invalid TOML, validation) |
 | `3` | Runtime error (subprocess, filesystem, or other infrastructure failure) |
 
+See [troubleshooting](troubleshooting.md) for the cause, fix, and diagnostic
+command behind each message.
+
 
 ## Environment variables
 

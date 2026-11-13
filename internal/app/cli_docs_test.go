@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -252,6 +253,124 @@ func environmentVariableTable(doc string) string {
 		table.WriteByte('\n')
 	}
 	return table.String()
+}
+
+// TestTroubleshootingMessagesExistInSource keeps the troubleshooting index
+// honest: every documented literal must still appear in non-test source, so a
+// renamed diagnostic fails CI instead of sending users to a dead entry.
+func TestTroubleshootingMessagesExistInSource(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/troubleshooting.md")
+	if err != nil {
+		t.Fatalf("read troubleshooting: %v", err)
+	}
+	messages := troubleshootingMessageLiterals(string(doc))
+	if len(messages) < 10 {
+		t.Fatalf("troubleshooting index has %d entries, want at least 10", len(messages))
+	}
+	source, err := internalSource()
+	if err != nil {
+		t.Fatalf("read internal source: %v", err)
+	}
+	for _, message := range messages {
+		if !strings.Contains(source, message) {
+			t.Errorf("troubleshooting documents %q, but no non-test source file contains it", message)
+		}
+	}
+}
+
+// TestExitCodeTablesMatch keeps the published exit-code contract identical in
+// the CLI reference and the troubleshooting index.
+func TestExitCodeTablesMatch(t *testing.T) {
+	reference, err := os.ReadFile(markdownDocsPath)
+	if err != nil {
+		t.Fatalf("read CLI reference: %v", err)
+	}
+	troubleshooting, err := os.ReadFile("../../docs/troubleshooting.md")
+	if err != nil {
+		t.Fatalf("read troubleshooting: %v", err)
+	}
+	got := exitCodeTable(string(reference))
+	want := exitCodeTable(string(troubleshooting))
+	if got == "" {
+		t.Fatal("CLI reference is missing the exit-code table")
+	}
+	if want == "" {
+		t.Fatal("troubleshooting is missing the exit-code table")
+	}
+	if got != want {
+		t.Fatalf("exit-code tables differ\n\nCLI reference:\n%s\ntroubleshooting:\n%s", got, want)
+	}
+}
+
+func troubleshootingMessageLiterals(doc string) []string {
+	const heading = "## Find your message"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		return nil
+	}
+	var messages []string
+	for _, line := range strings.Split(doc[start:], "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "| `")
+		end := strings.Index(rest, "`")
+		if end < 0 {
+			continue
+		}
+		messages = append(messages, rest[:end])
+	}
+	return messages
+}
+
+func exitCodeTable(doc string) string {
+	const heading = "## Exit codes"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		return ""
+	}
+	var table strings.Builder
+	inTable := false
+	for _, line := range strings.Split(doc[start:], "\n") {
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break
+			}
+			continue
+		}
+		inTable = true
+		table.WriteString(line)
+		table.WriteByte('\n')
+	}
+	return table.String()
+}
+
+func internalSource() (string, error) {
+	var paths []string
+	err := filepath.WalkDir("../../internal", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	var source strings.Builder
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path) // #nosec G304 -- paths come from a fixed repository source walk.
+		if readErr != nil {
+			return "", readErr
+		}
+		source.Write(data)
+		source.WriteByte('\n')
+	}
+	return source.String(), nil
 }
 
 func commandDocByPath(docs []cliCommandDoc, path string) *cliCommandDoc {
