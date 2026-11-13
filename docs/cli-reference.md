@@ -573,6 +573,23 @@ Examples:
 
 For non-frozen installs using a missing or v1 lockfile, depengine resolves and validates the legacy lock before executing tools. If resolution fails, installation stops; the successful preflight identity is the one saved after execution.
 
+## Dry-run plan preview
+
+With `install --dry-run`, each resolved candidate reports the install step's
+non-executable preview inside `plan_intent.operations[]`:
+
+| Field | Meaning |
+|---|---|
+| `preview` | Exact argv the adapter will run, when it knows it before execution; absent otherwise |
+| `elevation` | `none`, `required`, or `unknown`; omitted for read-only steps |
+
+`preview` is descriptive only: executable argv still lives in `command` and
+stays gated by `--allow-arbitrary-code`, so showing it never turns an install
+into arbitrary code. Native package managers, Chocolatey, and HTTP-backed
+adapters fill the fields; adapters whose command depends on runtime paths (git,
+scoop, container, ecosystems) report `unknown` instead of guessing. The text
+output prints the same lines under the per-tool `would install` line.
+
 ## `why` audit output
 
 `why --fields` and `why --json` render the same audit report. The text view

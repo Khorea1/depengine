@@ -24,6 +24,59 @@ func TestNewPlanAndMutationClassification(t *testing.T) {
 	}
 }
 
+func TestOperationPreviewIsNotExecutableIntent(t *testing.T) {
+	op := plan.Operation{Kind: "install", Effect: plan.EffectMutation, Preview: []string{"apt-get", "install", "-y", "jq"}}
+	if err := op.Validate(); err != nil {
+		t.Fatalf("preview-only operation rejected: %v", err)
+	}
+	if len(op.Command) != 0 || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	for _, invalid := range []plan.Operation{
+		{Kind: "install", Effect: plan.EffectMutation, Preview: []string{""}},
+		{Kind: "install", Effect: plan.EffectMutation, Preview: []string{"apt-get", "jq\x00"}},
+		{Kind: "install", Effect: plan.EffectMutation, Elevation: "root-ish"},
+	} {
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("Validate() accepted invalid operation %+v", invalid)
+		}
+	}
+}
+
+func TestOperationJSONReportsUnknownElevationForMutations(t *testing.T) {
+	p := plan.New("jq", "native", true)
+	p.Operations = []plan.Operation{
+		{Kind: "resolve", Effect: plan.EffectReadOnly},
+		{Kind: "install", Effect: plan.EffectMutation},
+		{Kind: "add-source", Effect: plan.EffectMutation, Elevation: plan.ElevationRequired},
+	}
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var decoded struct {
+		Operations []struct {
+			Kind      string `json:"kind"`
+			Elevation string `json:"elevation"`
+		} `json:"operations"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if len(decoded.Operations) != 3 {
+		t.Fatalf("operations = %d, want 3", len(decoded.Operations))
+	}
+	if decoded.Operations[0].Elevation != "" {
+		t.Errorf("read-only elevation = %q, want omitted", decoded.Operations[0].Elevation)
+	}
+	if decoded.Operations[1].Elevation != string(plan.ElevationUnknown) {
+		t.Errorf("unannotated mutation elevation = %q, want unknown", decoded.Operations[1].Elevation)
+	}
+	if decoded.Operations[2].Elevation != string(plan.ElevationRequired) {
+		t.Errorf("annotated mutation elevation = %q, want required", decoded.Operations[2].Elevation)
+	}
+}
+
 func TestSourceMutationsMustBeMutating(t *testing.T) {
 	p := plan.New("x", "native", true)
 	p.SourceMutations = []plan.Operation{{Kind: "add-repo", Effect: plan.EffectReadOnly}}

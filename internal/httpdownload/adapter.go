@@ -70,7 +70,27 @@ func (a *HTTPAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *conf
 	if err := a.rejectUntrackedDebLifecycle(mc, resolved, ""); err != nil {
 		return resolved, err
 	}
+	annotateInstallElevation(resolved, a.RequiresElevation(tool, mc))
 	return resolved, nil
+}
+
+// annotateInstallElevation records the adapter's privilege decision on the
+// install step. The concrete install argv (temporary paths, extraction) is only
+// known during execution, so Preview stays absent and the step reports the
+// decision without pretending to know the command.
+func annotateInstallElevation(resolved *plan.ResolvedInstallPlan, required bool) {
+	if resolved == nil {
+		return
+	}
+	decision := plan.ElevationNone
+	if required {
+		decision = plan.ElevationRequired
+	}
+	for i := range resolved.Operations {
+		if resolved.Operations[i].Kind == "install" {
+			resolved.Operations[i].Elevation = decision
+		}
+	}
 }
 
 func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {

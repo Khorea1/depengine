@@ -3,10 +3,12 @@ package exec
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
@@ -45,6 +47,40 @@ func TestNativeAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 				t.Fatalf("ValidateResolution() error = %v; resolved = %#v", err, resolved)
 			}
 		})
+	}
+}
+
+// ResolvePlan must expose the exact native argv as a non-executable preview and
+// report its elevation decision, without turning the operation into arbitrary
+// code.
+func TestNativeAdapterV2ResolvePreviewsInstallCommand(t *testing.T) {
+	tool := &config.Tool{Name: "jq"}
+	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "jq"}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := NewNativeAdapter("debian").ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if len(resolved.Operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(resolved.Operations))
+	}
+	op := resolved.Operations[0]
+	want := native.BuildInstallCmd("debian", "jq")
+	if !reflect.DeepEqual(op.Preview, want) {
+		t.Fatalf("preview = %v, want %v", op.Preview, want)
+	}
+	if op.Command != nil || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	if op.Elevation != plan.ElevationRequired {
+		t.Fatalf("elevation = %q, want required for apt", op.Elevation)
+	}
+	lines := operationPreviewLines(resolved)
+	if len(lines) != 1 || !strings.Contains(lines[0], "elevation: required") {
+		t.Fatalf("preview lines = %v, want one line with elevation", lines)
 	}
 }
 

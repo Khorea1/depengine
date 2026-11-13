@@ -63,6 +63,7 @@ func (a *GitHubAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *co
 	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, ""); err != nil {
 		return nil, err
 	}
+	annotateInstallElevation(resolved, a.RequiresElevation(tool, mc))
 	return resolved, nil
 }
 

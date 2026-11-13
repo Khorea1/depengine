@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Expose the planned install argv and elevation decision in `install --dry-run`.
+  Resolved plans carry a non-executable `preview` argv, never executable
+  `command`, so the capability gate is unchanged, and mutating steps report
+  `elevation` as `none`, `required`, or `unknown`. Native, Chocolatey, and
+  HTTP-backed adapters fill it; other adapters keep the explicit unknown.
 - Add `depengine explain [term...]`: offline vocabulary for schema fields,
   installation methods, and the `validate`/resolver error codes, with the valid
   form, a minimal example, and the document anchor. `why` no longer accepts

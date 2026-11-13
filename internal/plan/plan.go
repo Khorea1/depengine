@@ -212,13 +212,60 @@ type SecretReference struct {
 	Name     string `json:"name"`
 }
 
+// ElevationDecision states whether executing an operation needs elevated
+// privileges. It is a preview-only decision: adapters that cannot know it
+// before execution must leave it empty, which serializes as "unknown".
+type ElevationDecision string
+
+const (
+	ElevationNone     ElevationDecision = "none"
+	ElevationRequired ElevationDecision = "required"
+	ElevationUnknown  ElevationDecision = "unknown"
+)
+
+// Effective returns the decision with the explicit unknown default.
+func (e ElevationDecision) Effective() ElevationDecision {
+	if e == "" {
+		return ElevationUnknown
+	}
+	return e
+}
+
+func (e ElevationDecision) Valid() bool {
+	switch e {
+	case "", ElevationNone, ElevationRequired, ElevationUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Operation is one ordered action in resolution/execution/removal.
+//
+// Preview is a non-executable, adapter-known argv shown by dry-run. It must
+// never be consumed as execution input: executable argv belongs in Command and
+// stays gated by ArbitraryCode. Elevation is the adapter's preview decision for
+// this step; empty means unknown.
 type Operation struct {
-	Kind          string          `json:"kind"`
-	Description   string          `json:"description,omitempty"`
-	Effect        OperationEffect `json:"effect"`
-	Command       []string        `json:"command,omitempty"`
-	ArbitraryCode bool            `json:"arbitrary_code,omitempty"`
+	Kind          string            `json:"kind"`
+	Description   string            `json:"description,omitempty"`
+	Effect        OperationEffect   `json:"effect"`
+	Command       []string          `json:"command,omitempty"`
+	ArbitraryCode bool              `json:"arbitrary_code,omitempty"`
+	Preview       []string          `json:"preview,omitempty"`
+	Elevation     ElevationDecision `json:"elevation,omitempty"`
+}
+
+// MarshalJSON keeps the elevation decision explicit for mutating steps: a step
+// whose adapter cannot know whether it needs privilege serializes as "unknown"
+// instead of disappearing from the report. Read-only steps carry no decision.
+func (o Operation) MarshalJSON() ([]byte, error) {
+	type plain Operation
+	out := plain(o)
+	if o.Effect == EffectMutation {
+		out.Elevation = o.Elevation.Effective()
+	}
+	return json.Marshal(out)
 }
 
 // Validate enforces operation-level safety invariants independently of the
@@ -244,6 +291,19 @@ func (o Operation) Validate() error {
 		for i, arg := range o.Command {
 			if strings.ContainsRune(arg, '\x00') {
 				return fmt.Errorf("operation %q command argument %d contains NUL", o.Kind, i)
+			}
+		}
+	}
+	if !o.Elevation.Valid() {
+		return fmt.Errorf("operation %q has invalid elevation decision %q", o.Kind, o.Elevation)
+	}
+	if len(o.Preview) > 0 {
+		if strings.TrimSpace(o.Preview[0]) == "" {
+			return fmt.Errorf("operation %q preview executable is empty", o.Kind)
+		}
+		for i, arg := range o.Preview {
+			if strings.ContainsRune(arg, '\x00') {
+				return fmt.Errorf("operation %q preview argument %d contains NUL", o.Kind, i)
 			}
 		}
 	}
@@ -602,6 +662,7 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 
 func cloneOperation(op Operation) Operation {
 	op.Command = append([]string(nil), op.Command...)
+	op.Preview = append([]string(nil), op.Preview...)
 	return op
 }
 
@@ -696,6 +757,9 @@ func redactOperations(in []Operation) []Operation {
 		out[i].Description = run.RedactSensitiveText(out[i].Description)
 		if len(out[i].Command) > 0 {
 			out[i].Command = redactCommand(out[i].Command)
+		}
+		if len(out[i].Preview) > 0 {
+			out[i].Preview = redactCommand(out[i].Preview)
 		}
 	}
 	return out

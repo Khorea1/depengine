@@ -206,7 +206,18 @@ func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *co
 		return nil, errors.New("native: no package name in plan intent")
 	}
 	resolved := intent.Clone()
+	mgr, _ := native.Lookup(clan)
+	annotateInstallPreview(&resolved, nativeManagerCommand(ctx, rn, "", clan, "install", intent.Identity.Package), elevationForManager(mgr))
 	return &resolved, nil
+}
+
+// elevationForManager projects a native manager's privilege requirement into
+// the plan's preview-only elevation decision.
+func elevationForManager(manager native.Manager) plan.ElevationDecision {
+	if manager.SudoRequired {
+		return plan.ElevationRequired
+	}
+	return plan.ElevationNone
 }
 
 // Observe reports package presence without inferring version or source identity.
@@ -577,7 +588,7 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 // The planner supplies the tool name when pkg is omitted, and the executor
 // applies clan-specific package overrides before this boundary. The plan is
 // authoritative here; re-reading method config would reject valid shorthand.
-func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+func (a *NativeByManagerAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, fmt.Errorf("native(%s): nil plan intent", a.managerName)
 	}
@@ -592,6 +603,13 @@ func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, to
 		return nil, fmt.Errorf("native(%s): no package name in plan intent", a.managerName)
 	}
 	resolved := intent.Clone()
+	pkg := intent.Identity.Package
+	argv := nativeManagerCommand(ctx, rn, a.managerName, clan, "install", pkg)
+	if a.managerName == "winget" {
+		argv = append(argv, wingetSelectionArgs(mc, true)...)
+	}
+	mgr, _ := native.LookupManager(a.managerName)
+	annotateInstallPreview(&resolved, argv, elevationForManager(mgr))
 	return &resolved, nil
 }
 

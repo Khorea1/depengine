@@ -44,7 +44,8 @@
     {
       "kind": "install-artifact",
       "description": "install resolved archive",
-      "effect": "mutation"
+      "effect": "mutation",
+      "elevation": "unknown"
     }
   ],
   "removal": {
