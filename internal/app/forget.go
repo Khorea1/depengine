@@ -12,6 +12,7 @@ func newForgetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "forget <tool>",
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
+		Example: `  depengine forget nvim   # drop install state; the system is untouched`,
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

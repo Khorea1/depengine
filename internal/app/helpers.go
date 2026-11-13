@@ -3,12 +3,14 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -28,6 +30,55 @@ type ExitError struct {
 func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
 
 func exitWithCode(code int) error { return &ExitError{Code: code} }
+
+// schemaNotFoundGuidance is the single next step for a missing project
+// schema. Every schema-consuming command prints it verbatim.
+const schemaNotFoundGuidance = "Run 'depengine init' to create one, or point --schema to an existing file."
+
+// schemaNotFoundError is the canonical missing-schema diagnostic. Keeping one
+// type and one exit code means scripts and humans see the same answer no
+// matter which command surfaced the condition.
+type schemaNotFoundError struct{ path string }
+
+func (e *schemaNotFoundError) Error() string {
+	return fmt.Sprintf("schema %s not found", e.path)
+}
+
+// Unwrap exposes the missing file as os.ErrNotExist for callers that still
+// classify with errors.Is.
+func (e *schemaNotFoundError) Unwrap() error { return os.ErrNotExist }
+
+func schemaNotFound(path string) error { return &schemaNotFoundError{path: path} }
+
+// presentSchemaLoadError renders a failed project load. A missing schema gets
+// the canonical message, guidance, and exit code 2 on every command; other
+// failures keep their existing classification. jsonMode emits the same
+// validation object `validate --json` uses, so machine consumers parse one
+// shape.
+func presentSchemaLoadError(err error, jsonMode bool) error {
+	var missing *schemaNotFoundError
+	if !errors.As(err, &missing) {
+		log.Default.Error("load schema", "error", err)
+		return exitWithCode(exitCodeForError(err))
+	}
+	if jsonMode {
+		out := jsonOutput{Errors: []validate.ValidationError{{
+			Code:    validate.ErrSchemaNotFound,
+			Field:   "schema",
+			Message: missing.Error(),
+		}}}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if encErr := enc.Encode(out); encErr != nil {
+			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", encErr)
+			return exitWithCode(3)
+		}
+		return exitWithCode(2)
+	}
+	fmt.Fprintf(os.Stderr, "error: %s\n", missing.Error())
+	fmt.Fprintf(os.Stderr, "%s\n", schemaNotFoundGuidance)
+	return exitWithCode(2)
+}
 
 // confirmationAccepted centralizes the non-interactive part of confirmation
 // prompts so command workflows can test it without spawning the CLI binary.
@@ -94,7 +145,7 @@ type projectLoadOptions struct {
 // while every successful result is clean and absolute for state/lock identity.
 func resolveSchemaFilePath(input string) (string, error) {
 	if input == "" {
-		return "", os.ErrNotExist
+		return "", schemaNotFound("schema.toml")
 	}
 	candidate := input
 	info, err := os.Stat(candidate)
@@ -108,6 +159,9 @@ func resolveSchemaFilePath(input string) (string, error) {
 	abs = filepath.Clean(abs)
 	info, err = os.Stat(abs)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", schemaNotFound(candidate)
+		}
 		return "", err
 	}
 	if info.IsDir() {
@@ -301,6 +355,87 @@ func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[
 		}
 	}
 	return filtered
+}
+
+// validateToolSelectors rejects --only/--skip/--profile values that match
+// nothing in the effective schema. A selector typo used to print "nothing to
+// do" and exit 0, which reads as success in CI.
+func validateToolSelectors(s *config.Schema, only, skip, profile string) error {
+	available := sortedToolNames(s.Tools)
+	if only != "" {
+		if _, ok := s.Tools[only]; !ok {
+			log.Default.Error("--only matched no tool", "value", only, "available", strings.Join(available, ", "))
+			return exitWithCode(2)
+		}
+	}
+	for _, name := range strings.Split(skip, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := s.Tools[name]; !ok {
+			log.Default.Error("--skip matched no tool", "value", name, "available", strings.Join(available, ", "))
+			return exitWithCode(2)
+		}
+	}
+	if profile != "" && !schemaHasTag(s, profile) {
+		log.Default.Error("--profile matched no tool", "value", profile, "available", strings.Join(sortedToolTags(s), ", "))
+		return exitWithCode(2)
+	}
+	return nil
+}
+
+// sortedToolNames is the stable tool list shown in selector errors.
+func sortedToolNames(tools map[string]*config.Tool) []string {
+	names := make([]string, 0, len(tools))
+	for name := range tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// schemaHasTag mirrors filterTools' case-insensitive tag matching.
+func schemaHasTag(s *config.Schema, tag string) bool {
+	for _, tool := range s.Tools {
+		for _, candidate := range tool.Tags {
+			if strings.EqualFold(candidate, tag) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sortedToolTags is the stable tag list shown when --profile matches nothing.
+func sortedToolTags(s *config.Schema) []string {
+	seen := make(map[string]bool)
+	var tags []string
+	for _, tool := range s.Tools {
+		for _, tag := range tool.Tags {
+			if seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			tags = append(tags, tag)
+		}
+	}
+	sort.Strings(tags)
+	if len(tags) == 0 {
+		return []string{"none declared"}
+	}
+	return tags
+}
+
+// printNextStep writes one contextual follow-up to stderr. Machine-readable
+// and quiet runs stay clean so scripts and the per-tool detail view are not
+// polluted by guidance.
+func printNextStep(cs *cliStyle, quiet, jsonMode bool, hint string) {
+	if quiet || jsonMode || hint == "" {
+		return
+	}
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, cs.dim("Next: "+hint))
 }
 
 // loadLockfile reads, frozen-validates, and applies legacy v1 pins. V2 locks

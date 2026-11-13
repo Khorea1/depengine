@@ -18,8 +18,10 @@ func newSBOMCmd() *cobra.Command {
 	sbomFormat := new(string)
 
 	cmd := &cobra.Command{
-		Use:     "sbom",
-		Short:   ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
+		Use:   "sbom",
+		Short: ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
+		Example: `  depengine sbom                  # CycloneDX
+  depengine sbom --format spdx`,
 		GroupID: groupExport,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

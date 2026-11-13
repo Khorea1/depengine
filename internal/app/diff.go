@@ -17,8 +17,10 @@ func newDiffCmd() *cobra.Command {
 	diffJSON := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "diff [file1] [file2]",
-		Short:   ifPT("Comparar dois arquivos de estado", "Compare two state files"),
+		Use:   "diff [file1] [file2]",
+		Short: ifPT("Comparar dois arquivos de estado", "Compare two state files"),
+		Example: `  depengine diff state-before.json state-after.json
+  depengine diff state-before.json state-after.json --json`,
 		GroupID: groupInspect,
 		Args:    cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {

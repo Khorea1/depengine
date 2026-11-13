@@ -79,6 +79,8 @@ func newUndoCmd() *cobra.Command {
 		Use:     "undo",
 		Aliases: []string{"rollback"},
 		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
+		Example: `  depengine undo --list                # list available snapshots
+  depengine undo --snapshot <path>     # restore one snapshot`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

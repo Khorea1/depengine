@@ -34,6 +34,9 @@ func newUpdateCmd() *cobra.Command {
 		Use:     "update",
 		Aliases: []string{"lock"},
 		Short:   ifPT("Resolver referências mutáveis e gravar v2 quando toda ferramenta tem identidade imutável; manter v1 para schemas só nativos", "Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas"),
+		Example: `  depengine update                    # resolve mutable references; write depengine.lock
+  depengine update --dry-run -v       # show the pins without writing
+  depengine update --profile desktop  # re-resolve only tagged tools; keep other pins`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -73,8 +76,10 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 
 	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, false)
+	}
+	if err := validateToolSelectors(project.Schema, "", "", *updateProfile); err != nil {
+		return err
 	}
 	project.presentWarnings("")
 	*updateSchema = project.SchemaPath
@@ -282,11 +287,25 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 
-	if !*updateDryRun {
-		_, _ = fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
+	if hint := updateNextStepHint(*updateDryRun, newLock); hint != "" {
+		printNextStep(c, false, false, hint)
 	}
 	return nil
 }
+
+// updateNextStepHint returns the command that applies a freshly written lock.
+// A v2 projection can be consumed reproducibly with --frozen-lockfile; a v1
+// legacy lock only supports a plain install. Pure.
+func updateNextStepHint(dryRun bool, written *lock.Lock) string {
+	if dryRun {
+		return ""
+	}
+	if written != nil && written.Version == lock.CurrentVersion {
+		return "run 'depengine install --frozen-lockfile' to apply the pinned versions reproducibly"
+	}
+	return "run 'depengine install' to apply the pinned versions"
+}
+
 func updateProjectionValue(entry plan.LockProjection) string {
 	identity := entry.Identity
 	if identity.Digest != "" {

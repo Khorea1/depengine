@@ -36,6 +36,8 @@ func newImportCmd() *cobra.Command {
 			"Valida uma receita antes de gravá-la no catálogo: pré-visualiza origem, integridade, candidatos e campos executáveis, rejeita hooks e código arbitrário, exige checksum e sinaliza 'sha256:auto' como TOFU.",
 			"Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.",
 		),
+		Example: `  depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml --force     # replace an existing recipe`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImport(args[0], *catalogRoots, *importDryRun, *importForce)

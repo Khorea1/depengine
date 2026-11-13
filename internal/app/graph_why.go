@@ -35,8 +35,11 @@ func newGraphCmd() *cobra.Command {
 	graphNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "graph",
-		Short:   ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
+		Use:   "graph",
+		Short: ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
+		Example: `  depengine graph --format mermaid
+  depengine graph --format graph --width 100
+  depengine graph --only nvim --direction dependents`,
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -108,8 +111,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 	}
 	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, false)
 	}
 	project.presentWarnings("")
 	*graphSchema = project.SchemaPath
@@ -202,6 +204,8 @@ func newWhyCmd() *cobra.Command {
 		Use:     "why <tool>",
 		Aliases: []string{"explain"},
 		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
+		Example: `  depengine why nvim --fields   # method, provenance and catalog impact
+  depengine why nvim --json`,
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -361,8 +365,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	}
 	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, WarningTool: toolName, Catalog: catalog})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, *whyJSON)
 	}
 	project.presentWarnings(toolName)
 	*whySchema = project.SchemaPath

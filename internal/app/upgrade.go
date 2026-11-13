@@ -47,8 +47,11 @@ func newUpgradeCmd() *cobra.Command {
 	upgradeNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "upgrade",
-		Short:   ifPT("Atualizar ferramentas para os alvos fixados no depengine.lock", "Upgrade installed tools to the targets pinned in depengine.lock"),
+		Use:   "upgrade",
+		Short: ifPT("Atualizar ferramentas para os alvos fixados no depengine.lock", "Upgrade installed tools to the targets pinned in depengine.lock"),
+		Example: `  depengine upgrade             # upgrade drifted tools to the locked targets
+  depengine upgrade --only nvim
+  depengine upgrade --dry-run   # show the exact targets without upgrading`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -495,13 +498,10 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 
 	project, err := loadProject(opts.schema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: opts.catalog})
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error: %s not found\n", opts.schema)
-			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			return exitWithCode(1)
-		}
-		lg.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, opts.jsonOut)
+	}
+	if err := validateToolSelectors(project.Schema, opts.only, "", ""); err != nil {
+		return err
 	}
 	project.presentWarnings("")
 	opts.schema = project.SchemaPath
@@ -584,7 +584,11 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 	results, counts := runUpgradeLoop(ctx, ex, clan, outdated, discoveryFailures, opts, c)
 
-	return writeUpgradeReport(opts.jsonOut, opts.dryRun, counts, results)
+	err = writeUpgradeReport(opts.jsonOut, opts.dryRun, counts, results)
+	if counts.upgraded > 0 && !opts.dryRun {
+		printNextStep(c, opts.quiet, opts.jsonOut, "run 'depengine status' to confirm the recorded versions")
+	}
+	return err
 }
 
 func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {

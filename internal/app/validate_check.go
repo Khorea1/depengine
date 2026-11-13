@@ -37,6 +37,9 @@ func newValidateCmd() *cobra.Command {
 		Use:     "validate",
 		Aliases: []string{"lint"},
 		Short:   ifPT("Validar schema.toml", "Validate schema.toml"),
+		Example: `  depengine validate                     # parse and validate schema.toml
+  depengine validate --strict            # warnings become errors
+  depengine validate --check-env --format json`,
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -58,6 +61,9 @@ func newValidateCmd() *cobra.Command {
 func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool, validateCatalog *[]string, validateNoCatalog *bool) error {
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return presentSchemaLoadError(schemaNotFound(*validateSchema), *validateFormat == "json")
+		}
 		var sce *config.SchemaCodeError
 		if errors.As(err, &sce) && *validateFormat == "json" {
 			out := jsonOutput{
@@ -221,9 +227,11 @@ func newCheckCmd() *cobra.Command {
 	checkNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "check <tool>",
-		Short:   ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
-		Long:    ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
+		Use:   "check <tool>",
+		Short: ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
+		Long:  ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
+		Example: `  depengine check nvim                 # compare desired state with the host
+  depengine check nvim --live --json   # probe through the adapter`,
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -265,10 +273,10 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
+	useJSON := *checkJSON || *checkFormat == "json"
 	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, useJSON)
 	}
 	project.presentWarnings("")
 	*checkSchema = project.SchemaPath
@@ -285,7 +293,6 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		log.Default.Error("tool not found", "tool", toolName)
 		return exitWithCode(1)
 	}
-	useJSON := *checkJSON || *checkFormat == "json"
 
 	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	checked, checkErr := ex.CheckDesiredState(ctx, tool, clan, *checkLive)

@@ -54,6 +54,11 @@ func newInstallCmd() *cobra.Command {
 		Use:     "install",
 		Aliases: []string{"i"},
 		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
+		Example: `  depengine install                          # install every tool declared in schema.toml
+  depengine install --only nvim              # one tool plus its dependencies
+  depengine install --dry-run --sort-by name # preview the plan without mutating
+  depengine install --frozen-lockfile        # reproducible install from depengine.lock
+  depengine install --allow-arbitrary-code   # run pre_install/post_install hooks`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
@@ -366,6 +371,20 @@ func shouldShareInstallHint(report *exec.ExecReport, dryRun bool) bool {
 	return report.Failed == 0 && report.Success > 0 && !dryRun
 }
 
+// installNextStepHint returns the one follow-up that moves a successful
+// install toward a reproducible lock. A legacy-only lock cannot pin mutable
+// or catalog artifacts, so update -- not another install -- is the next step.
+// Pure.
+func installNextStepHint(p installPlan, lk *lock.Lock, report *exec.ExecReport) string {
+	if !shouldShareInstallHint(report, p.dryRun) {
+		return ""
+	}
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		return ""
+	}
+	return "run 'depengine update' to pin exact identities in depengine.lock"
+}
+
 // installExitForReport maps a finished report to the process exit. Pure.
 func installExitForReport(report *exec.ExecReport) error {
 	if report.Failed > 0 {
@@ -405,6 +424,10 @@ func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPla
 		fmt.Fprintln(os.Stderr, cs.dim("  git add schema.toml depengine.lock && git commit"))
 	}
 
+	if hint := installNextStepHint(p, lk, report); hint != "" {
+		printNextStep(cs, p.quiet, p.json, hint)
+	}
+
 	return installExitForReport(report)
 }
 
@@ -435,17 +458,17 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 
 	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true, Catalog: catalog})
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
-			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			return exitWithCode(1)
-		}
-		lg.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadError(err, p.json)
 	}
 	project.presentWarnings("")
 	p.schema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
+
+	// Reject selectors before any run header or execution: a typo used to
+	// fall through to an empty plan and exit 0.
+	if err := validateToolSelectors(s, p.only, p.skip, p.profile); err != nil {
+		return err
+	}
 
 	if shouldWarnDeprecatedVerbose(cmd) {
 		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")

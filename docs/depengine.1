@@ -24,12 +24,28 @@ Distro\-agnostic dependency installer
 .TP
 .B "depengine bundle [flags]"
 Manage offline artifact bundles
+.PP
+Examples:
+.nf
+  depengine bundle export \-\-output ./offline\-bundle
+.fi
 .TP
 .B "depengine bundle export [flags]"
 Export artifacts from a v2 lockfile
+.PP
+Examples:
+.nf
+  depengine bundle export \-\-lock depengine.lock \-\-output ./offline\-bundle
+.fi
 .TP
 .B "depengine check <tool> [flags]"
 Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
+.PP
+Examples:
+.nf
+  depengine check nvim                 # compare desired state with the host
+  depengine check nvim \-\-live \-\-json   # probe through the adapter
+.fi
 .TP
 .B "depengine completion [flags]"
 Generate the autocompletion script for depengine for the specified shell. See each sub\-command's help for details on how to use the generated script.
@@ -48,51 +64,138 @@ Generate the autocompletion script for the zsh shell. If shell completion is not
 .TP
 .B "depengine diff [file1] [file2] [flags]"
 Compare two state files
+.PP
+Examples:
+.nf
+  depengine diff state\-before.json state\-after.json
+  depengine diff state\-before.json state\-after.json \-\-json
+.fi
 .TP
 .B "depengine forget <tool> [flags]"
 Forget a tool from state without removing it from the system
+.PP
+Examples:
+.nf
+  depengine forget nvim   # drop install state; the system is untouched
+.fi
 .TP
 .B "depengine graph [flags]"
 Show the dependency graph
+.PP
+Examples:
+.nf
+  depengine graph \-\-format mermaid
+  depengine graph \-\-format graph \-\-width 100
+  depengine graph \-\-only nvim \-\-direction dependents
+.fi
 .TP
 .B "depengine help [command] [flags]"
 Help about any command
 .TP
 .B "depengine import <recipe.toml> [flags]"
 Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+.PP
+Examples:
+.nf
+  depengine import ./fd.toml \-\-dry\-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml \-\-force     # replace an existing recipe
+.fi
 .TP
 .B "depengine init [flags]"
 Initialize a schema.toml for a new project
+.PP
+Examples:
+.nf
+  depengine init                          # interactive scaffold
+  depengine init \-\-add "zsh,bat,nvim"     # non\-interactive tool list
+  depengine init \-\-schema path/to/schema.toml
+.fi
 .TP
 .B "depengine install [flags]"
 Install tools from schema.toml
 Aliases: i.
+.PP
+Examples:
+.nf
+  depengine install                          # install every tool declared in schema.toml
+  depengine install \-\-only nvim              # one tool plus its dependencies
+  depengine install \-\-dry\-run \-\-sort\-by name # preview the plan without mutating
+  depengine install \-\-frozen\-lockfile        # reproducible install from depengine.lock
+  depengine install \-\-allow\-arbitrary\-code   # run pre_install/post_install hooks
+.fi
 .TP
 .B "depengine remove [tool...] [flags]"
 Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
 Aliases: rm, uninstall.
+.PP
+Examples:
+.nf
+  depengine remove bat                  # remove one tool
+  depengine remove bat lsd \-\-dry\-run    # preview the removal
+  depengine remove \-\-all \-\-force        # remove everything without prompting
+.fi
 .TP
 .B "depengine sbom [flags]"
 Export a software bill of materials of installed state
+.PP
+Examples:
+.nf
+  depengine sbom                  # CycloneDX
+  depengine sbom \-\-format spdx
+.fi
 .TP
 .B "depengine status [flags]"
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 Aliases: st.
+.PP
+Examples:
+.nf
+  depengine status              # schema vs state vs host
+  depengine status \-\-orphans    # installed tools missing from schema
+  depengine status \-\-format json
+.fi
 .TP
 .B "depengine undo [flags]"
 Revert to a previous state snapshot
 Aliases: rollback.
+.PP
+Examples:
+.nf
+  depengine undo \-\-list                # list available snapshots
+  depengine undo \-\-snapshot <path>     # restore one snapshot
+.fi
 .TP
 .B "depengine update [flags]"
 Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native\-only schemas
 Aliases: lock.
+.PP
+Examples:
+.nf
+  depengine update                    # resolve mutable references; write depengine.lock
+  depengine update \-\-dry\-run \-v       # show the pins without writing
+  depengine update \-\-profile desktop  # re\-resolve only tagged tools; keep other pins
+.fi
 .TP
 .B "depengine upgrade [flags]"
 Upgrade installed tools to the targets pinned in depengine.lock
+.PP
+Examples:
+.nf
+  depengine upgrade             # upgrade drifted tools to the locked targets
+  depengine upgrade \-\-only nvim
+  depengine upgrade \-\-dry\-run   # show the exact targets without upgrading
+.fi
 .TP
 .B "depengine validate [flags]"
 Validate schema.toml
 Aliases: lint.
+.PP
+Examples:
+.nf
+  depengine validate                     # parse and validate schema.toml
+  depengine validate \-\-strict            # warnings become errors
+  depengine validate \-\-check\-env \-\-format json
+.fi
 .TP
 .B "depengine version [flags]"
 Show version
@@ -101,6 +204,12 @@ Hidden compatibility command.
 .B "depengine why <tool> [flags]"
 Explain how a tool would be installed
 Aliases: explain.
+.PP
+Examples:
+.nf
+  depengine why nvim \-\-fields   # method, provenance and catalog impact
+  depengine why nvim \-\-json
+.fi
 .SH OPTIONS
 .SS "depengine flags"
 .TP

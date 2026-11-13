@@ -33,6 +33,9 @@ func newRemoveCmd() *cobra.Command {
 		Aliases: []string{"rm", "uninstall"},
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
 		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail."),
+		Example: `  depengine remove bat                  # remove one tool
+  depengine remove bat lsd --dry-run    # preview the removal
+  depengine remove --all --force        # remove everything without prompting`,
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -170,8 +173,7 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, 
 	}
 	s, _, _, err := loadSchema(schemaPath)
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		return nil, "", exitWithCode(2)
+		return nil, "", presentSchemaLoadError(err, false)
 	}
 	return s.Tools, s.Defaults.AurHelper, nil
 }

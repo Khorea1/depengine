@@ -18,6 +18,12 @@ Distro-agnostic dependency installer
 
 Manage offline artifact bundles
 
+Examples:
+
+```sh
+  depengine bundle export --output ./offline-bundle
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for bundle |
@@ -25,6 +31,12 @@ Manage offline artifact bundles
 ## `depengine bundle export [flags]`
 
 Export artifacts from a v2 lockfile
+
+Examples:
+
+```sh
+  depengine bundle export --lock depengine.lock --output ./offline-bundle
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -35,6 +47,13 @@ Export artifacts from a v2 lockfile
 ## `depengine check <tool> [flags]`
 
 Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
+
+Examples:
+
+```sh
+  depengine check nvim                 # compare desired state with the host
+  depengine check nvim --live --json   # probe through the adapter
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -96,6 +115,13 @@ Generate the autocompletion script for the zsh shell.  If shell completion is no
 
 Compare two state files
 
+Examples:
+
+```sh
+  depengine diff state-before.json state-after.json
+  depengine diff state-before.json state-after.json --json
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for diff |
@@ -106,6 +132,12 @@ Compare two state files
 
 Forget a tool from state without removing it from the system
 
+Examples:
+
+```sh
+  depengine forget nvim   # drop install state; the system is untouched
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for forget |
@@ -113,6 +145,14 @@ Forget a tool from state without removing it from the system
 ## `depengine graph [flags]`
 
 Show the dependency graph
+
+Examples:
+
+```sh
+  depengine graph --format mermaid
+  depengine graph --format graph --width 100
+  depengine graph --only nvim --direction dependents
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -145,6 +185,13 @@ Help about any command
 
 Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
 
+Examples:
+
+```sh
+  depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml --force     # replace an existing recipe
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | destination catalog root (repeatable; the first root wins) |
@@ -155,6 +202,14 @@ Validate a recipe before writing it to the catalog: preview origin, integrity, c
 ## `depengine init [flags]`
 
 Initialize a schema.toml for a new project
+
+Examples:
+
+```sh
+  depengine init                          # interactive scaffold
+  depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --schema path/to/schema.toml
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -168,6 +223,16 @@ Initialize a schema.toml for a new project
 Install tools from schema.toml
 
 Aliases: `i`.
+
+Examples:
+
+```sh
+  depengine install                          # install every tool declared in schema.toml
+  depengine install --only nvim              # one tool plus its dependencies
+  depengine install --dry-run --sort-by name # preview the plan without mutating
+  depengine install --frozen-lockfile        # reproducible install from depengine.lock
+  depengine install --allow-arbitrary-code   # run pre_install/post_install hooks
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -198,6 +263,14 @@ Observes the tracked target before removal. Proven-absent targets release state 
 
 Aliases: `rm`, `uninstall`.
 
+Examples:
+
+```sh
+  depengine remove bat                  # remove one tool
+  depengine remove bat lsd --dry-run    # preview the removal
+  depengine remove --all --force        # remove everything without prompting
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--all` | local | `false` | remove all tools |
@@ -211,6 +284,13 @@ Aliases: `rm`, `uninstall`.
 
 Export a software bill of materials of installed state
 
+Examples:
+
+```sh
+  depengine sbom                  # CycloneDX
+  depengine sbom --format spdx
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--format <string>` | local | `cyclonedx` | output format: cyclonedx or spdx |
@@ -221,6 +301,14 @@ Export a software bill of materials of installed state
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 
 Aliases: `st`.
+
+Examples:
+
+```sh
+  depengine status              # schema vs state vs host
+  depengine status --orphans    # installed tools missing from schema
+  depengine status --format json
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -240,6 +328,13 @@ Revert to a previous state snapshot
 
 Aliases: `rollback`.
 
+Examples:
+
+```sh
+  depengine undo --list                # list available snapshots
+  depengine undo --snapshot <path>     # restore one snapshot
+```
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for undo |
@@ -251,6 +346,14 @@ Aliases: `rollback`.
 Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas
 
 Aliases: `lock`.
+
+Examples:
+
+```sh
+  depengine update                    # resolve mutable references; write depengine.lock
+  depengine update --dry-run -v       # show the pins without writing
+  depengine update --profile desktop  # re-resolve only tagged tools; keep other pins
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -269,6 +372,14 @@ Aliases: `lock`.
 ## `depengine upgrade [flags]`
 
 Upgrade installed tools to the targets pinned in depengine.lock
+
+Examples:
+
+```sh
+  depengine upgrade             # upgrade drifted tools to the locked targets
+  depengine upgrade --only nvim
+  depengine upgrade --dry-run   # show the exact targets without upgrading
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -290,6 +401,14 @@ Upgrade installed tools to the targets pinned in depengine.lock
 Validate schema.toml
 
 Aliases: `lint`.
+
+Examples:
+
+```sh
+  depengine validate                     # parse and validate schema.toml
+  depengine validate --strict            # warnings become errors
+  depengine validate --check-env --format json
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -318,6 +437,13 @@ Visibility: hidden (documented compatibility command).
 Explain how a tool would be installed
 
 Aliases: `explain`.
+
+Examples:
+
+```sh
+  depengine why nvim --fields   # method, provenance and catalog impact
+  depengine why nvim --json
+```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|

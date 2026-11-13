@@ -46,8 +46,11 @@ func newInitCmd() *cobra.Command {
 	interactive := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "init",
-		Short:   ifPT("Inicializar schema.toml para um projeto", "Initialize a schema.toml for a new project"),
+		Use:   "init",
+		Short: ifPT("Inicializar schema.toml para um projeto", "Initialize a schema.toml for a new project"),
+		Example: `  depengine init                          # interactive scaffold
+  depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --schema path/to/schema.toml`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {

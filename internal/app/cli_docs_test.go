@@ -57,6 +57,36 @@ func TestCLIDocsCoverCommandTree(t *testing.T) {
 	}
 }
 
+func TestCLIDocsRenderCommandExamples(t *testing.T) {
+	setEnglishLocale(t)
+	docs := normalizeCLI(newRootCmd())
+	for _, path := range []string{
+		"depengine check", "depengine diff", "depengine forget", "depengine graph",
+		"depengine import", "depengine init", "depengine install", "depengine remove",
+		"depengine sbom", "depengine status", "depengine undo", "depengine update",
+		"depengine upgrade", "depengine validate", "depengine why",
+	} {
+		doc := commandDocByPath(docs, path)
+		if doc == nil {
+			t.Fatalf("missing command %q", path)
+		}
+		if doc.Examples == "" {
+			t.Errorf("%q has no Example block", path)
+		}
+	}
+
+	markdown, man, err := generateCLIDocs(newRootCmd())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(markdown, []byte("Examples:\n\n```sh\n  depengine install")) {
+		t.Error("Markdown reference does not render the install example")
+	}
+	if !bytes.Contains(man, []byte("Examples:\n.nf\n  depengine install")) {
+		t.Error("man page does not render the install example")
+	}
+}
+
 func TestCLIDocsHighRiskFlags(t *testing.T) {
 	setEnglishLocale(t)
 	docs := normalizeCLI(newRootCmd())
