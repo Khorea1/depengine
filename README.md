@@ -132,6 +132,7 @@ behavior.
 | `depengine install` | Install declared tools |
 | `depengine check <tool>` | Check one tool |
 | `depengine status` | Show recorded install state |
+| `depengine doctor` | Diagnose the host, layers, managers, elevation, and lock |
 | `depengine why <tool>` | Show which method would be chosen and why |
 | `depengine remove <tool>` | Remove a tool |
 | `depengine forget <tool>` | Remove a tool from state without uninstalling it |

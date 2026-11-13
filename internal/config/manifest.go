@@ -17,6 +17,20 @@ import (
 //
 // Returns "" if no manifest file exists at the resolved path.
 func DefaultManifestPath() string {
+	p := DefaultManifestCandidatePath()
+	if p == "" {
+		return ""
+	}
+	if _, err := os.Stat(p); err != nil { // #nosec G703 -- XDG/operator configuration intentionally selects the manifest path being probed.
+		return ""
+	}
+	return p
+}
+
+// DefaultManifestCandidatePath returns the path DefaultManifestPath probes,
+// whether or not the file exists. Diagnostic commands use it to show the
+// searched location instead of hiding an absent default manifest.
+func DefaultManifestCandidatePath() string {
 	if env := os.Getenv("DEPENGINE_MANIFEST"); env != "" {
 		return env
 	}
@@ -28,11 +42,7 @@ func DefaultManifestPath() string {
 		}
 		xdg = filepath.Join(home, ".config")
 	}
-	p := filepath.Join(xdg, "depengine", "manifest.toml")
-	if _, err := os.Stat(p); err != nil { // #nosec G703 -- XDG/operator configuration intentionally selects the manifest path being probed.
-		return ""
-	}
-	return p
+	return filepath.Join(xdg, "depengine", "manifest.toml")
 }
 
 // FilterManifestTools removes tools from the manifest that are not present in

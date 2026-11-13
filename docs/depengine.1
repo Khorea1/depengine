@@ -71,6 +71,16 @@ Examples:
   depengine diff state\-before.json state\-after.json \-\-json
 .fi
 .TP
+.B "depengine doctor [flags]"
+Print host facts, discovered layers (schema, manifest, catalog), available managers and elevation, and lock state. It installs nothing, writes no state, and changes no files.
+.PP
+Examples:
+.nf
+  depengine doctor
+  depengine doctor \-\-json
+  depengine doctor \-\-schema ./schema.toml \-\-no\-manifest
+.fi
+.TP
 .B "depengine forget <tool> [flags]"
 Forget a tool from state without removing it from the system
 .PP
@@ -302,6 +312,28 @@ output as JSON Scope: local. Default: false.
 .TP
 .B "\-\-other <string>"
 path to other state file (used when no args) Scope: local. Default: .
+.SS "depengine doctor flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
+.B "\-h, \-\-help"
+help for doctor Scope: local. Default: false.
+.TP
+.B "\-\-json"
+output as JSON Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+personal manifest path to inspect (default: auto\-detect) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-no\-manifest"
+ignore the personal manifest Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+schema path to inspect Scope: local. Default: schema.toml.
 .SS "depengine forget flags"
 .TP
 .B "\-h, \-\-help"

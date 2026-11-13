@@ -46,7 +46,7 @@ func TestCLIDocsCoverCommandTree(t *testing.T) {
 
 	for _, path := range []string{
 		"depengine", "depengine check", "depengine completion",
-		"depengine diff", "depengine forget", "depengine graph", "depengine help",
+		"depengine diff", "depengine doctor", "depengine forget", "depengine graph", "depengine help",
 		"depengine import", "depengine init", "depengine install", "depengine remove", "depengine sbom",
 		"depengine status", "depengine undo", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine version", "depengine why",
@@ -61,7 +61,7 @@ func TestCLIDocsRenderCommandExamples(t *testing.T) {
 	setEnglishLocale(t)
 	docs := normalizeCLI(newRootCmd())
 	for _, path := range []string{
-		"depengine check", "depengine diff", "depengine forget", "depengine graph",
+		"depengine check", "depengine diff", "depengine doctor", "depengine forget", "depengine graph",
 		"depengine import", "depengine init", "depengine install", "depengine remove",
 		"depengine sbom", "depengine status", "depengine undo", "depengine update",
 		"depengine upgrade", "depengine validate", "depengine why",
@@ -95,6 +95,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 		"depengine help":    {"help", "man"},
 		"depengine install": {"allow-arbitrary-code", "bundle", "catalog", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
 		"depengine check":   {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
+		"depengine doctor":  {"catalog", "help", "json", "manifest", "no-catalog", "no-manifest", "schema"},
 		"depengine graph":   {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
 		"depengine remove":  {"all", "dry-run", "force", "help", "only", "schema"},
 		"depengine diff":    {"help", "json", "other"},

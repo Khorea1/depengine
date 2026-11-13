@@ -128,6 +128,28 @@ Examples:
 | `--json` | local | `false` | output as JSON |
 | `--other <string>` | local | `` | path to other state file (used when no args) |
 
+## `depengine doctor [flags]`
+
+Print host facts, discovered layers (schema, manifest, catalog), available managers and elevation, and lock state. It installs nothing, writes no state, and changes no files.
+
+Examples:
+
+```sh
+  depengine doctor
+  depengine doctor --json
+  depengine doctor --schema ./schema.toml --no-manifest
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
+| `-h, --help` | local | `false` | help for doctor |
+| `--json` | local | `false` | output as JSON |
+| `--manifest <string>` | local | `` | personal manifest path to inspect (default: auto-detect) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
+| `--no-manifest` | local | `false` | ignore the personal manifest |
+| `--schema <string>` | local | `schema.toml` | schema path to inspect |
+
 ## `depengine forget <tool> [flags]`
 
 Forget a tool from state without removing it from the system
