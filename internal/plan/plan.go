@@ -256,18 +256,6 @@ type Operation struct {
 	Elevation     ElevationDecision `json:"elevation,omitempty"`
 }
 
-// MarshalJSON keeps the elevation decision explicit for mutating steps: a step
-// whose adapter cannot know whether it needs privilege serializes as "unknown"
-// instead of disappearing from the report. Read-only steps carry no decision.
-func (o Operation) MarshalJSON() ([]byte, error) {
-	type plain Operation
-	out := plain(o)
-	if o.Effect == EffectMutation {
-		out.Elevation = o.Elevation.Effective()
-	}
-	return json.Marshal(out)
-}
-
 // Validate enforces operation-level safety invariants independently of the
 // adapter that produced the plan. Any explicit argv is executable user intent
 // and therefore must be classified as arbitrary code so capability gating
@@ -519,6 +507,45 @@ func ownershipPathKey(value string) (string, error) {
 		return "unix\x00" + value, nil
 	}
 	return "", errors.New("path must be an absolute canonical Unix or Windows path")
+}
+
+// NormalizePreviewElevation makes the elevation decision explicit for every
+// mutating step in a resolved plan: adapters that cannot know the answer before
+// execution report "unknown" instead of omitting the field. This runs on the
+// resolution boundary, never on persisted state, so state round-trips keep
+// exactly the bytes they were given.
+func (p *ResolvedInstallPlan) NormalizePreviewElevation() {
+	normalizeOperation := func(operation Operation) Operation {
+		if operation.Effect == EffectMutation && operation.Elevation == "" {
+			operation.Elevation = ElevationUnknown
+		}
+		return operation
+	}
+	normalize := func(operations []Operation) {
+		for i := range operations {
+			operations[i] = normalizeOperation(operations[i])
+		}
+	}
+	normalize(p.Operations)
+	normalize(p.SourceMutations)
+	for i := range p.Hooks {
+		p.Hooks[i].Operation = normalizeOperation(p.Hooks[i].Operation)
+	}
+	for i := range p.Ensures {
+		p.Ensures[i].Check = normalizeOperation(p.Ensures[i].Check)
+		p.Ensures[i].Apply = normalizeOperation(p.Ensures[i].Apply)
+	}
+	if p.Preparation != nil {
+		normalize(p.Preparation.Probe)
+		normalize(p.Preparation.Commit)
+		for i := range p.Preparation.Prepare {
+			p.Preparation.Prepare[i].Apply = normalizeOperation(p.Preparation.Prepare[i].Apply)
+			if p.Preparation.Prepare[i].Rollback != nil {
+				rollback := normalizeOperation(*p.Preparation.Prepare[i].Rollback)
+				p.Preparation.Prepare[i].Rollback = &rollback
+			}
+		}
+	}
 }
 
 // HasMutations reports whether execution of the plan can alter host state.

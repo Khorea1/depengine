@@ -64,6 +64,9 @@ func (ex *Executor) resolveCandidatePlan(
 	if err := plan.ValidateResolution(*intent, *resolved); err != nil {
 		return intent, fmt.Errorf("%s: resolve plan: %w", displayKind, err)
 	}
+	// Decorating the resolved plan is safe only after the preservation check:
+	// lifecycle hooks must first round-trip exactly from the candidate intent.
+	resolved.NormalizePreviewElevation()
 	if expected != nil {
 		if err := plan.VerifyResolvedPlanAgainstLock(*expected, *resolved); err != nil {
 			return intent, fmt.Errorf("%s: frozen lock: %w", displayKind, err)

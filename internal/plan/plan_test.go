@@ -43,37 +43,37 @@ func TestOperationPreviewIsNotExecutableIntent(t *testing.T) {
 	}
 }
 
-func TestOperationJSONReportsUnknownElevationForMutations(t *testing.T) {
+func TestResolvedPlanNormalizesUnknownElevationForMutations(t *testing.T) {
 	p := plan.New("jq", "native", true)
 	p.Operations = []plan.Operation{
 		{Kind: "resolve", Effect: plan.EffectReadOnly},
 		{Kind: "install", Effect: plan.EffectMutation},
 		{Kind: "add-source", Effect: plan.EffectMutation, Elevation: plan.ElevationRequired},
 	}
-	data, err := json.Marshal(p)
+	p.NormalizePreviewElevation()
+	if p.Operations[0].Elevation != "" {
+		t.Errorf("read-only elevation = %q, want untouched", p.Operations[0].Elevation)
+	}
+	if p.Operations[1].Elevation != plan.ElevationUnknown {
+		t.Errorf("unannotated mutation elevation = %q, want unknown", p.Operations[1].Elevation)
+	}
+	if p.Operations[2].Elevation != plan.ElevationRequired {
+		t.Errorf("annotated mutation elevation = %q, want required", p.Operations[2].Elevation)
+	}
+
+	// Persisted state round-trips exactly what it was given: normalizing must
+	// happen on the resolution boundary, not through JSON marshaling.
+	operation := plan.Operation{Kind: "install", Effect: plan.EffectMutation}
+	data, err := json.Marshal(operation)
 	if err != nil {
 		t.Fatalf("Marshal() error: %v", err)
 	}
-	var decoded struct {
-		Operations []struct {
-			Kind      string `json:"kind"`
-			Elevation string `json:"elevation"`
-		} `json:"operations"`
-	}
+	var decoded map[string]any
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
-	if len(decoded.Operations) != 3 {
-		t.Fatalf("operations = %d, want 3", len(decoded.Operations))
-	}
-	if decoded.Operations[0].Elevation != "" {
-		t.Errorf("read-only elevation = %q, want omitted", decoded.Operations[0].Elevation)
-	}
-	if decoded.Operations[1].Elevation != string(plan.ElevationUnknown) {
-		t.Errorf("unannotated mutation elevation = %q, want unknown", decoded.Operations[1].Elevation)
-	}
-	if decoded.Operations[2].Elevation != string(plan.ElevationRequired) {
-		t.Errorf("annotated mutation elevation = %q, want required", decoded.Operations[2].Elevation)
+	if _, present := decoded["elevation"]; present {
+		t.Fatalf("unannotated mutation serialized an elevation: %s", data)
 	}
 }
 

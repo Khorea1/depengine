@@ -27,8 +27,7 @@
     {
       "kind": "add-source",
       "description": "configure package source",
-      "effect": "mutation",
-      "elevation": "unknown"
+      "effect": "mutation"
     }
   ],
   "entrypoints": {
@@ -38,14 +37,12 @@
     {
       "kind": "sync-index",
       "description": "refresh package metadata",
-      "effect": "mutation",
-      "elevation": "unknown"
+      "effect": "mutation"
     },
     {
       "kind": "install-package",
       "description": "install jq=1.7.1",
-      "effect": "mutation",
-      "elevation": "unknown"
+      "effect": "mutation"
     }
   ],
   "removal": {

@@ -27,8 +27,7 @@
     {
       "kind": "clone",
       "description": "clone source",
-      "effect": "mutation",
-      "elevation": "unknown"
+      "effect": "mutation"
     },
     {
       "kind": "build",
@@ -40,8 +39,7 @@
         "--token",
         "***"
       ],
-      "arbitrary_code": true,
-      "elevation": "unknown"
+      "arbitrary_code": true
     }
   ],
   "removal": {
