@@ -403,7 +403,7 @@ func flagDocByName(t *testing.T, command *cliCommandDoc, name string) cliFlagDoc
 
 func setEnglishLocale(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
+	for _, name := range []string{"DEPENGINE_LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
 		t.Setenv(name, "C")
 	}
 }

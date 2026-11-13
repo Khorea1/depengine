@@ -136,6 +136,19 @@ Adding fields inside `data` is a compatible change. Removing or renaming a
 field, changing a `command` value, or moving a payload out of `data` is an
 incompatible change and requires a new envelope version.
 
+## CLI language selection
+
+Command summaries are English by default. Localization is opt-in and gated on
+`DEPENGINE_LANG` (`en` or `pt`; a locale spelling such as `pt_BR.UTF-8` is
+accepted). POSIX locale variables (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`)
+are deliberately ignored so a partially translated CLI never appears just
+because the host locale is Portuguese.
+
+Coverage is limited to command `Short`/`Long`/`Example` text. Flag descriptions,
+errors, warnings and logs remain English until a complete message catalog
+exists. This is the documented coverage contract: opt in explicitly instead of
+mixing languages implicitly.
+
 ## Legacy host-detector override retirement gate
 
 `DEPENGINE_DETECT_SCRIPT` remains supported by `internal/platform` as a compatibility shell around native Go detection. Do not remove the variable or its behavior until all of these conditions hold:

@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Make CLI localization explicitly opt-in through `DEPENGINE_LANG` and stop
+  deriving the interface language from POSIX locale variables. Only command
+  summaries are localized; flags, errors and logs stay English, and the
+  coverage contract is documented.
 - Add `depengine init --from-state [path]` and `--from-manifest [path]` to adopt
   tools that are already installed or declared in the personal manifest.
   Adoption merges into an existing schema without rewriting declared tools,

@@ -22,9 +22,9 @@ const (
 
 var Version = "dev"
 
-// ifPT picks the PT-BR or EN variant of a short UI label — used for command
-// Short/Long text so `depengine help` reads in the user's language exactly
-// as it did before, without a parallel PT/EN table to maintain.
+// ifPT picks the PT-BR or EN variant of a short UI label — used only for
+// command Short/Long text. Localization is opt-in via DEPENGINE_LANG (see
+// docs/compatibility.md); locale variables are not consulted.
 func ifPT(pt, en string) string {
 	if i18n.GetLocale() == "en" {
 		return en

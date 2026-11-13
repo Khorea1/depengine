@@ -291,6 +291,7 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 
 | Variable | Purpose |
 |---|---|
+| `DEPENGINE_LANG` | Opt-in CLI language for command summaries (`en` default, `pt`). Locale variables are ignored; flags, errors and logs stay English. |
 | `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
 | `DEPENGINE_CATALOG` | Override catalog roots (path list; `--catalog` wins) |
