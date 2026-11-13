@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Serialize installs that target the same package manager when `--jobs` is
+  greater than one, so the parallel fallback path cannot turn a valid plan into
+  `apt-get`/`pacman` lock contention. Installs for different managers still run
+  concurrently.
 - Emit one versioned machine-output envelope (`version`, `command`, `data`)
   from every command that produces machine-readable output, and give
   `update`, `undo`, `forget`, `bundle export`, `validate`, `check`, `remove`,

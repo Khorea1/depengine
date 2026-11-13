@@ -37,9 +37,10 @@ depengine diff state1.json state2.json
 depengine completion bash | zsh | fish
 ```
 
-> **Warning:** concurrent native package manager installs (`apt-get`,
-> `pacman -S`) can cause lock contention. Prefer `--jobs=1` for many native
-> tools.
+> **Note:** installs that target the same package manager (`apt-get`,
+> `pacman -S`, `flatpak`, `scoop`, ...) are serialized automatically, even when
+> `--jobs` is greater than 1, because those managers cannot run two mutations at
+> once. `--jobs` parallelizes across managers and independent methods.
 
 Full flag list: [cli-reference.md](cli-reference.md).
 

@@ -479,6 +479,12 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 		return ex.finishWouldInstall(ac, result)
 	}
 
+	// The dependency graph may schedule two installs for the same package
+	// manager on one level. Serialize them here so --jobs never turns a valid
+	// plan into lock contention; other managers keep running in parallel.
+	unlockManager := ex.lockExclusiveManager(ac.method.Kind, ac.run.nativeManagerName)
+	defer unlockManager()
+
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installing")
 	runner := ex.mutationRunner(ac.tool.Name, ac.displayKind)
 	methodCtx := ac.toolCtx

@@ -52,6 +52,10 @@ type Executor struct {
 	// beforeReplacementSave is an instance-local fault-injection seam for
 	// deterministic replacement-boundary persistence tests.
 	beforeReplacementSave func(string)
+
+	// managerLocks serializes installs that contend on the same package
+	// manager. Keyed by manager identity (see exclusiveManagerKey).
+	managerLocks sync.Map
 }
 
 type dependencyRun struct {
