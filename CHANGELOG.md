@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Make strict schema-shape errors actionable: each line now carries the TOML
+  `line:column`, a `did you mean` suggestion for unknown fields (`tagz` →
+  `tags`), a minimal valid example for the failing location, and a
+  `docs/schema-reference.md` anchor. Applies to `validate`, `install --dry-run`,
+  and every other parse path, including recipes parsed from bytes.
 - Expose the planned install argv and elevation decision in `install --dry-run`.
   Resolved plans carry a non-executable `preview` argv, never executable
   `command`, so the capability gate is unchanged, and mutating steps report

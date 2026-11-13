@@ -31,6 +31,15 @@ signal instead, because a selector that matches nothing now exits `2`.
 Search this table for the message you saw. Each entry names the exit code,
 the usual cause, the fix, and the command that shows more detail.
 
+Strict schema-shape errors also carry the `line:column` of the offending TOML,
+a minimal valid example, a `did you mean` suggestion for unknown fields, and the
+`docs/schema-reference.md` anchor that documents the construct. For example:
+
+```text
+schema.toml: invalid schema:
+5:1: tools.yq.github.reop: field is not supported by method kind github (did you mean "repo"?); example: repo = "owner/repo"; docs: docs/schema-reference.md#method-reference
+```
+
 | Message | Exit | Cause | Fix | Diagnose |
 |---|---|---|---|---|
 | `schema %s not found` | 2 | No project schema at the selected path | Run `depengine init`, or pass `--schema <path>` | `depengine doctor` |
@@ -47,10 +56,10 @@ the usual cause, the fix, and the command that shows more detail.
 | `lock: unsupported version` | 2 | The lockfile format is newer than this binary | Upgrade depengine or regenerate the lock | `depengine doctor` |
 | `lock: package or registry changed for` | 2 | A package or registry identity changed since the lock was written | Run `depengine update` to accept the change | `depengine why <tool>` |
 | `lock: package, registry, or version request changed for` | 2 | A package version or registry request changed since the lock was written | Run `depengine update` to accept the change | `depengine why <tool>` |
-| `this method requires a config table` | 2 | A method was written as a scalar or list where a table is required | Use `tool = { native = true }` or a `[tools.tool.method]` block | `depengine validate` |
-| `expected table, got` | 2 | A section or tool was written with the wrong TOML shape | Use the table form shown by `depengine explain` | `depengine validate` |
-| `unknown field` | 2 | A key is not part of the schema | Fix the spelling or remove the key | `depengine validate` |
-| `unknown method kind` | 2 | A method name is not a registered adapter | Use a supported method name | `depengine validate` |
+| `this method requires a config table` | 2 | A method was written as a scalar or list where a table is required | Use the example in the diagnostic, `tool = { native = true }`, or a `[tools.tool.method]` block | `depengine validate` |
+| `expected table, got` | 2 | A section or tool was written with the wrong TOML shape | Use the table example in the diagnostic or `depengine explain` | `depengine validate` |
+| `unknown field` | 2 | A key is not part of the schema | Use the `did you mean` suggestion or remove the key | `depengine validate` |
+| `unknown method kind` | 2 | A method name is not a registered adapter | Use a supported method name (the diagnostic notes close variants) | `depengine validate` |
 | `cargo: git and version are mutually exclusive` | 2 | A Cargo method sets both `git` and `version` | Keep one selector | `depengine validate` |
 | `artifact: url and repo+asset are mutually exclusive` | 2 | An artifact method sets both `url` and `repo`/`asset` | Keep one source form | `depengine validate` |
 | `--catalog and --no-catalog are mutually exclusive` | 2 | Both catalog flags were passed | Pass only one | `depengine doctor` |

@@ -182,7 +182,7 @@ func parseDocumentBytes(path string, rawBytes []byte, m map[string]string, secti
 	// expanding a placeholder there would make the candidate sequence depend
 	// on the parsing host (ADR-007).
 	if err := validateOrderSelectorsBeforeExpansion(raw, sectionName); err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, enrichSchemaError(err, rawBytes))}
 	}
 
 	// {arch}/{os} are deliberately withheld from this first, whole-tree
@@ -208,7 +208,7 @@ func parseDocumentBytes(path string, rawBytes []byte, m map[string]string, secti
 	raw = ExpandAll(raw, mWithoutArchOS).(map[string]any)
 
 	if err := validateRawSchema(raw, sectionName, versionField, recipe); err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, enrichSchemaError(err, rawBytes))}
 	}
 
 	// Extract rawTools from the specified section.
