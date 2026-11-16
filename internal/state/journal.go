@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,23 @@ const (
 	JournalRemoved  = "removed"
 	JournalReverted = "reverted"
 )
+
+// JournalResults returns every stable journal result value in documentation
+// order. Queries validate --result against this closed vocabulary so a typo
+// fails instead of silently matching nothing.
+func JournalResults() []string {
+	return []string{JournalSuccess, JournalAlready, JournalFailed, JournalSkipped, JournalUpdated, JournalRemoved, JournalReverted}
+}
+
+// IsJournalResult reports whether result is a stable journal result value.
+func IsJournalResult(result string) bool {
+	for _, candidate := range JournalResults() {
+		if candidate == result {
+			return true
+		}
+	}
+	return false
+}
 
 // JournalIdentity is the concrete installed identity recorded with a mutation.
 // Empty fields mean the adapter could not determine that dimension.
@@ -112,6 +130,12 @@ func AppendJournal(ctx context.Context, entries ...JournalEntry) error {
 // AppendJournalTo is AppendJournal with an explicit path, used by tests and
 // callers that relocated the state directory.
 func AppendJournalTo(ctx context.Context, path string, entries ...JournalEntry) error {
+	return appendJournalTo(ctx, path, JournalMaxBytes, entries...)
+}
+
+// appendJournalTo is AppendJournalTo with an injectable rotation bound, so
+// tests can exercise repeated rotation without writing 8 MiB.
+func appendJournalTo(ctx context.Context, path string, limit int64, entries ...JournalEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -127,9 +151,9 @@ func AppendJournalTo(ctx context.Context, path string, entries ...JournalEntry) 
 	}
 	defer func() { _ = unlock.Close() }()
 
-	if info, err := os.Stat(path); err == nil && info.Size() >= JournalMaxBytes {
-		if err := os.Rename(path, path+".1"); err != nil {
-			return fmt.Errorf("rotate journal: %w", err)
+	if info, err := os.Stat(path); err == nil && info.Size() >= limit {
+		if err := rotateJournal(path); err != nil {
+			return err
 		}
 	}
 
@@ -159,6 +183,36 @@ func AppendJournalTo(ctx context.Context, path string, entries ...JournalEntry) 
 	return f.Close()
 }
 
+// journalExists reports whether either journal generation exists.
+func journalExists(path string) (bool, error) {
+	for _, candidate := range []string{path, path + ".1"} {
+		_, err := os.Stat(candidate)
+		if err == nil {
+			return true, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("inspect journal: %w", err)
+		}
+	}
+	return false, nil
+}
+
+// rotateJournal replaces journal.jsonl.1 with the current generation. os.Rename
+// does not replace an existing destination on Windows (MoveFile fails there),
+// so the previous generation is removed first. The append lock is held by the
+// caller and queries take the shared lock, so neither a rotation nor a query
+// observes the intermediate state.
+func rotateJournal(path string) error {
+	rotated := path + ".1"
+	if err := os.Remove(rotated); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("rotate journal: remove previous generation: %w", err)
+	}
+	if err := os.Rename(path, rotated); err != nil {
+		return fmt.Errorf("rotate journal: %w", err)
+	}
+	return nil
+}
+
 // JournalFilter narrows a journal query. Zero fields match everything.
 type JournalFilter struct {
 	Tool    string
@@ -173,7 +227,25 @@ type JournalFilter struct {
 // QueryJournal reads the rotated generation and the current file, returning
 // matching entries in chronological order. Malformed lines are skipped: a
 // damaged record must not hide the rest of the audit trail.
+//
+// The query holds the shared journal lock for both reads, so a rotation cannot
+// drop a whole generation between them and an in-flight append cannot expose a
+// partial line. A missing journal returns no entries without creating the state
+// directory just to answer a read-only query.
 func QueryJournal(path string, filter JournalFilter) ([]JournalEntry, error) {
+	exists, err := journalExists(path)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, nil
+	}
+	unlock, err := lockSharedFilePathContext(context.Background(), path+".lock", "acquire journal query lock")
+	if err != nil {
+		return nil, fmt.Errorf("lock journal query: %w", err)
+	}
+	defer func() { _ = unlock.Close() }()
+
 	var entries []JournalEntry
 	for _, candidate := range []string{path + ".1", path} {
 		batch, err := readJournalFile(candidate)
@@ -243,6 +315,13 @@ func readJournalFile(path string) ([]JournalEntry, error) {
 		}
 		var entry JournalEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		// A record written by an unknown format cannot be interpreted with the
+		// current field semantics, so it is skipped like a damaged line instead
+		// of being misreported as a v1 entry. JournalVersion is the only format
+		// this reader understands.
+		if entry.FormatVersion != JournalVersion {
 			continue
 		}
 		entries = append(entries, entry)

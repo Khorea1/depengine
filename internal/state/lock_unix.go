@@ -21,6 +21,10 @@ const lockPollInterval = 50 * time.Millisecond
 // exclusive (writer) lock.
 const exclusiveLockMode = syscall.LOCK_EX
 
+// sharedLockMode is the platform value passed to lockFilePathContext for a
+// shared (reader) lock.
+const sharedLockMode = syscall.LOCK_SH
+
 type fileLock struct{ f *os.File }
 
 func (l *fileLock) Close() error {
@@ -41,6 +45,12 @@ func lockSharedContext(ctx context.Context) (io.Closer, error) {
 
 func lockWithModeContext(ctx context.Context, mode int, desc string) (io.Closer, error) {
 	return lockFilePathContext(ctx, DefaultPath()+".lock", mode, desc)
+}
+
+// lockSharedFilePathContext acquires a shared lock on an arbitrary private
+// lock file. Journal queries use it to exclude rotation and in-flight appends.
+func lockSharedFilePathContext(ctx context.Context, path, desc string) (io.Closer, error) {
+	return lockFilePathContext(ctx, path, sharedLockMode, desc)
 }
 
 // lockFilePathContext locks an arbitrary private lock file. Journal writes use

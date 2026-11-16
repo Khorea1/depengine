@@ -173,6 +173,138 @@ func TestJournalConcurrentAppendsStayParseable(t *testing.T) {
 	}
 }
 
+func TestJournalRotatesRepeatedlyReplacingPreviousGeneration(t *testing.T) {
+	path := journalPathForTest(t)
+	// A one-byte bound rotates on every append after the first, so this
+	// exercises the second rotation exactly where Windows used to fail: the
+	// destination journal.jsonl.1 already exists.
+	const limit = int64(1)
+	entries := []JournalEntry{
+		fixedJournalEntry("install", "first", JournalSuccess, "2026-01-01T10:00:00Z"),
+		fixedJournalEntry("install", "second", JournalSuccess, "2026-01-02T10:00:00Z"),
+		fixedJournalEntry("install", "third", JournalSuccess, "2026-01-03T10:00:00Z"),
+	}
+	for i, entry := range entries {
+		if err := appendJournalTo(context.Background(), path, limit, entry); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+	}
+	query, err := QueryJournal(path, JournalFilter{})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	// The third append replaces the rotated generation, which then holds the
+	// second entry; the oldest generation is intentionally discarded.
+	if len(query) != 2 || query[0].Tool != "second" || query[1].Tool != "third" {
+		t.Fatalf("generations after repeated rotation = %+v, want second, third", query)
+	}
+}
+
+func TestQueryJournalWaitsForJournalWriter(t *testing.T) {
+	path := journalPathForTest(t)
+	if err := AppendJournalTo(context.Background(), path, fixedJournalEntry("install", "jq", JournalSuccess, "2026-01-01T10:00:00Z")); err != nil {
+		t.Fatalf("seed journal: %v", err)
+	}
+	holder, err := lockFilePathContext(context.Background(), path+".lock", exclusiveLockMode, "hold journal lock")
+	if err != nil {
+		t.Fatalf("hold journal lock: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := QueryJournal(path, JournalFilter{})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("query returned while the journal writer lock was held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := holder.Close(); err != nil {
+		t.Fatalf("release journal lock: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("query did not resume after the writer released the lock")
+	}
+}
+
+func TestQueryJournalDuringRotationNeverFailsOrReturnsPartialEntries(t *testing.T) {
+	path := journalPathForTest(t)
+	const limit = int64(512)
+	payload := strings.Repeat("x", 400)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(stop)
+		for i := 0; i < 40; i++ {
+			entry := fixedJournalEntry("install", "rotating", JournalSuccess, "2026-01-01T10:00:00Z")
+			entry.Detail = payload
+			if err := appendJournalTo(context.Background(), path, limit, entry); err != nil {
+				t.Errorf("append: %v", err)
+				return
+			}
+		}
+	}()
+	for {
+		select {
+		case <-stop:
+			wg.Wait()
+			return
+		default:
+		}
+		entries, err := QueryJournal(path, JournalFilter{})
+		if err != nil {
+			t.Fatalf("query during rotation: %v", err)
+		}
+		for _, entry := range entries {
+			if entry.FormatVersion != JournalVersion || entry.Tool != "rotating" || entry.Detail != payload {
+				t.Fatalf("query returned a partial entry during rotation: %+v", entry)
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestJournalSkipsUnsupportedFormatVersions(t *testing.T) {
+	path := journalPathForTest(t)
+	lines := []string{
+		`{"format_version":0,"timestamp":"2026-01-01T10:00:00Z","command":"install","tool":"zero","result":"success"}`,
+		`{"format_version":1,"timestamp":"2026-01-02T10:00:00Z","command":"install","tool":"one","result":"success"}`,
+		`{"format_version":2,"timestamp":"2026-01-03T10:00:00Z","command":"install","tool":"future","result":"success"}`,
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("write journal: %v", err)
+	}
+	entries, err := QueryJournal(path, JournalFilter{})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Tool != "one" {
+		t.Fatalf("entries = %+v, want only the v1 record", entries)
+	}
+}
+
+func TestQueryJournalMissingFileReturnsEmptyWithoutCreatingStateDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	path := filepath.Join(dir, "journal.jsonl")
+	entries, err := QueryJournal(path, JournalFilter{})
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want none", entries)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("query created %s: %v", dir, err)
+	}
+}
+
 func TestSchemaHashIsStableAndTracksDefinitions(t *testing.T) {
 	schema := &config.Schema{Tools: map[string]*config.Tool{
 		"b": {Name: "b"},

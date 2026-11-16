@@ -30,6 +30,10 @@ const (
 // exclusive (writer) lock.
 const exclusiveLockMode = true
 
+// sharedLockMode is the platform value passed to lockFilePathContext for a
+// shared (reader) lock.
+const sharedLockMode = false
+
 type overlapped struct {
 	Internal, InternalHigh uintptr
 	Offset, OffsetHigh     uint32
@@ -52,6 +56,12 @@ func lockSharedContext(ctx context.Context) (io.Closer, error) {
 }
 func lockWithModeContext(ctx context.Context, exclusive bool, desc string) (io.Closer, error) {
 	return lockFilePathContext(ctx, DefaultPath()+".lock", exclusive, desc)
+}
+
+// lockSharedFilePathContext acquires a shared lock on an arbitrary private
+// lock file. Journal queries use it to exclude rotation and in-flight appends.
+func lockSharedFilePathContext(ctx context.Context, path, desc string) (io.Closer, error) {
+	return lockFilePathContext(ctx, path, sharedLockMode, desc)
 }
 
 // lockFilePathContext locks an arbitrary private lock file. Journal writes use
