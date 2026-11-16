@@ -9,7 +9,7 @@ import (
 	"github.com/Khorea1/depengine/internal/methodkind"
 )
 
-// ---------- Dangling references ----------
+// Dangling references
 
 func TestValidateDanglingReferences_Valid(t *testing.T) {
 	s := &config.Schema{
@@ -55,7 +55,7 @@ func TestValidateDanglingReferences_MultipleDeps(t *testing.T) {
 	}
 }
 
-// ---------- Cycles ----------
+// Dependency cycles
 
 func TestValidateCycles_NoCycle(t *testing.T) {
 	s := &config.Schema{
@@ -142,7 +142,7 @@ func TestValidateCycles_NoDeps(t *testing.T) {
 	}
 }
 
-// ---------- Malformed URLs ----------
+// Malformed URLs
 
 func TestValidateMalformedURLs_ValidHTTP(t *testing.T) {
 	s := &config.Schema{
@@ -342,7 +342,7 @@ func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 	}
 }
 
-// ---------- Unknown distro family ----------
+// Unknown distro families
 
 func TestValidateUnknownDistroFamily_Valid(t *testing.T) {
 	s := &config.Schema{
@@ -417,7 +417,7 @@ func TestValidateUnknownDistroFamily_Multiple(t *testing.T) {
 	}
 }
 
-// ---------- Integration from TOML files ----------
+// TOML fixtures
 
 func TestValidateSchemaFromFile_InvalidDanglingRef(t *testing.T) {
 	s := parseTestdata(t, "invalid_dangling_ref.toml")

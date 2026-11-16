@@ -1072,7 +1072,6 @@ func TestConditionDistroVersionsAcrossPlatforms(t *testing.T) {
 }
 
 func TestConditionMatches(t *testing.T) {
-	// Build a baseline Facts that would match a debian system.
 	facts := &platform.Facts{
 		DistroID:      "ubuntu",
 		DistroVersion: "24.04",

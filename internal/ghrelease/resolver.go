@@ -115,12 +115,10 @@ func (r *Resolver) ResolveLatestReleaseTag(ctx context.Context, repo string, rn 
 func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (string, error) {
 	cacheKey := owner + "/" + repo
 
-	// Check cache.
 	if v, ok := r.tags.Load(cacheKey); ok {
 		return v.(string), nil
 	}
 
-	// Fetch latest release from GitHub API.
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {

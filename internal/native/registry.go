@@ -516,7 +516,6 @@ func IsNativeManagerName(name string) bool {
 	if nativeManagerNames[name] {
 		return true
 	}
-	// Check managerNameToClan binary-name aliases.
 	if _, ok := managerNameToClan[name]; ok {
 		return true
 	}

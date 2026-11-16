@@ -496,8 +496,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 	}
 	defer func() { _ = os.RemoveAll(cloneDir) }()
 
-	// Build clone args. depth=0 means full history and therefore omits
-	// --depth entirely; git rejects --depth 0.
+	// Git rejects --depth 0; zero requests a full clone without --depth.
 	cloneArgs := []string{"clone"}
 	if depth != "0" {
 		cloneArgs = append(cloneArgs, "--depth", depth)

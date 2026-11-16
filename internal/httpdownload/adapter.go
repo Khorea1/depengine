@@ -657,7 +657,6 @@ func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, fi
 		return fmt.Errorf("%s:auto: cannot determine filename from URL %q", cc.algorithm, downloadURL)
 	}
 
-	// Build the list of checksum URLs to try.
 	var checksumURLs []string
 	if cc.url != "" {
 		checksumURLs = []string{cc.url}

@@ -661,7 +661,7 @@ func mergeMethodSlices(lower, upper []*MethodCandidate, pc *provenanceCollector)
 		}
 	}
 
-	// Build result preserving order (lower methods first, then new upper methods).
+	// Preserve lower-method order before newly added upper methods.
 	result := make([]*MethodCandidate, 0, len(byKind))
 	for _, k := range order {
 		result = append(result, byKind[k])

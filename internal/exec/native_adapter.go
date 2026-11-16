@@ -868,13 +868,11 @@ func (a *NativeByManagerAdapter) CanRemove() bool { return true }
 // binary names that differ from Manager.Name), then falls back to
 // iterating known clans.
 func findClanByManager(name string) string {
-	// 1. Check explicit reverse map (e.g. "emerge" → "gentoo").
 	if clan, ok := native.ManagerNameToClan(name); ok {
 		if _, ok := native.Lookup(clan); ok {
 			return clan
 		}
 	}
-	// 2. Fallback: search known clans by Manager.Name.
 	for _, clan := range native.KnownClans() {
 		if mgr, ok := native.Lookup(clan); ok && mgr.Name == name {
 			return clan

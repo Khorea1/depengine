@@ -414,7 +414,6 @@ func extractDefaultsWithPresence(raw any) (Defaults, fieldPresence) {
 func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (map[string]*Tool, error) {
 	tools := map[string]*Tool{}
 
-	// 1. Process `simple` list first.
 	if sim, ok := rawTools["simple"].([]any); ok {
 		for _, item := range sim {
 			name, ok := item.(string)
@@ -444,7 +443,7 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 		}
 	}
 
-	// 2. Process remaining entries. Sort keys for deterministic error messages.
+	// Sort named tools to keep duplicate-declaration diagnostics deterministic.
 	for _, name := range sortedKeys(rawTools, "simple") {
 		val := rawTools[name]
 		if _, dup := tools[name]; dup {
@@ -1127,7 +1126,6 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	var hardErrors []string
 	var warnings []string
 
-	// Check Defaults.MethodOrder entries first.
 	for _, kind := range s.Defaults.MethodOrder {
 		if methodkind.IsNativeKind(kind) {
 			continue // valid: native manager name, resolved at execution time
@@ -1146,12 +1144,11 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		}
 	}
 
-	// Build set from method_order for Part B check.
 	orderSet := make(map[string]struct{}, len(s.Defaults.MethodOrder))
 	for _, k := range s.Defaults.MethodOrder {
 		orderSet[k] = struct{}{}
 	}
-	// Check each tool's method candidates. Sort tool names for deterministic output.
+	// Sort tool names for deterministic diagnostics.
 	names := make([]string, 0, len(s.Tools))
 	for name := range s.Tools {
 		names = append(names, name)
@@ -1188,7 +1185,6 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			}
 		}
 
-		// Check for parse errors on individual methods (e.g. pip = false).
 		for _, mc := range tool.Methods {
 			if mc.Err != nil {
 				hardErrors = append(hardErrors, fmt.Sprintf(

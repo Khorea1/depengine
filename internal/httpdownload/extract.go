@@ -67,7 +67,6 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 	if ext == ".deb" {
 		return fmt.Errorf("http: .deb package lifecycle is unsupported because exact dpkg package identity is not persisted; use a native package-manager method")
 	}
-	// Ensure destination exists.
 	if err := os.MkdirAll(dest, 0o755); err != nil { // #nosec G301 -- Extraction destinations are installed payload roots and must remain traversable.
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}

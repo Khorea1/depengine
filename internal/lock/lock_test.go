@@ -938,13 +938,11 @@ func TestApplyMethodReorderingWarning(t *testing.T) {
 		},
 	}
 
-	// Create a lock with the correct hash for the schema.
 	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 
-	// Now reorder the schema methods.
 	s.Tools["tool"].Methods[0], s.Tools["tool"].Methods[1] = s.Tools["tool"].Methods[1], s.Tools["tool"].Methods[0]
 
 	// Capture log output.
@@ -1599,7 +1597,6 @@ func TestMergePreservesV2UniversalProjection(t *testing.T) {
 func TestMergeKeepsFreshProjectionWhenPresent(t *testing.T) {
 	existing := v2TestLockWithProjection(t, nil)
 	fresh := v2TestLockWithProjection(t, nil)
-	// Make fresh distinct by rebuilding with a different tool identity.
 	other := plan.New("other", "http", true)
 	other.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "9.9.9"}
 	other.Identity.Version = "9.9.9"

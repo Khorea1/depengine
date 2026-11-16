@@ -559,7 +559,6 @@ func TestSaveLocked(t *testing.T) {
 		t.Fatalf("state file not created at %s", path)
 	}
 
-	// Load it back via Load().
 	loaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load(): %v", err)
