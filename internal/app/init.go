@@ -62,11 +62,11 @@ func newInitCmd() *cobra.Command {
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if *fromState != "" && *fromManifest != "" {
-				fmt.Fprintln(os.Stderr, "error: --from-state and --from-manifest are mutually exclusive")
+				_, _ = fmt.Fprintln(os.Stderr, "error: --from-state and --from-manifest are mutually exclusive")
 				return exitWithCode(2)
 			}
 			if (*fromState != "" || *fromManifest != "") && (*interactive || *addTools != "") {
-				fmt.Fprintln(os.Stderr, "error: --from-state/--from-manifest cannot be combined with --interactive or --add")
+				_, _ = fmt.Fprintln(os.Stderr, "error: --from-state/--from-manifest cannot be combined with --interactive or --add")
 				return exitWithCode(2)
 			}
 			if *fromState != "" || *fromManifest != "" {
@@ -78,7 +78,7 @@ func newInitCmd() *cobra.Command {
 				})
 			}
 			if *interactive && *addTools != "" {
-				fmt.Fprintln(cmd.ErrOrStderr(), "error: --interactive and --add cannot be combined; use --add for non-interactive input")
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "error: --interactive and --add cannot be combined; use --add for non-interactive input")
 				return exitWithCode(2)
 			}
 			return runInit(cmd, *output, *addTools, *interactive, *dryRun)
@@ -105,10 +105,10 @@ func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bo
 
 	if !dryRun {
 		if _, err := os.Lstat(path); err == nil {
-			fmt.Fprintf(stderr, "error: %s already exists\n", path)
+			_, _ = fmt.Fprintf(stderr, "error: %s already exists\n", path)
 			return exitWithCode(1)
 		} else if !os.IsNotExist(err) {
-			fmt.Fprintf(stderr, "error: cannot inspect %s: %v\n", path, err)
+			_, _ = fmt.Fprintf(stderr, "error: cannot inspect %s: %v\n", path, err)
 			return exitWithCode(1)
 		}
 	}
@@ -124,11 +124,11 @@ func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bo
 		for _, n := range names {
 			n = strings.TrimSpace(n)
 			if n == "" {
-				fmt.Fprintln(stderr, "error: empty tool name (check for doubled commas or trailing comma)")
+				_, _ = fmt.Fprintln(stderr, "error: empty tool name (check for doubled commas or trailing comma)")
 				return exitWithCode(1)
 			}
 			if !toolNameRegex.MatchString(n) {
-				fmt.Fprintf(stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
+				_, _ = fmt.Fprintf(stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
 				return exitWithCode(1)
 			}
 			quoted = append(quoted, fmt.Sprintf("%q", n))
@@ -138,7 +138,7 @@ func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bo
 
 	template := fmt.Sprintf(initTemplate, filepath.Base(path), simpleList)
 	if dryRun {
-		fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
+		_, _ = fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
 		_, _ = io.WriteString(stdout, template)
 		return nil
 	}
@@ -146,12 +146,12 @@ func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bo
 	dir := filepath.Dir(path)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
-			fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
+			_, _ = fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
 			return exitWithCode(1)
 		}
 	}
 	if err := os.WriteFile(path, []byte(template), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
-		fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
+		_, _ = fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
 
@@ -166,8 +166,8 @@ func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bo
 		msg += fmt.Sprintf(" with %d tools", len(strings.Split(addTools, ",")))
 	}
 	_, _ = fmt.Fprintln(stdout, styled(color, ansiGreen, msg))
-	fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
-	fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
+	_, _ = fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
+	_, _ = fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
 	return nil
 }
 
@@ -175,8 +175,8 @@ func runInteractiveInit(path string, input io.Reader, stdout, stderr io.Writer, 
 	r := bufio.NewReader(input)
 	basename := filepath.Base(path)
 
-	fmt.Fprintln(stderr, "depengine init — interactive mode")
-	fmt.Fprintln(stderr, "Add tools one by one. Leave name empty to finish.")
+	_, _ = fmt.Fprintln(stderr, "depengine init — interactive mode")
+	_, _ = fmt.Fprintln(stderr, "Add tools one by one. Leave name empty to finish.")
 
 	var simpleTools []string
 	var customLines []string
@@ -191,17 +191,17 @@ func runInteractiveInit(path string, input io.Reader, stdout, stderr io.Writer, 
 			break
 		}
 		if !toolNameRegex.MatchString(name) {
-			fmt.Fprintf(stderr, "Invalid tool name %q: use only letters, digits, underscores, hyphens, and dots.\n", name)
+			_, _ = fmt.Fprintf(stderr, "Invalid tool name %q: use only letters, digits, underscores, hyphens, and dots.\n", name)
 			continue
 		}
 
 		if seen[name] {
-			fmt.Fprintf(stderr, "⚠ %q already added. Enter another name.\n", name)
+			_, _ = fmt.Fprintf(stderr, "⚠ %q already added. Enter another name.\n", name)
 			continue
 		}
 		seen[name] = true
 
-		fmt.Fprintf(stderr, "\nHow does %s install?\n", name)
+		_, _ = fmt.Fprintf(stderr, "\nHow does %s install?\n", name)
 		choice, err := promptSelect(r, stderr, "Choose method", []string{
 			"1) Native — same package name on every distro",
 			"2) Native — different name on some distros",
@@ -284,7 +284,7 @@ func runInteractiveInit(path string, input io.Reader, stdout, stderr io.Writer, 
 			customLines = append(customLines, fmt.Sprintf("# %s = {  }  # TODO: configure manually", name))
 		}
 
-		fmt.Fprintln(stderr)
+		_, _ = fmt.Fprintln(stderr)
 	}
 
 	var b strings.Builder
@@ -320,42 +320,42 @@ manager = "native"
 	}
 
 	if dryRun {
-		fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
+		_, _ = fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
 		_, _ = io.WriteString(stdout, b.String())
 		return nil
 	}
 	dir := filepath.Dir(path)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
-			fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
+			_, _ = fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
 			return exitWithCode(1)
 		}
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
-		fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
+		_, _ = fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
 
 	toolCount := len(simpleTools) + len(customLines)
 	if toolCount == 0 {
-		fmt.Fprintf(stderr, "⚠ %s created — no tools added yet. Edit the file or re-run with --interactive.\n", path)
+		_, _ = fmt.Fprintf(stderr, "⚠ %s created — no tools added yet. Edit the file or re-run with --interactive.\n", path)
 	} else {
-		fmt.Fprintf(stdout, "✓ %s created with %d tool(s)\n", path, toolCount)
+		_, _ = fmt.Fprintf(stdout, "✓ %s created with %d tool(s)\n", path, toolCount)
 	}
-	fmt.Fprintln(stderr)
-	fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
-	fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
+	_, _ = fmt.Fprintln(stderr)
+	_, _ = fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
+	_, _ = fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
 	return nil
 }
 
 func initInputError(stderr io.Writer, path string, err error) error {
-	fmt.Fprintf(stderr, "error: interactive input ended (%v); %s was not written. Next: depengine init --add nvim\n", err, path)
+	_, _ = fmt.Fprintf(stderr, "error: interactive input ended (%v); %s was not written. Next: depengine init --add nvim\n", err, path)
 	return exitWithCode(2)
 }
 
 // prompt reads a line from stdin, trimming whitespace. Returns io.EOF on Ctrl+D.
 func prompt(r *bufio.Reader, stderr io.Writer, msg string) (string, error) {
-	fmt.Fprintf(stderr, "%s: ", msg)
+	_, _ = fmt.Fprintf(stderr, "%s: ", msg)
 	line, err := r.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -366,7 +366,7 @@ func prompt(r *bufio.Reader, stderr io.Writer, msg string) (string, error) {
 // promptSelect shows a numbered menu and returns the 0-based choice.
 func promptSelect(r *bufio.Reader, stderr io.Writer, msg string, options []string) (int, error) {
 	for _, opt := range options {
-		fmt.Fprintln(stderr, "  "+opt)
+		_, _ = fmt.Fprintln(stderr, "  "+opt)
 	}
 	for {
 		input, err := prompt(r, stderr, msg)
@@ -375,7 +375,7 @@ func promptSelect(r *bufio.Reader, stderr io.Writer, msg string, options []strin
 		}
 		n, err := strconv.Atoi(input)
 		if err != nil || n < 1 || n > len(options) {
-			fmt.Fprintf(stderr, "Enter a number between 1 and %d.\n", len(options))
+			_, _ = fmt.Fprintf(stderr, "Enter a number between 1 and %d.\n", len(options))
 			continue
 		}
 		return n - 1, nil
@@ -385,7 +385,7 @@ func promptSelect(r *bufio.Reader, stderr io.Writer, msg string, options []strin
 // promptMultiMap reads values for each key and returns a map of key → value.
 // Empty values are omitted from the result.
 func promptMultiMap(r *bufio.Reader, stderr io.Writer, msg string, keys []string) (map[string]string, error) {
-	fmt.Fprintln(stderr, msg)
+	_, _ = fmt.Fprintln(stderr, msg)
 	result := make(map[string]string)
 	for _, k := range keys {
 		v, err := prompt(r, stderr, "  "+k)

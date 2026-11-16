@@ -57,7 +57,7 @@ func TestInitDryRunDoesNotOverwriteExistingSchema(t *testing.T) {
 	if code != 0 || !strings.Contains(stdout, `simple = ["nvim"]`) {
 		t.Fatalf("code=%d preview=%q", code, stdout)
 	}
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec G304 -- path is the test-owned schema path.
 	if err != nil || string(got) != "existing schema" {
 		t.Fatalf("dry-run modified existing file: %q (%v)", got, err)
 	}
@@ -103,7 +103,7 @@ func TestInteractiveInitExplicitFinishAndPreview(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("completed wizard code=%d stderr=%s", code, stderr)
 	}
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(path) // #nosec G304 -- path is the test-owned schema path.
 	if err != nil || !strings.Contains(string(body), `simple = ["demo"]`) {
 		t.Fatalf("completed wizard schema=%q err=%v", body, err)
 	}

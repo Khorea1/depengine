@@ -179,7 +179,7 @@ func newHelpCmd(root *cobra.Command) *cobra.Command {
 				if target != nil {
 					nearest = target
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "error: unknown help topic %q\nNext: %s --help\n", strings.Join(args, " "), nearest.CommandPath())
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: unknown help topic %q\nNext: %s --help\n", strings.Join(args, " "), nearest.CommandPath())
 				return exitWithCode(2)
 			}
 			target.InitDefaultHelpFlag()

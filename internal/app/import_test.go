@@ -197,7 +197,7 @@ func TestImportDryRunWithExistingRecipeIsSuccessfulAndReadOnly(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "would replace "+dest) || !strings.Contains(out, "dry run: recipe not written") {
 		t.Fatalf("code=%d preview=%q", code, out)
 	}
-	got, err := os.ReadFile(dest)
+	got, err := os.ReadFile(dest) // #nosec G304 -- dest is the test-owned catalog path.
 	if err != nil || string(got) != "existing recipe" {
 		t.Fatalf("dry-run modified recipe: %q (%v)", got, err)
 	}
@@ -274,7 +274,7 @@ func TestImportJSONOutcomesAndCommandWriters(t *testing.T) {
 	if code != 0 || stderr != "" || written.Outcome != "written" || written.WouldReplace {
 		t.Fatalf("code=%d written=%+v stderr=%q", code, written, stderr)
 	}
-	got, err := os.ReadFile(dest)
+	got, err := os.ReadFile(dest) // #nosec G304 -- dest is the test-owned catalog path.
 	if err != nil || string(got) != body {
 		t.Fatalf("imported recipe=%q err=%v", got, err)
 	}
@@ -336,7 +336,7 @@ func TestImportJSONOutputFailureDoesNotHideCompletedWrite(t *testing.T) {
 	if !strings.Contains(stderr.String(), "error: encode import result: output unavailable") {
 		t.Fatalf("missing output diagnostic: %q", stderr.String())
 	}
-	got, readErr := os.ReadFile(filepath.Join(catalog, "tool.toml"))
+	got, readErr := os.ReadFile(filepath.Join(catalog, "tool.toml")) // #nosec G304 -- catalog is the test-owned catalog root.
 	if readErr != nil || string(got) != body {
 		t.Fatalf("recipe should remain written even when stdout fails: %q (%v)", got, readErr)
 	}
