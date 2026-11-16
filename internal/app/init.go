@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,14 +52,15 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: ifPT("Inicializar schema.toml para um projeto", "Initialize a schema.toml for a new project"),
-		Example: `  depengine init                          # interactive scaffold
+		Example: `  depengine init                          # scaffold with placeholder tools
   depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --add nvim --dry-run     # preview without creating files
   depengine init --from-state             # adopt installed tools from tracked state
   depengine init --from-manifest --dry-run  # adopt personal manifest entries without writing
   depengine init --schema path/to/schema.toml`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if *fromState != "" && *fromManifest != "" {
 				fmt.Fprintln(os.Stderr, "error: --from-state and --from-manifest are mutually exclusive")
 				return exitWithCode(2)
@@ -75,7 +77,11 @@ func newInitCmd() *cobra.Command {
 					DryRun:       *dryRun,
 				})
 			}
-			return runInit(output, addTools, interactive)
+			if *interactive && *addTools != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "error: --interactive and --add cannot be combined; use --add for non-interactive input")
+				return exitWithCode(2)
+			}
+			return runInit(cmd, *output, *addTools, *interactive, *dryRun)
 		},
 	}
 	f := cmd.Flags()
@@ -90,56 +96,39 @@ func newInitCmd() *cobra.Command {
 	return cmd
 }
 
-// runInit writes a new schema.toml. Body unchanged from the pre-Cobra
-// version — only the flag declarations above it moved.
-func runInit(output, addTools *string, interactive *bool) error {
-	path := *output
+func runInit(cmd *cobra.Command, output, addTools string, interactive, dryRun bool) error {
+	path := output
 	if path == "" {
 		path = "schema.toml"
 	}
+	stdout, stderr := cmd.OutOrStdout(), cmd.ErrOrStderr()
 
-	if *interactive {
-		// Don't overwrite existing files.
-		if _, err := os.Stat(path); err == nil {
-			fmt.Fprintf(os.Stderr, "error: %s already exists\n", path)
+	if !dryRun {
+		if _, err := os.Lstat(path); err == nil {
+			fmt.Fprintf(stderr, "error: %s already exists\n", path)
+			return exitWithCode(1)
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintf(stderr, "error: cannot inspect %s: %v\n", path, err)
 			return exitWithCode(1)
 		}
-		dir := filepath.Dir(path)
-		if dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
-				fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
-				return exitWithCode(1)
-			}
-		}
-		return runInteractiveInit(path)
 	}
 
-	// Don't overwrite existing files.
-	if _, err := os.Stat(path); err == nil {
-		fmt.Fprintf(os.Stderr, "error: %s already exists\n", path)
-		return exitWithCode(1)
-	}
-
-	dir := filepath.Dir(path)
-	if dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
-			fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
-			return exitWithCode(1)
-		}
+	if interactive {
+		return runInteractiveInit(path, cmd.InOrStdin(), stdout, stderr, dryRun)
 	}
 
 	simpleList := `"tool1", "tool2"`
-	if *addTools != "" {
-		names := strings.Split(*addTools, ",")
+	if addTools != "" {
+		names := strings.Split(addTools, ",")
 		var quoted []string
 		for _, n := range names {
 			n = strings.TrimSpace(n)
 			if n == "" {
-				fmt.Fprintf(os.Stderr, "error: empty tool name (check for doubled commas or trailing comma)\n")
+				fmt.Fprintln(stderr, "error: empty tool name (check for doubled commas or trailing comma)")
 				return exitWithCode(1)
 			}
 			if !toolNameRegex.MatchString(n) {
-				fmt.Fprintf(os.Stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
+				fmt.Fprintf(stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
 				return exitWithCode(1)
 			}
 			quoted = append(quoted, fmt.Sprintf("%q", n))
@@ -148,51 +137,72 @@ func runInit(output, addTools *string, interactive *bool) error {
 	}
 
 	template := fmt.Sprintf(initTemplate, filepath.Base(path), simpleList)
+	if dryRun {
+		fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
+		_, _ = io.WriteString(stdout, template)
+		return nil
+	}
+
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
+			fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
+			return exitWithCode(1)
+		}
+	}
 	if err := os.WriteFile(path, []byte(template), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
-		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
+		fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
 
 	// The ✓ goes to stdout (the created path is the consumable result,
 	// pipeable), the hints go to stderr (guidance, not data).
-	c := newCLIStyle(os.Stdout)
-	msg := fmt.Sprintf("✓ %s created", path)
-	if *addTools != "" {
-		msg += fmt.Sprintf(" with %d tools", len(strings.Split(*addTools, ",")))
+	color := false
+	if file, ok := stdout.(*os.File); ok {
+		color = cliColor(file)
 	}
-	_, _ = fmt.Fprintln(c.w, c.green(msg))
-	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
-	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
+	msg := fmt.Sprintf("✓ %s created", path)
+	if addTools != "" {
+		msg += fmt.Sprintf(" with %d tools", len(strings.Split(addTools, ",")))
+	}
+	_, _ = fmt.Fprintln(stdout, styled(color, ansiGreen, msg))
+	fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
+	fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
 	return nil
 }
 
-// runInteractiveInit runs an interactive wizard that walks the user through
-// adding tools to a new schema.toml.
-func runInteractiveInit(path string) error {
-	r := bufio.NewReader(os.Stdin)
+func runInteractiveInit(path string, input io.Reader, stdout, stderr io.Writer, dryRun bool) error {
+	r := bufio.NewReader(input)
 	basename := filepath.Base(path)
 
-	fmt.Fprintln(os.Stderr, "depengine init — interactive mode")
-	fmt.Fprintln(os.Stderr, "Add tools one by one. Leave name empty to finish.")
+	fmt.Fprintln(stderr, "depengine init — interactive mode")
+	fmt.Fprintln(stderr, "Add tools one by one. Leave name empty to finish.")
 
 	var simpleTools []string
 	var customLines []string
 	seen := make(map[string]bool)
 
 	for {
-		name, err := prompt(r, "Tool name (or empty to finish)")
-		if err != nil || name == "" {
+		name, err := prompt(r, stderr, "Tool name (or empty to finish)")
+		if err != nil {
+			return initInputError(stderr, path, err)
+		}
+		if name == "" {
 			break
+		}
+		if !toolNameRegex.MatchString(name) {
+			fmt.Fprintf(stderr, "Invalid tool name %q: use only letters, digits, underscores, hyphens, and dots.\n", name)
+			continue
 		}
 
 		if seen[name] {
-			fmt.Fprintf(os.Stderr, "⚠ %q already added. Enter another name.\n", name)
+			fmt.Fprintf(stderr, "⚠ %q already added. Enter another name.\n", name)
 			continue
 		}
 		seen[name] = true
 
-		fmt.Fprintf(os.Stderr, "\nHow does %s install?\n", name)
-		choice, err := promptSelect(r, "Choose method", []string{
+		fmt.Fprintf(stderr, "\nHow does %s install?\n", name)
+		choice, err := promptSelect(r, stderr, "Choose method", []string{
 			"1) Native — same package name on every distro",
 			"2) Native — different name on some distros",
 			"3) Cargo (crates.io)",
@@ -204,16 +214,16 @@ func runInteractiveInit(path string) error {
 			"9) Other — skip, I'll edit manually",
 		})
 		if err != nil {
-			break
+			return initInputError(stderr, path, err)
 		}
 
 		switch choice {
 		case 0:
 			simpleTools = append(simpleTools, name)
 		case 1:
-			overrides, err := promptMultiMap(r, "Native package overrides (enter names, empty = use tool name)", []string{"pacman", "apt", "brew", "dnf"})
+			overrides, err := promptMultiMap(r, stderr, "Native package overrides (enter names, empty = use tool name)", []string{"pacman", "apt", "brew", "dnf"})
 			if err != nil {
-				break
+				return initInputError(stderr, path, err)
 			}
 			var parts []string
 			for _, mgr := range []string{"pacman", "apt", "brew", "dnf"} {
@@ -228,9 +238,9 @@ func runInteractiveInit(path string) error {
 			}
 		case 2:
 			// Cargo — ask for crate name if it differs from tool name
-			pkg, err := prompt(r, "Crate name (empty if same as tool name)")
+			pkg, err := prompt(r, stderr, "Crate name (empty if same as tool name)")
 			if err != nil {
-				break
+				return initInputError(stderr, path, err)
 			}
 			if pkg != "" {
 				customLines = append(customLines, fmt.Sprintf("%s = { cargo = %q }", name, pkg))
@@ -239,9 +249,9 @@ func runInteractiveInit(path string) error {
 			}
 		case 3:
 			// Go
-			pkg, err := prompt(r, "Go module path (empty if same as tool name)")
+			pkg, err := prompt(r, stderr, "Go module path (empty if same as tool name)")
 			if err != nil {
-				break
+				return initInputError(stderr, path, err)
 			}
 			if pkg != "" {
 				customLines = append(customLines, fmt.Sprintf("%s = { go = %q }", name, pkg))
@@ -253,18 +263,18 @@ func runInteractiveInit(path string) error {
 		case 5:
 			customLines = append(customLines, fmt.Sprintf("%s = { node = true }", name))
 		case 6:
-			url, err := prompt(r, "Git repository URL")
+			url, err := prompt(r, stderr, "Git repository URL")
 			if err != nil {
-				break
+				return initInputError(stderr, path, err)
 			}
 			if url == "" {
 				url = "true"
 			}
 			customLines = append(customLines, fmt.Sprintf("%s = { git = %q }", name, url))
 		case 7:
-			url, err := prompt(r, "Download URL")
+			url, err := prompt(r, stderr, "Download URL")
 			if err != nil {
-				break
+				return initInputError(stderr, path, err)
 			}
 			if url == "" {
 				url = "true"
@@ -274,10 +284,9 @@ func runInteractiveInit(path string) error {
 			customLines = append(customLines, fmt.Sprintf("# %s = {  }  # TODO: configure manually", name))
 		}
 
-		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(stderr)
 	}
 
-	// Build file content
 	var b strings.Builder
 	fmt.Fprintf(&b, `# %s — depengine project configuration
 # Generated by 'depengine init --interactive'
@@ -310,26 +319,43 @@ manager = "native"
 		b.WriteString(line + "\n")
 	}
 
+	if dryRun {
+		fmt.Fprintf(stderr, "Preview: %s (not written)\n", path)
+		_, _ = io.WriteString(stdout, b.String())
+		return nil
+	}
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
+			fmt.Fprintf(stderr, "error: cannot create directory %s: %v\n", dir, err)
+			return exitWithCode(1)
+		}
+	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
-		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
+		fmt.Fprintf(stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
 
 	toolCount := len(simpleTools) + len(customLines)
 	if toolCount == 0 {
-		fmt.Fprintf(os.Stderr, "⚠ %s created — no tools added yet. Edit the file or re-run with --interactive.\n", path)
+		fmt.Fprintf(stderr, "⚠ %s created — no tools added yet. Edit the file or re-run with --interactive.\n", path)
 	} else {
-		fmt.Printf("✓ %s created with %d tool(s)\n", path, toolCount)
+		fmt.Fprintf(stdout, "✓ %s created with %d tool(s)\n", path, toolCount)
 	}
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
-	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
+	fmt.Fprintln(stderr)
+	fmt.Fprintln(stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
+	fmt.Fprintln(stderr, "Share this file with your team: git add schema.toml && git commit")
 	return nil
 }
 
+func initInputError(stderr io.Writer, path string, err error) error {
+	fmt.Fprintf(stderr, "error: interactive input ended (%v); %s was not written. Next: depengine init --add nvim\n", err, path)
+	return exitWithCode(2)
+}
+
 // prompt reads a line from stdin, trimming whitespace. Returns io.EOF on Ctrl+D.
-func prompt(r *bufio.Reader, msg string) (string, error) {
-	fmt.Fprintf(os.Stderr, "%s: ", msg)
+func prompt(r *bufio.Reader, stderr io.Writer, msg string) (string, error) {
+	fmt.Fprintf(stderr, "%s: ", msg)
 	line, err := r.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -338,18 +364,18 @@ func prompt(r *bufio.Reader, msg string) (string, error) {
 }
 
 // promptSelect shows a numbered menu and returns the 0-based choice.
-func promptSelect(r *bufio.Reader, msg string, options []string) (int, error) {
+func promptSelect(r *bufio.Reader, stderr io.Writer, msg string, options []string) (int, error) {
 	for _, opt := range options {
-		fmt.Fprintln(os.Stderr, "  "+opt)
+		fmt.Fprintln(stderr, "  "+opt)
 	}
 	for {
-		input, err := prompt(r, msg)
+		input, err := prompt(r, stderr, msg)
 		if err != nil {
 			return 0, err
 		}
 		n, err := strconv.Atoi(input)
 		if err != nil || n < 1 || n > len(options) {
-			fmt.Fprintf(os.Stderr, "Enter a number between 1 and %d.\n", len(options))
+			fmt.Fprintf(stderr, "Enter a number between 1 and %d.\n", len(options))
 			continue
 		}
 		return n - 1, nil
@@ -358,11 +384,11 @@ func promptSelect(r *bufio.Reader, msg string, options []string) (int, error) {
 
 // promptMultiMap reads values for each key and returns a map of key → value.
 // Empty values are omitted from the result.
-func promptMultiMap(r *bufio.Reader, msg string, keys []string) (map[string]string, error) {
-	fmt.Fprintln(os.Stderr, msg)
+func promptMultiMap(r *bufio.Reader, stderr io.Writer, msg string, keys []string) (map[string]string, error) {
+	fmt.Fprintln(stderr, msg)
 	result := make(map[string]string)
 	for _, k := range keys {
-		v, err := prompt(r, "  "+k)
+		v, err := prompt(r, stderr, "  "+k)
 		if err != nil {
 			return nil, err
 		}

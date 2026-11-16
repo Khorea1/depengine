@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,20 +19,79 @@ type machineTestEnvelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// decodeEnvelope extracts the JSON envelope from merged stdout/stderr output.
-// Commands keep human progress on stderr, so the payload is the last JSON
-// object in the captured stream.
+// decodeEnvelope checks the complete stdout document, including any prefix or suffix.
 func decodeEnvelope(t *testing.T, out string) machineTestEnvelope {
 	t.Helper()
-	start := strings.Index(out, "{\n  \"version\"")
-	if start < 0 {
-		t.Fatalf("no machine envelope in output:\n%s", out)
-	}
-	var env machineTestEnvelope
-	if err := json.Unmarshal([]byte(out[start:]), &env); err != nil {
-		t.Fatalf("invalid envelope JSON: %v\noutput:\n%s", err, out)
+	env, err := parseMachineEnvelope(out)
+	if err != nil {
+		t.Fatalf("invalid machine envelope: %v\nstdout:\n%s", err, out)
 	}
 	return env
+}
+
+func parseMachineEnvelope(out string) (machineTestEnvelope, error) {
+	var env machineTestEnvelope
+	err := json.Unmarshal([]byte(out), &env)
+	return env, err
+}
+
+func decodeMachineObject(raw json.RawMessage) (map[string]any, error) {
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, errors.New("expected a JSON object, got null")
+	}
+	return data, nil
+}
+
+func decodeMachineArray(raw json.RawMessage) error {
+	var data []any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return err
+	}
+	if data == nil {
+		return errors.New("expected a JSON array, got null")
+	}
+	return nil
+}
+
+func TestMachineEnvelopeRejectsMixedStdout(t *testing.T) {
+	const valid = `{"version":1,"command":"why","data":{"tool":"demo"}}`
+	for _, tc := range []struct{ name, stdout string }{
+		{name: "human prefix", stdout: "loading...\n" + valid},
+		{name: "human suffix", stdout: valid + "\ndone"},
+		{name: "second JSON document", stdout: valid + "\n" + valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseMachineEnvelope(tc.stdout); err == nil {
+				t.Fatalf("accepted invalid machine stdout: %q", tc.stdout)
+			}
+		})
+	}
+	if _, err := parseMachineEnvelope(valid + "\n"); err != nil {
+		t.Fatalf("valid JSON with trailing newline: %v", err)
+	}
+}
+
+func TestMachinePayloadRejectsWrongType(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{name: "array instead of object", raw: json.RawMessage(`[]`)},
+		{name: "null instead of object", raw: json.RawMessage(`null`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeMachineObject(tc.raw); err == nil {
+				t.Fatalf("accepted %s as object", tc.raw)
+			}
+		})
+	}
+	if err := decodeMachineArray(json.RawMessage(`{}`)); err == nil {
+		t.Fatal("accepted object as array")
+	}
 }
 
 // TestMachineOutputEnvelope pins one versioned envelope across every command
@@ -53,10 +113,11 @@ func TestMachineOutputEnvelope(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		command string
-		args    func(t *testing.T) (env []string, args []string)
-		assert  func(t *testing.T, data map[string]any)
+		name      string
+		command   string
+		args      func(t *testing.T) (env []string, args []string)
+		wantArray bool
+		assert    func(t *testing.T, data map[string]any)
 	}{
 		{
 			name:    "audit",
@@ -86,15 +147,17 @@ func TestMachineOutputEnvelope(t *testing.T) {
 			},
 		},
 		{
-			name:    "status",
-			command: "status",
+			name:      "status",
+			command:   "status",
+			wantArray: true,
 			args: func(*testing.T) ([]string, []string) {
 				return []string{"XDG_STATE_HOME=" + t.TempDir()}, []string{"--schema", schemaPath, "--no-manifest", "--format", "json"}
 			},
 		},
 		{
-			name:    "diff",
-			command: "diff",
+			name:      "diff",
+			command:   "diff",
+			wantArray: true,
 			args: func(t *testing.T) ([]string, []string) {
 				path := func(tools map[string]state.ToolState) string {
 					stateHome := t.TempDir()
@@ -193,11 +256,11 @@ func TestMachineOutputEnvelope(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			env, args := tc.args(t)
-			code, out := runCommand(t, tc.command, env, args...)
+			code, stdout, stderr := runCommandStreams(t, tc.command, env, args...)
 			if code != 0 {
-				t.Fatalf("%s exit = %d, want 0 (output:\n%s)", tc.name, code, out)
+				t.Fatalf("%s exit = %d, want 0 (stdout: %q; stderr: %q)", tc.name, code, stdout, stderr)
 			}
-			envl := decodeEnvelope(t, out)
+			envl := decodeEnvelope(t, stdout)
 			if envl.Version != machineOutputVersion {
 				t.Errorf("version = %d, want %d", envl.Version, machineOutputVersion)
 			}
@@ -207,15 +270,19 @@ func TestMachineOutputEnvelope(t *testing.T) {
 			if len(envl.Data) == 0 || string(envl.Data) == "null" {
 				t.Fatalf("data is empty for %s", tc.name)
 			}
-			if tc.assert == nil {
+			if tc.wantArray {
+				if err := decodeMachineArray(envl.Data); err != nil {
+					t.Fatalf("%s data must be an array: %v; stderr: %q", tc.name, err, stderr)
+				}
 				return
 			}
-			var data map[string]any
-			if err := json.Unmarshal(envl.Data, &data); err != nil {
-				// Array payloads (status, diff) only need the wrapper check.
-				return
+			data, err := decodeMachineObject(envl.Data)
+			if err != nil {
+				t.Fatalf("%s data must be an object: %v; stderr: %q", tc.name, err, stderr)
 			}
-			tc.assert(t, data)
+			if tc.assert != nil {
+				tc.assert(t, data)
+			}
 		})
 	}
 }

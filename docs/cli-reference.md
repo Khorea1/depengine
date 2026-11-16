@@ -262,6 +262,7 @@ Examples:
 
 ```sh
   depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml --dry-run --json  # inspect the preview in scripts
   depengine import ./fd.toml --force     # replace an existing recipe
 ```
 
@@ -270,7 +271,9 @@ Examples:
 | `--catalog <stringArray>` | local | `[]` | destination catalog root (repeatable; the first root wins) |
 | `--dry-run` | local | `false` | preview the import without writing the recipe |
 | `--force` | local | `false` | replace an existing recipe with the same tool name |
+| `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for import |
+| `--json` | local | `false` | shorthand for --format=json |
 
 ## `depengine init [flags]`
 
@@ -279,8 +282,9 @@ Initialize a schema.toml for a new project
 Examples:
 
 ```sh
-  depengine init                          # interactive scaffold
+  depengine init                          # scaffold with placeholder tools
   depengine init --add "zsh,bat,nvim"     # non-interactive tool list
+  depengine init --add nvim --dry-run     # preview without creating files
   depengine init --from-state             # adopt installed tools from tracked state
   depengine init --from-manifest --dry-run  # adopt personal manifest entries without writing
   depengine init --schema path/to/schema.toml
@@ -789,6 +793,7 @@ shapes by command:
 | `doctor` | report object |
 | `explain` | `query`, `matches` |
 | `forget` | `tool` |
+| `import` | `outcome` (`previewed`, `written`, `rejected`, `failed`), `would_replace`, `name`, `source`, `destination`, `digest`, `candidates`, `executable`, `warnings`, `errors` |
 | `install` | execution report |
 | `journal` | `path`, `count`, `entries` |
 | `remove` | `dry_run`, `removed`, `failed` |
@@ -799,6 +804,15 @@ shapes by command:
 | `upgrade` | counters and per-tool `results` |
 | `validate` | `errors`, `warnings` |
 | `why` | audit object; an array with `--all` |
+
+For `import`, a valid `--dry-run` returns `previewed` even when the destination
+already exists; `would_replace` identifies that collision without modifying
+the file. A real import without `--force` returns `rejected` and exit code `2`
+when the destination exists. Validation errors are also reported on stderr.
+A filesystem write failure returns `failed` with an `errors` entry in the JSON
+report and exit code `3`. If writing stdout fails after the recipe is saved,
+exit code `3` does not imply the recipe was rolled back; inspect the destination
+before retrying.
 
 An unknown `--format` value exits `2`. Schema-loading failures still produce an
 envelope, with `E_SCHEMA_*` codes inside `data`. `sbom` and `graph` keep their

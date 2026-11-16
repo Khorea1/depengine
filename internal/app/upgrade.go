@@ -253,7 +253,6 @@ func collectOutdatedTools(ctx context.Context, st *state.State, s *config.Schema
 			continue
 		}
 
-		// Find the tool in the schema — need it for Install.
 		tool, ok := s.Tools[name]
 		if !ok {
 			// Tool in state but not in schema — can't upgrade (no method config).

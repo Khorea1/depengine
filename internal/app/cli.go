@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/i18n"
@@ -174,11 +173,14 @@ func newHelpCmd(root *cobra.Command) *cobra.Command {
 				printManPage(cmd.Context())
 				return nil
 			}
-			target, _, err := root.Find(args)
-			if err != nil || target == nil {
-				fmt.Fprintf(os.Stderr, "Unknown help topic %q\n", args)
-				_ = root.Usage()
-				return exitWithCode(1)
+			target, remaining, err := root.Find(args)
+			if err != nil || target == nil || len(remaining) > 0 {
+				nearest := root
+				if target != nil {
+					nearest = target
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "error: unknown help topic %q\nNext: %s --help\n", strings.Join(args, " "), nearest.CommandPath())
+				return exitWithCode(2)
 			}
 			target.InitDefaultHelpFlag()
 			return target.Help()

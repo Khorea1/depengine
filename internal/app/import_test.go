@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -181,6 +183,183 @@ func TestImportRequiresForceToReplace(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(dest); string(got) != body { // #nosec G304 -- test reads its own fixture.
 		t.Fatalf("forced import did not replace the destination: %q", got)
+	}
+}
+
+func TestImportDryRunWithExistingRecipeIsSuccessfulAndReadOnly(t *testing.T) {
+	catalog := t.TempDir()
+	dest := filepath.Join(catalog, "tool.toml")
+	if err := os.WriteFile(dest, []byte("existing recipe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := writeImportSource(t, "tool", "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n")
+	code, out := runImportForTest(t, source, catalog, true, false)
+	if code != 0 || !strings.Contains(out, "would replace "+dest) || !strings.Contains(out, "dry run: recipe not written") {
+		t.Fatalf("code=%d preview=%q", code, out)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || string(got) != "existing recipe" {
+		t.Fatalf("dry-run modified recipe: %q (%v)", got, err)
+	}
+}
+
+func executeImportForTest(t *testing.T, source, catalog string, args ...string) (int, string, string) {
+	t.Helper()
+	cmd := newImportCmd()
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs(append([]string{source, "--catalog", catalog}, args...))
+	if err := cmd.Execute(); err != nil {
+		return requireExitCode(t, err), stdout.String(), stderr.String()
+	}
+	return 0, stdout.String(), stderr.String()
+}
+
+func importJSONData(t *testing.T, out string) struct {
+	Outcome      string   `json:"outcome"`
+	WouldReplace bool     `json:"would_replace"`
+	Name         string   `json:"name"`
+	Destination  string   `json:"destination"`
+	Digest       string   `json:"digest"`
+	Warnings     []string `json:"warnings"`
+	Errors       []string `json:"errors"`
+} {
+	t.Helper()
+	var envelope struct {
+		Version int             `json:"version"`
+		Command string          `json:"command"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("invalid JSON or human output mixed into stdout: %v: %q", err, out)
+	}
+	if envelope.Version != machineOutputVersion || envelope.Command != "import" {
+		t.Fatalf("invalid envelope: %+v", envelope)
+	}
+	var data struct {
+		Outcome      string   `json:"outcome"`
+		WouldReplace bool     `json:"would_replace"`
+		Name         string   `json:"name"`
+		Destination  string   `json:"destination"`
+		Digest       string   `json:"digest"`
+		Warnings     []string `json:"warnings"`
+		Errors       []string `json:"errors"`
+	}
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		t.Fatalf("invalid import data: %v", err)
+	}
+	return data
+}
+
+func TestImportJSONOutcomesAndCommandWriters(t *testing.T) {
+	catalog := t.TempDir()
+	const body = "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n"
+	source := writeImportSource(t, "tool", body)
+	dest := filepath.Join(catalog, "tool.toml")
+
+	code, out, stderr := executeImportForTest(t, source, catalog, "--dry-run", "--json")
+	preview := importJSONData(t, out)
+	if code != 0 || stderr != "" || preview.Outcome != "previewed" || preview.Name != "tool" || preview.Destination != dest || !strings.HasPrefix(preview.Digest, "sha256:") {
+		t.Fatalf("code=%d preview=%+v stderr=%q", code, preview, stderr)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("JSON preview wrote recipe: %v", err)
+	}
+
+	code, out, stderr = executeImportForTest(t, source, catalog, "--format=json")
+	written := importJSONData(t, out)
+	if code != 0 || stderr != "" || written.Outcome != "written" || written.WouldReplace {
+		t.Fatalf("code=%d written=%+v stderr=%q", code, written, stderr)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || string(got) != body {
+		t.Fatalf("imported recipe=%q err=%v", got, err)
+	}
+
+	code, out, stderr = executeImportForTest(t, source, catalog, "--json")
+	rejected := importJSONData(t, out)
+	if code != 2 || rejected.Outcome != "rejected" || !rejected.WouldReplace || len(rejected.Errors) == 0 || !strings.Contains(stderr, "already exists") {
+		t.Fatalf("code=%d rejected=%+v stderr=%q", code, rejected, stderr)
+	}
+
+	code, out, stderr = executeImportForTest(t, source, catalog, "--dry-run", "--json")
+	preview = importJSONData(t, out)
+	if code != 0 || preview.Outcome != "previewed" || !preview.WouldReplace || len(preview.Errors) != 0 || stderr != "" {
+		t.Fatalf("code=%d preview=%+v stderr=%q", code, preview, stderr)
+	}
+}
+
+func TestImportJSONWriteFailureReturnsFailedEnvelope(t *testing.T) {
+	catalog := t.TempDir()
+	const body = "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n"
+	source := writeImportSource(t, "tool", body)
+	dest := filepath.Join(catalog, "tool.toml")
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := executeImportForTest(t, source, catalog, "--force", "--json")
+	result := importJSONData(t, stdout)
+	if code != 3 || result.Outcome != "failed" || result.Destination != dest || !result.WouldReplace || len(result.Errors) != 1 {
+		t.Fatalf("code=%d data=%+v stderr=%q", code, result, stderr)
+	}
+	if !strings.Contains(result.Errors[0], "write recipe:") || !strings.Contains(stderr, "error: write recipe:") {
+		t.Fatalf("missing write error: result=%+v stderr=%q", result, stderr)
+	}
+	if fi, err := os.Stat(dest); err != nil || !fi.IsDir() {
+		t.Fatalf("failed import changed destination: %v (%v)", fi, err)
+	}
+	entries, err := os.ReadDir(catalog)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("temporary files left behind: %v (%v)", entries, err)
+	}
+}
+
+type failingImportOutput struct{}
+
+func (failingImportOutput) Write([]byte) (int, error) {
+	return 0, errors.New("output unavailable")
+}
+
+func TestImportJSONOutputFailureDoesNotHideCompletedWrite(t *testing.T) {
+	catalog := t.TempDir()
+	const body = "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n"
+	source := writeImportSource(t, "tool", body)
+	var stderr bytes.Buffer
+	err := runImportToFormat(failingImportOutput{}, &stderr, source, []string{catalog}, false, false, "json")
+	if code := requireExitCode(t, err); code != 3 {
+		t.Fatalf("write output exit = %d, want 3", code)
+	}
+	if !strings.Contains(stderr.String(), "error: encode import result: output unavailable") {
+		t.Fatalf("missing output diagnostic: %q", stderr.String())
+	}
+	got, readErr := os.ReadFile(filepath.Join(catalog, "tool.toml"))
+	if readErr != nil || string(got) != body {
+		t.Fatalf("recipe should remain written even when stdout fails: %q (%v)", got, readErr)
+	}
+}
+
+func TestImportRoutesHumanOutputThroughCommandWriters(t *testing.T) {
+	source := writeImportSource(t, "tool", "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n")
+	code, stdout, stderr := executeImportForTest(t, source, t.TempDir(), "--dry-run")
+	if code != 0 || !strings.Contains(stdout, "dry run: recipe not written") || stderr != "" {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = executeImportForTest(t, source, t.TempDir(), "--format=xml")
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "unknown output format") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestImportJSONRejectsInvalidRecipeBeforePreview(t *testing.T) {
+	source := writeImportSource(t, "broken", "recipe_version = 1\n[packages.broken\n")
+	code, stdout, stderr := executeImportForTest(t, source, t.TempDir(), "--json")
+	data := importJSONData(t, stdout)
+	if code != 2 || data.Outcome != "rejected" || len(data.Errors) == 0 || !strings.Contains(stderr, "error:") {
+		t.Fatalf("code=%d data=%+v stderr=%q", code, data, stderr)
 	}
 }
 

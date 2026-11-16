@@ -131,6 +131,7 @@ Validate a recipe before writing it to the catalog: preview origin, integrity, c
 Examples:
 .nf
   depengine import ./fd.toml \-\-dry\-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml \-\-dry\-run \-\-json  # inspect the preview in scripts
   depengine import ./fd.toml \-\-force     # replace an existing recipe
 .fi
 .TP
@@ -139,8 +140,9 @@ Initialize a schema.toml for a new project
 .PP
 Examples:
 .nf
-  depengine init                          # interactive scaffold
+  depengine init                          # scaffold with placeholder tools
   depengine init \-\-add "zsh,bat,nvim"     # non\-interactive tool list
+  depengine init \-\-add nvim \-\-dry\-run     # preview without creating files
   depengine init \-\-from\-state             # adopt installed tools from tracked state
   depengine init \-\-from\-manifest \-\-dry\-run  # adopt personal manifest entries without writing
   depengine init \-\-schema path/to/schema.toml
@@ -503,8 +505,14 @@ preview the import without writing the recipe Scope: local. Default: false.
 .B "\-\-force"
 replace an existing recipe with the same tool name Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for import Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine init flags"
 .TP
 .B "\-\-add <string>"

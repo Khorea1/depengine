@@ -27,6 +27,8 @@ func newImportCmd() *cobra.Command {
 	catalogRoots := new([]string)
 	importForce := new(bool)
 	importDryRun := new(bool)
+	importJSON := new(bool)
+	importFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "import <recipe.toml>",
@@ -37,10 +39,15 @@ func newImportCmd() *cobra.Command {
 			"Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.",
 		),
 		Example: `  depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml --dry-run --json  # inspect the preview in scripts
   depengine import ./fd.toml --force     # replace an existing recipe`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runImport(args[0], *catalogRoots, *importDryRun, *importForce)
+			if err := normalizeOutputFormat(importFormat, importJSON); err != nil {
+				writef(cmd.ErrOrStderr(), "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runImportToFormat(cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], *catalogRoots, *importDryRun, *importForce, *importFormat)
 		},
 	}
 	f := cmd.Flags()
@@ -50,15 +57,17 @@ func newImportCmd() *cobra.Command {
 	))
 	f.BoolVar(importDryRun, "dry-run", false, ifPT("pré-visualizar sem gravar a receita", "preview the import without writing the recipe"))
 	f.BoolVar(importForce, "force", false, ifPT("substituir uma receita existente com o mesmo nome", "replace an existing recipe with the same tool name"))
+	f.BoolVar(importJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(importFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
 // importCandidate is one declared candidate as the preview shows it.
 type importCandidate struct {
-	Kind      string
-	Label     string
-	Origin    string
-	Integrity string
+	Kind      string `json:"kind"`
+	Label     string `json:"label,omitempty"`
+	Origin    string `json:"origin,omitempty"`
+	Integrity string `json:"integrity"`
 }
 
 func (c importCandidate) displayName() string {
@@ -71,99 +80,164 @@ func (c importCandidate) displayName() string {
 // importReport is the complete preview plus the blocking findings of a recipe
 // import. It is computed before anything is written.
 type importReport struct {
-	Name        string
-	Source      string
-	Destination string
-	Digest      string
-	Candidates  []importCandidate
-	Executable  []string
-	Warnings    []string
-	Errors      []string
-}
-
-// runImport validates, previews and (unless dry-run) writes one recipe file
-// into the first configured catalog root.
-func runImport(source string, catalogRoots []string, dryRun, force bool) error {
-	return runImportTo(os.Stdout, os.Stderr, source, catalogRoots, dryRun, force)
+	Outcome      string            `json:"outcome"`
+	WouldReplace bool              `json:"would_replace"`
+	Name         string            `json:"name"`
+	Source       string            `json:"source"`
+	Destination  string            `json:"destination"`
+	Digest       string            `json:"digest"`
+	Candidates   []importCandidate `json:"candidates"`
+	Executable   []string          `json:"executable"`
+	Warnings     []string          `json:"warnings"`
+	Errors       []string          `json:"errors"`
 }
 
 func runImportTo(stdout, stderr io.Writer, source string, catalogRoots []string, dryRun, force bool) error {
+	return runImportToFormat(stdout, stderr, source, catalogRoots, dryRun, force, "text")
+}
+
+func runImportToFormat(stdout, stderr io.Writer, source string, catalogRoots []string, dryRun, force bool, format string) error {
+	preflight := importReport{
+		Outcome:    "rejected",
+		Source:     source,
+		Candidates: []importCandidate{},
+		Executable: []string{},
+		Warnings:   []string{},
+		Errors:     []string{},
+	}
+	reject := func(code int, message string) error {
+		preflight.Errors = append(preflight.Errors, message)
+		if format == "json" {
+			if err := writeMachineOutput(stdout, "import", preflight); err != nil {
+				writef(stderr, "error: encode import result: %v\n", err)
+				return exitWithCode(3)
+			}
+		}
+		writef(stderr, "error: %s\n", message)
+		return exitWithCode(code)
+	}
+
 	abs, err := filepath.Abs(source)
 	if err != nil {
-		writef(stderr, "error: resolve recipe path: %v\n", err)
-		return exitWithCode(3)
+		return reject(3, fmt.Sprintf("resolve recipe path: %v", err))
 	}
+	preflight.Source = abs
 	raw, err := os.ReadFile(abs) // #nosec G304 -- the recipe path is the operator's explicit argument.
 	if err != nil {
-		writef(stderr, "error: read recipe: %v\n", err)
-		return exitWithCode(3)
+		return reject(3, fmt.Sprintf("read recipe: %v", err))
 	}
 
 	// Parse without host facts: a catalog recipe is host-independent, and the
 	// preview must show every declared candidate in declared order.
 	recipe, err := config.ParseRecipeBytes(abs, raw, nil)
 	if err != nil {
-		writef(stderr, "error: %v\n", err)
-		return exitWithCode(2)
+		return reject(2, err.Error())
 	}
 	name, tool := singleRecipeTool(recipe)
 	if tool == nil {
-		writef(stderr, "error: %s: a recipe must declare exactly one tool\n", abs)
-		return exitWithCode(2)
+		return reject(2, fmt.Sprintf("%s: a recipe must declare exactly one tool", abs))
 	}
+	preflight.Name = name
 	if err := config.ValidateCatalogName(name); err != nil {
-		writef(stderr, "error: recipe name %q cannot be stored in a catalog: %v\n", name, err)
-		return exitWithCode(2)
+		return reject(2, fmt.Sprintf("recipe name %q cannot be stored in a catalog: %v", name, err))
 	}
 	warnings, verr := config.Validate(recipe, exec.RegisteredKinds())
 	if verr != nil {
-		writef(stderr, "error: %s: %v\n", abs, verr)
-		return exitWithCode(2)
+		return reject(2, fmt.Sprintf("%s: %v", abs, verr))
 	}
 
 	roots, err := config.ResolveCatalogRoots(catalogRoots, false)
 	if err != nil {
-		writef(stderr, "error: %v\n", err)
-		return exitWithCode(2)
+		return reject(2, err.Error())
 	}
 	if len(roots) == 0 {
-		writeln(stderr, "error: no catalog root configured; pass --catalog or set DEPENGINE_CATALOG")
-		return exitWithCode(2)
+		return reject(2, "no catalog root configured; pass --catalog or set DEPENGINE_CATALOG")
 	}
 	destRoot := roots[0]
 	dest := filepath.Join(destRoot, name+".toml")
+	preflight.Destination = dest
 
 	report, err := inspectImportRecipe(abs, name, tool, raw)
 	if err != nil {
-		writef(stderr, "error: %v\n", err)
-		return exitWithCode(2)
+		return reject(2, err.Error())
 	}
 	report.Destination = dest
+	if report.Candidates == nil {
+		report.Candidates = []importCandidate{}
+	}
+	if report.Executable == nil {
+		report.Executable = []string{}
+	}
+	if report.Errors == nil {
+		report.Errors = []string{}
+	}
 	for _, warning := range warnings {
 		report.Warnings = append(report.Warnings, strings.TrimPrefix(warning, "warning: "))
 	}
-	if _, statErr := os.Lstat(dest); statErr == nil && !force {
-		report.Errors = append(report.Errors, fmt.Sprintf("%s already exists; pass --force to replace it", dest))
-	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Lstat(dest); statErr == nil {
+		report.WouldReplace = true
+		if dryRun {
+			hint := "use --force to replace it"
+			if force {
+				hint = "omit --dry-run to replace it"
+			}
+			report.Warnings = append(report.Warnings, fmt.Sprintf("would replace %s (preview only; %s)", dest, hint))
+		} else if !force {
+			report.Errors = append(report.Errors, fmt.Sprintf("%s already exists; pass --force to replace it", dest))
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
 		report.Errors = append(report.Errors, fmt.Sprintf("cannot inspect %s: %v", dest, statErr))
 	}
-	writeImportReport(stdout, report)
+	writeReport := func() error {
+		if format != "json" {
+			writeImportReport(stdout, report)
+			return nil
+		}
+		if err := writeMachineOutput(stdout, "import", report); err != nil {
+			writef(stderr, "error: encode import result: %v\n", err)
+			return exitWithCode(3)
+		}
+		return nil
+	}
 
 	if len(report.Errors) > 0 {
+		report.Outcome = "rejected"
+		if err := writeReport(); err != nil {
+			return err
+		}
 		for _, message := range report.Errors {
 			writef(stderr, "error: %s\n", message)
 		}
 		return exitWithCode(2)
 	}
 	if dryRun {
-		writeln(stdout, "dry run: recipe not written")
+		report.Outcome = "previewed"
+		if err := writeReport(); err != nil {
+			return err
+		}
+		if format != "json" {
+			writeln(stdout, "dry run: recipe not written")
+		}
 		return nil
 	}
 	if err := writeRecipeFile(destRoot, dest, raw); err != nil {
+		report.Outcome = "failed"
+		report.Errors = append(report.Errors, fmt.Sprintf("write recipe: %v", err))
+		if format == "json" {
+			if outputErr := writeReport(); outputErr != nil {
+				return outputErr
+			}
+		}
 		writef(stderr, "error: write recipe: %v\n", err)
 		return exitWithCode(3)
 	}
-	writef(stdout, "wrote %s\n", dest)
+	report.Outcome = "written"
+	if err := writeReport(); err != nil {
+		return err
+	}
+	if format != "json" {
+		writef(stdout, "wrote %s\n", dest)
+	}
 	return nil
 }
 

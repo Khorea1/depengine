@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -25,7 +26,21 @@ import (
 // state/Go/home variables the tests control and re-set from `extraEnv`, so
 // every scenario is hermetic: temp XDG_STATE_HOME, fake GOBIN dir, no
 // network, no real package managers.
-func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (exitCode int, output string) {
+func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (int, string) {
+	t.Helper()
+	var out strings.Builder
+	code := runCommandTo(t, cmd, extraEnv, &out, &out, args...)
+	return code, out.String()
+}
+
+func runCommandStreams(t *testing.T, cmd string, extraEnv []string, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr strings.Builder
+	code := runCommandTo(t, cmd, extraEnv, &stdout, &stderr, args...)
+	return code, stdout.String(), stderr.String()
+}
+
+func runCommandTo(t *testing.T, cmd string, extraEnv []string, stdout, stderr io.Writer, args ...string) int {
 	t.Helper()
 	c := osexec.Command(os.Args[0], "-test.run=^TestCommandHelperSubprocess$") // #nosec G204 G702 -- test intentionally launches the current test binary as a controlled helper subprocess.
 
@@ -61,9 +76,8 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 	env = append(env, extraEnv...)
 	c.Env = env
 
-	var out strings.Builder
-	c.Stdout = &out
-	c.Stderr = &out
+	c.Stdout = stdout
+	c.Stderr = stderr
 	err := c.Run()
 	code := 0
 	if err != nil {
@@ -73,7 +87,7 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 		}
 		code = ee.ExitCode()
 	}
-	return code, out.String()
+	return code
 }
 
 // TestCommandHelperSubprocess is not a real test — it is the entry point for
