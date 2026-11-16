@@ -29,18 +29,22 @@ func captureStderr(t *testing.T, fn func()) string {
 	os.Stderr = w
 	defer func() { os.Stderr = old }()
 
+	// Drain concurrently: a listing larger than the pipe buffer would
+	// otherwise deadlock the write before fn returns.
+	done := make(chan string, 1)
+	go func() {
+		out, _ := io.ReadAll(r)
+		done <- string(out)
+	}()
 	fn()
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := <-done
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return string(out)
+	return out
 }
 
 func TestDefaultSchemaPathDiscoveryIsPure(t *testing.T) {
