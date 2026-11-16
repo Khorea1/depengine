@@ -6,6 +6,10 @@
   elevation decision, effective schema hash, and resolved identity. Entries are
   redacted, written under a dedicated lock, rotated at 8 MiB, and queried with
   `depengine journal --tool/--command/--result/--since/--until/--limit`.
+  Rotation replaces the previous `journal.jsonl.1` generation, queries hold the
+  shared journal lock while reading both generations, records with an unknown
+  `format_version` are skipped, and `--command`/`--result` values outside the
+  documented vocabulary fail instead of silently matching nothing.
 - Make strict schema-shape errors actionable: each line now carries the TOML
   `line:column`, a `did you mean` suggestion for unknown fields (`tagz` →
   `tags`), a minimal valid example for the failing location, and a
