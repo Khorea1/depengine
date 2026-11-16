@@ -87,3 +87,73 @@ func TestRecordInstallJournalWritesPerToolEntries(t *testing.T) {
 		t.Fatalf("unexpected failure entry: %+v", entries[1])
 	}
 }
+
+func TestRecordUpgradeJournalUsesStableResultVocabulary(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	recordUpgradeJournal([]upgradeResult{
+		{Tool: "newer", Status: "upgraded", NewVer: "v2"},
+		{Tool: "same", Status: "already-current", NewVer: "v1"},
+		{Tool: "skipped", Status: "skipped"},
+		{Tool: "broken", Status: "failed", Error: "upgrade failed"},
+		{Tool: "preview", Status: "would_upgrade"},
+	}, nil, false)
+
+	for _, tc := range []struct {
+		result string
+		tool   string
+	}{
+		{result: state.JournalUpdated, tool: "newer"},
+		{result: state.JournalAlready, tool: "same"},
+		{result: state.JournalSkipped, tool: "skipped"},
+		{result: state.JournalFailed, tool: "broken"},
+	} {
+		t.Run(tc.result, func(t *testing.T) {
+			got, err := state.QueryJournal(state.DefaultJournalPath(), state.JournalFilter{Command: "upgrade", Result: tc.result})
+			if err != nil || len(got) != 1 || got[0].Tool != tc.tool {
+				t.Fatalf("filter %q: entries = %+v, err=%v", tc.result, got, err)
+			}
+			if tc.result == state.JournalFailed && got[0].ExitCode != 1 {
+				t.Errorf("failed upgrade exit code = %d, want 1", got[0].ExitCode)
+			}
+		})
+	}
+	all, err := state.QueryJournal(state.DefaultJournalPath(), state.JournalFilter{})
+	if err != nil || len(all) != 4 {
+		t.Fatalf("non-dry-run entries = %+v, err=%v", all, err)
+	}
+	recordUpgradeJournal([]upgradeResult{{Tool: "dry", Status: "upgraded"}}, nil, true)
+	all, err = state.QueryJournal(state.DefaultJournalPath(), state.JournalFilter{})
+	if err != nil || len(all) != 4 {
+		t.Fatalf("dry-run appended an entry: %+v, err=%v", all, err)
+	}
+}
+
+func TestRecordRemoveJournalUsesRevertedForUndo(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+
+	removed := map[string]bool{"success": true}
+	requested := map[string]bool{"success": true, "failure": true}
+	recordRemoveJournal("undo", nil, removed, requested, nil)
+	recordRemoveJournal("remove", nil, removed, requested, nil)
+
+	for _, tc := range []struct {
+		command string
+		result  string
+		tool    string
+	}{
+		{command: "undo", result: state.JournalReverted, tool: "success"},
+		{command: "undo", result: state.JournalFailed, tool: "failure"},
+		{command: "remove", result: state.JournalRemoved, tool: "success"},
+		{command: "remove", result: state.JournalFailed, tool: "failure"},
+	} {
+		t.Run(tc.command+"/"+tc.result, func(t *testing.T) {
+			got, err := state.QueryJournal(state.DefaultJournalPath(), state.JournalFilter{Command: tc.command, Result: tc.result})
+			if err != nil || len(got) != 1 || got[0].Tool != tc.tool {
+				t.Fatalf("filter %s/%s: entries = %+v, err=%v", tc.command, tc.result, got, err)
+			}
+		})
+	}
+}

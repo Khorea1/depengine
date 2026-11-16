@@ -65,6 +65,42 @@ func TestJournalAppendQueryFiltersAndLimit(t *testing.T) {
 	}
 }
 
+func TestJournalFractionalTimestampsSortChronologicallyBeforeLimit(t *testing.T) {
+	path := journalPathForTest(t)
+	entries := []JournalEntry{
+		fixedJournalEntry("install", "mid", JournalSuccess, "2026-01-01T10:00:00.123Z"),
+		fixedJournalEntry("install", "early", JournalSuccess, "2026-01-01T10:00:00.12Z"),
+		fixedJournalEntry("install", "late", JournalSuccess, "2026-01-01T10:00:00.5Z"),
+	}
+	if err := AppendJournalTo(context.Background(), path, entries...); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	for _, tc := range []struct {
+		name  string
+		limit int
+		want  []string
+	}{
+		{name: "all", want: []string{"early", "mid", "late"}},
+		{name: "latest two", limit: 2, want: []string{"mid", "late"}},
+		{name: "latest one", limit: 1, want: []string{"late"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := QueryJournal(path, JournalFilter{Limit: tc.limit})
+			if err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("entries = %d, want %d: %+v", len(got), len(tc.want), got)
+			}
+			for i, want := range tc.want {
+				if got[i].Tool != want {
+					t.Errorf("entry %d: tool = %q, want %q", i, got[i].Tool, want)
+				}
+			}
+		})
+	}
+}
+
 func TestJournalRedactsSecretsAndSkipsMalformedLines(t *testing.T) {
 	path := journalPathForTest(t)
 	entry := fixedJournalEntry("install", "jq", JournalFailed, "2026-01-01T10:00:00Z")

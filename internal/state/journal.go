@@ -185,7 +185,13 @@ func QueryJournal(path string, filter JournalFilter) ([]JournalEntry, error) {
 		}
 		entries = append(entries, batch...)
 	}
-	filtered := entries[:0]
+	// Preserve the parsed instant alongside each entry: RFC3339Nano uses
+	// variable-width fractional seconds, so string order is not time order.
+	type timestampedEntry struct {
+		entry JournalEntry
+		stamp time.Time
+	}
+	var filtered []timestampedEntry
 	for _, entry := range entries {
 		if filter.Tool != "" && entry.Tool != filter.Tool {
 			continue
@@ -206,15 +212,19 @@ func QueryJournal(path string, filter JournalFilter) ([]JournalEntry, error) {
 		if !filter.Until.IsZero() && stamp.After(filter.Until) {
 			continue
 		}
-		filtered = append(filtered, entry)
+		filtered = append(filtered, timestampedEntry{entry: entry, stamp: stamp})
 	}
 	sort.SliceStable(filtered, func(i, j int) bool {
-		return filtered[i].Timestamp < filtered[j].Timestamp
+		return filtered[i].stamp.Before(filtered[j].stamp)
 	})
 	if filter.Limit > 0 && len(filtered) > filter.Limit {
 		filtered = filtered[len(filtered)-filter.Limit:]
 	}
-	return filtered, nil
+	result := entries[:0]
+	for _, item := range filtered {
+		result = append(result, item.entry)
+	}
+	return result, nil
 }
 
 func readJournalFile(path string) ([]JournalEntry, error) {

@@ -263,6 +263,9 @@ func recordRemoveJournal(command string, tools map[string]*config.Tool, removed 
 		entry.SchemaHash = hash
 		if removed[name] {
 			entry.Result = state.JournalRemoved
+			if command == "undo" {
+				entry.Result = state.JournalReverted
+			}
 		} else {
 			entry.Result = state.JournalFailed
 			entry.ExitCode = 1
@@ -285,7 +288,19 @@ func recordUpgradeJournal(results []upgradeResult, schema *config.Schema, dryRun
 		entry := state.NewJournalEntry("upgrade")
 		entry.Tool = result.Tool
 		entry.Method = result.Method
-		entry.Result = result.Status
+		// Upgrade's CLI statuses are not the journal's stable result values.
+		switch result.Status {
+		case "upgraded":
+			entry.Result = state.JournalUpdated
+		case "already-current":
+			entry.Result = state.JournalAlready
+		case "skipped":
+			entry.Result = state.JournalSkipped
+		case "failed":
+			entry.Result = state.JournalFailed
+		default:
+			continue
+		}
 		entry.Identity = &state.JournalIdentity{Version: result.NewVer}
 		entry.SchemaHash = hash
 		entry.Detail = result.Error
