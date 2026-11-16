@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -78,9 +79,22 @@ type journalOptions struct {
 	jsonOut bool
 }
 
+// journalCommands are the commands that append journal entries. --command is
+// validated against this closed set so a typo fails instead of matching
+// nothing.
+var journalCommands = []string{"install", "remove", "upgrade", "update", "undo"}
+
 func runJournal(opts journalOptions) error {
 	if opts.limit < 0 {
 		fmt.Fprintln(os.Stderr, "error: --limit must not be negative")
+		return exitWithCode(2)
+	}
+	if opts.command != "" && !slices.Contains(journalCommands, opts.command) {
+		fmt.Fprintf(os.Stderr, "error: --command must be one of %s; got %q\n", strings.Join(journalCommands, ", "), opts.command)
+		return exitWithCode(2)
+	}
+	if opts.result != "" && !state.IsJournalResult(opts.result) {
+		fmt.Fprintf(os.Stderr, "error: --result must be one of %s; got %q\n", strings.Join(state.JournalResults(), ", "), opts.result)
 		return exitWithCode(2)
 	}
 	now := time.Now().UTC()

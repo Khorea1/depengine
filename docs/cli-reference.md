@@ -612,9 +612,12 @@ they do not mutate the host.
 
 The file is append-only, owner-only (`0600`), written under its own lock so it
 cannot deadlock against a held state lock, and rotated to `journal.jsonl.1` at
-8 MiB; queries read both generations. Malformed lines are skipped so one damaged
-record cannot hide the rest of the trail. Secrets are redacted before
-persistence.
+8 MiB, replacing the previous rotated generation. Queries hold the shared
+journal lock while they read both generations, so a rotation cannot drop one
+generation between reads and a concurrent append cannot expose a partial line.
+Malformed lines, and records whose `format_version` this build does not
+understand, are skipped so one unreadable record cannot hide the rest of the
+trail. Secrets are redacted before persistence.
 
 `depengine journal` queries it:
 
@@ -627,8 +630,8 @@ depengine journal --result failed --json   # failures as machine output
 | Flag | Default | Description |
 |---|---|---|
 | `--tool` | `` | only entries for this tool |
-| `--command` | `` | only entries from `install`, `remove`, `upgrade`, `update`, or `undo` |
-| `--result` | `` | only entries with this result (stable result vocabulary) |
+| `--command` | `` | only entries from `install`, `remove`, `upgrade`, `update`, or `undo`; other values fail |
+| `--result` | `` | only entries with this result (`success`, `already`, `failed`, `skipped`, `updated`, `removed`, `reverted`); other values fail |
 | `--since` / `--until` | `` | RFC3339, `YYYY-MM-DD`, or a duration such as `7d`/`24h`, relative to now |
 | `--limit` | `50` | most recent matching entries; `0` means all |
 
