@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -119,6 +120,46 @@ func TestWinAdapterCheck(t *testing.T) {
 		}
 	})
 
+}
+
+// Chocolatey resolves no dynamic artifact, so its dry-run can report the exact
+// install argv. The preview must stay non-executable and carry the elevation
+// decision that install will require.
+func TestChocoResolvePlanPreviewsInstallCommandAndElevation(t *testing.T) {
+	ctx := context.Background()
+	tool := &config.Tool{Name: "ffmpeg"}
+	method := &config.MethodCandidate{Kind: "choco", Config: map[string]any{
+		"pkg": "ffmpeg", "version": "7.0", "source": "community", "architecture": "x86", "prerelease": true,
+	}}
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := lookupWinAdapter("choco").ResolvePlan(ctx, &run.FakeRunner{}, tool, method, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if len(resolved.Operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(resolved.Operations))
+	}
+	op := resolved.Operations[0]
+	want := []string{"choco", "install", "ffmpeg", "--version", "7.0", "--source", "community", "--forcex86", "--pre", "-y"}
+	if !slices.Equal(op.Preview, want) {
+		t.Fatalf("preview = %v, want %v", op.Preview, want)
+	}
+	if op.Elevation != plan.ElevationRequired {
+		t.Fatalf("elevation = %q, want required", op.Elevation)
+	}
+	if op.Command != nil || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	lines := operationPreviewLines(resolved)
+	if len(lines) != 1 || !strings.Contains(lines[0], "elevation: required") {
+		t.Fatalf("preview lines = %v, want one line with elevation", lines)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatalf("ValidateResolution() error = %v", err)
+	}
 }
 
 func TestWinAdapterObservePreservesExactVersionDrift(t *testing.T) {
