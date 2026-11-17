@@ -102,3 +102,47 @@ func TestReplacementRecoveryDoesNotFinalizeSatisfiedInstallBeforeHookResolution(
 		t.Fatalf("satisfied install action = %q; want the installed boundary before resolving the after-upgrade hook", action)
 	}
 }
+
+// A version/channel upgrade observes the same installed package under both
+// identities. The desired candidate is drifted, not absent, until removal.
+// Recovery must still be able to resume a journaled removal of the tracked
+// old identity without treating an uncertain or unrelated target as safe.
+func TestReplacementRecoveryFromDriftedDesired(t *testing.T) {
+	oldIdentity := ResolvedIdentity{Package: "demo", Version: "1.0", Channel: "latest/stable"}
+	desiredIdentity := ResolvedIdentity{Package: "demo", Channel: "latest/beta"}
+	oldObs := Observation{Presence: PresencePresent, Identity: ObservedIdentity{Package: "demo", Version: "1.0", Channel: "latest/stable"}, KnownFields: []IdentityField{FieldPackage, FieldVersion, FieldChannel}}
+	old := Reconcile(oldIdentity, oldObs)
+	desired := Reconcile(desiredIdentity, oldObs)
+	if old.State != StateSatisfied || desired.State != StateDrifted {
+		t.Fatalf("precondition: old=%+v desired=%+v", old, desired)
+	}
+	for _, phase := range []ReplacementPhase{ReplacementPlanned, ReplacementRemoving} {
+		action, err := ReplacementRecoveryFor(phase, old, desired)
+		if err != nil || action != ReplacementRetryRemoval {
+			t.Errorf("phase %s: action=%s err=%v; want retry removal", phase, action, err)
+		}
+	}
+	changedBetweenProbes := Reconcile(desiredIdentity, Observation{
+		Presence:    PresencePresent,
+		Identity:    ObservedIdentity{Package: "demo", Version: "1.1", Channel: "latest/stable"},
+		KnownFields: []IdentityField{FieldPackage, FieldVersion, FieldChannel},
+	})
+	missingPackageEvidence := Reconcile(desiredIdentity, Observation{
+		Presence:    PresencePresent,
+		Identity:    ObservedIdentity{Version: "1.0", Channel: "latest/stable"},
+		KnownFields: []IdentityField{FieldVersion, FieldChannel},
+	})
+	wrongTarget := Reconcile(ResolvedIdentity{Package: "other", Channel: "latest/beta"}, Observation{Presence: PresencePresent, Identity: ObservedIdentity{Package: "other", Version: "1.0", Channel: "latest/stable"}, KnownFields: []IdentityField{FieldPackage, FieldVersion, FieldChannel}})
+	for name, other := range map[string]VerificationResult{
+		"unknown":                  {State: StateUnknown, Detail: "probe failed"},
+		"broken":                   {State: StateBroken, Detail: "bad inventory"},
+		"other package":            wrongTarget,
+		"inconsistent snapshots":   changedBetweenProbes,
+		"missing package evidence": missingPackageEvidence,
+	} {
+		action, err := ReplacementRecoveryFor(ReplacementRemoving, old, other)
+		if err != nil || action != ReplacementBlocked {
+			t.Errorf("%s: action=%s err=%v; want blocked", name, action, err)
+		}
+	}
+}
