@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -154,15 +155,6 @@ func TestCargoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceAbsent)
 	}
 
-	// Failed query.
-	observation, err = adapter.Observe(context.Background(), &run.FakeRunner{LookPaths: map[string]bool{"cargo": true}, ExitCode: 1}, tool, mc)
-	if err != nil {
-		t.Fatalf("Observe() error = %v", err)
-	}
-	if observation.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceAbsent)
-	}
-
 	if _, err := adapter.Observe(context.Background(), cargoV2Runner(""), nil, mc); err == nil {
 		t.Fatal("Observe(nil tool) should fail")
 	}
@@ -171,6 +163,115 @@ func TestCargoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	}
 }
 
+// Cargo inventory failures are not evidence that a crate is absent. In
+// particular, a failed query or incomplete output must not authorize an
+// installation based on a false absence observation.
+func TestCargoAdapterV2InventoryQueryFailures(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name"}}
+	for _, tc := range []struct {
+		name   string
+		runner *run.FakeRunner
+	}{
+		{name: "command exit", runner: &run.FakeRunner{ExitCode: 1, Stderr: "cargo metadata unavailable"}},
+		{name: "spawn error", runner: &run.FakeRunner{Err: errors.New("cargo could not start")}},
+		{name: "incomplete output", runner: &run.FakeRunner{Stdout: "other v1.0.0:\n    other\n", WaitErr: errors.New("truncated stream")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observation, err := adapter.Observe(context.Background(), tc.runner, tool, method)
+			if err == nil || observation.Presence != plan.PresenceBroken {
+				t.Fatalf("Observe() = %#v, %v; want broken observation with error", observation, err)
+			}
+			if observation.Detail == "" {
+				t.Fatal("Observe() must preserve the failure diagnostic")
+			}
+			if version, err := adapter.InstalledVersion(context.Background(), tc.runner, tool, method); err == nil || version != "" {
+				t.Fatalf("InstalledVersion() = %q, %v; want empty version with error", version, err)
+			}
+			if adapter.Check(context.Background(), tc.runner, tool, method) {
+				t.Fatal("Check() must not accept failed inventory query")
+			}
+		})
+	}
+}
+
+// A successful cargo query must contain a complete, well-formed inventory.
+// Malformed unrelated entries matter too: they cannot establish absence.
+func TestCargoAdapterV2RejectsMalformedInventories(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name"}}
+	for _, tc := range []struct{ name, stdout string }{
+		{"diagnostic instead of inventory", "unexpected text\n"},
+		{"missing version", "crate-name v:\n    crate-name\n"},
+		{"invalid version", "crate-name vbanana:\n    crate-name\n"},
+		{"missing binaries", "crate-name v1.2.3:\n"},
+		{"unindented binary", "crate-name v1.2.3:\ncrate-name\n"},
+		{"orphan binary", "    crate-name\n"},
+		{"truncated final line", "crate-name v1.2.3:\n    crate-name"},
+		{"garbage after valid entry", "crate-name v1.2.3:\n    crate-name\nunexpected\n"},
+		{"malformed unrelated entry", "other v1.0.0:\n    other\ncrate-name v1.2.3:\n"},
+		{"unexpected header suffix", "crate-name v1.2.3: extra\n    crate-name\n"},
+		{"whitespace only", " \n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := cargoV2Runner(tc.stdout)
+			observation, err := adapter.Observe(context.Background(), runner, tool, method)
+			if err == nil || observation.Presence != plan.PresenceBroken || observation.Detail == "" {
+				t.Fatalf("Observe() = %#v, %v; want broken observation with diagnostic", observation, err)
+			}
+			if version, err := adapter.InstalledVersion(context.Background(), runner, tool, method); err == nil || version != "" {
+				t.Fatalf("InstalledVersion() = %q, %v; want empty version and error", version, err)
+			}
+			if adapter.Check(context.Background(), runner, tool, method) {
+				t.Fatal("Check() must not accept malformed inventory")
+			}
+		})
+	}
+}
+
+func TestCargoAdapterV2AcceptsCompleteInventories(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name"}}
+	for _, tc := range []struct {
+		name, stdout string
+		presence     plan.PresenceState
+		version      string
+	}{
+		{"empty inventory", "", plan.PresenceAbsent, ""},
+		{"other package", "other v1.0.0:\n    other\n", plan.PresenceAbsent, ""},
+		{"multiple packages", "other v1.0.0:\n    other\ncrate-name v1.2.3:\n    tool-one\n    tool-two\n", plan.PresencePresent, "1.2.3"},
+		{"prerelease and CRLF", "crate-name v1.2.3-rc.1+build.2:\r\n    crate-name\r\n", plan.PresencePresent, "1.2.3-rc.1+build.2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observation, err := adapter.Observe(context.Background(), cargoV2Runner(tc.stdout), tool, method)
+			if err != nil || observation.Presence != tc.presence || observation.Identity.Version != tc.version {
+				t.Fatalf("Observe() = %#v, %v; want presence=%q version=%q", observation, err, tc.presence, tc.version)
+			}
+		})
+	}
+}
+
+func TestCargoAdapterV2SelectsRepeatedPackageByBinaries(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name"}}
+	stdout := "crate-name v1.2.3 (/work/crate):\n    local-bin\n" +
+		"crate-name v1.2.4 (git+https://example.com/crate#abc123):\n    git-bin\n" +
+		"crate-name v1.2.5 (registry `custom`):\n    registry-bin\n"
+
+	observation, err := adapter.Observe(context.Background(), cargoV2Runner(stdout), tool, method)
+	if err == nil || observation.Presence != plan.PresenceBroken {
+		t.Fatalf("Observe() = %#v, %v; want ambiguous inventory error", observation, err)
+	}
+	method.Config["bins"] = []string{"git-bin"}
+	observation, err = adapter.Observe(context.Background(), cargoV2Runner(stdout), tool, method)
+	if err != nil || observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("Observe() with git-bin = %#v, %v; want present version 1.2.4", observation, err)
+	}
+}
 func TestCargoAdapterV2ObserveMissingBinIsAbsent(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "friendly"}
