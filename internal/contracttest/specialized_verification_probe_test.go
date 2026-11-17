@@ -18,7 +18,17 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 	t.Run("go package and exact version", func(t *testing.T) {
 		adapter := ecosystem.NewGoAdapter()
 		t.Run("pkg", func(t *testing.T) {
-			runner := &specializedRunner{paths: map[string]bool{"go": true, "tool-a": true}}
+			binDir := t.TempDir()
+			t.Setenv("GOBIN", binDir)
+			goTarget := filepath.Join(binDir, "tool-a")
+			if runtime.GOOS == "windows" {
+				goTarget += ".exe"
+			}
+			runner := &specializedRunner{
+				paths:         map[string]bool{"go": true, "tool-a": true},
+				resolvedPaths: map[string]string{goTarget: goTarget},
+				responses:     map[string]string{"go version -m " + goTarget: "\tpath\texample.org/cmd/tool-a\n\tmod\texample.org\tv1.2.3\n"},
+			}
 			methods := [2]*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-a"}}, {Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-b"}}}
 			requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{{Package: "example.org/cmd/tool-a"}, {Package: "example.org/cmd/tool-b"}}, methods)
 		})
@@ -36,8 +46,9 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 				"",
 			}, "\n")
 			runner := &specializedRunner{
-				paths:     map[string]bool{"go": true, "tool-a": true},
-				responses: map[string]string{"go version -m " + target: buildInfo},
+				paths:         map[string]bool{"go": true, "tool-a": true},
+				resolvedPaths: map[string]string{target: target},
+				responses:     map[string]string{"go version -m " + target: buildInfo},
 			}
 			methods := [2]*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-a", "version": "v1.2.3"}}, {Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-a", "version": "v2.0.0"}}}
 			requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{{Package: "example.org/cmd/tool-a", Version: "v1.2.3"}, {Package: "example.org/cmd/tool-a", Version: "v2.0.0"}}, methods)
@@ -48,6 +59,7 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		t.Setenv("USERPROFILE", home)
+		t.Setenv("SDKMAN_DIR", "")
 		for _, path := range []string{
 			filepath.Join(home, ".sdkman", "candidates", "gradle", "current"),
 			filepath.Join(home, ".sdkman", "candidates", "gradle", "8.7"),
@@ -80,8 +92,8 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 			wantA, wantB plan.ResolvedIdentity
 			responses    map[string]string
 		}{
-			{"pkg", map[string]any{"pkg": "nodejs"}, map[string]any{"pkg": "ruby"}, plan.ResolvedIdentity{Package: "nodejs"}, plan.ResolvedIdentity{Package: "ruby"}, map[string]string{"asdf list nodejs": "20.1.0\n", "asdf list ruby": ""}},
-			{"version", map[string]any{"pkg": "nodejs", "version": "20.1.0"}, map[string]any{"pkg": "nodejs", "version": "22.0.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "20.1.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "22.0.0"}, map[string]string{"asdf list nodejs": "20.1.0\n"}},
+			{"pkg", map[string]any{"pkg": "nodejs"}, map[string]any{"pkg": "ruby"}, plan.ResolvedIdentity{Package: "nodejs"}, plan.ResolvedIdentity{Package: "ruby"}, map[string]string{"asdf list nodejs": "20.1.0\n", "asdf list ruby": "", "mise ls nodejs --installed --json": "[]", "mise ls ruby --installed --json": "[]"}},
+			{"version", map[string]any{"pkg": "nodejs", "version": "20.1.0"}, map[string]any{"pkg": "nodejs", "version": "22.0.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "20.1.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "22.0.0"}, map[string]string{"asdf list nodejs": "20.1.0\n", "mise ls nodejs --installed --json": "[]"}},
 			{"backend", map[string]any{"pkg": "can1357/oh-my-pi", "backend": "github"}, map[string]any{"pkg": "can1357/oh-my-pi", "backend": "cargo"}, plan.ResolvedIdentity{Package: "can1357/oh-my-pi", Source: "github"}, plan.ResolvedIdentity{Package: "can1357/oh-my-pi", Source: "cargo"}, map[string]string{"mise ls github:can1357/oh-my-pi --installed --json": `[{"version":"1.2.3","installed":true}]`, "mise ls cargo:can1357/oh-my-pi --installed --json": `[]`}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -131,7 +143,7 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 	})
 
 	t.Run("snap package", func(t *testing.T) {
-		runner := &verifyStateRunner{responses: map[string]string{"snap list demo-a": "Name Version Rev Tracking Publisher Notes\ndemo-a 1 1 latest/stable store -\n"}, exitCodes: map[string]int{"snap list demo-b": 1}}
+		runner := &verifyStateRunner{responses: map[string]string{"snap list --color=never --unicode=never": "Name Version Rev Tracking Publisher Notes\ndemo-a 1 1 latest/stable store -\n"}}
 		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["snap"])
 		methods := [2]*config.MethodCandidate{{Kind: "snap", Config: map[string]any{"pkg": "demo-a"}}, {Kind: "snap", Config: map[string]any{"pkg": "demo-b"}}}
 		requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{{Package: "demo-a"}, {Package: "demo-b"}}, methods)
@@ -150,11 +162,17 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 }
 
 type specializedRunner struct {
-	paths     map[string]bool
-	responses map[string]string
+	paths         map[string]bool
+	resolvedPaths map[string]string
+	responses     map[string]string
 }
 
 func (r *specializedRunner) LookPath(_ context.Context, name string) bool { return r.paths[name] }
+
+func (r *specializedRunner) ResolvePath(_ context.Context, name string) (string, bool) {
+	path, ok := r.resolvedPaths[name]
+	return path, ok
+}
 
 func (r *specializedRunner) Run(_ context.Context, name string, args ...string) run.Result {
 	key := strings.Join(append([]string{name}, args...), " ")

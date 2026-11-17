@@ -25,6 +25,9 @@ func projectVerificationIdentity(method *config.MethodCandidate, identity plan.R
 	if contractVerifiesSemantic(contract, methodkind.SemanticPackageIdentity) {
 		out.Package = identity.Package
 	}
+	if contractVerifiesAnyField(contract, "channel", "track", "risk", "branch") && method.Kind == "snap" {
+		out.Channel = identity.Channel
+	}
 	if contractVerifiesField(contract, "version") {
 		out.Version = identity.Version
 		if identity.RequestedVersion != nil && identity.RequestedVersion.Mode == plan.VersionExact {

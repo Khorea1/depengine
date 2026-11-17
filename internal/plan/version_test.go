@@ -17,6 +17,8 @@ func TestVersionIntentValidation(t *testing.T) {
 		{name: "exact", intent: plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}},
 		{name: "constraint", intent: plan.VersionIntent{Mode: plan.VersionConstraint, Value: ">=1.2,<2"}},
 		{name: "channel", intent: plan.VersionIntent{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Track: "22", Risk: "stable"}}},
+		{name: "channel branch", intent: plan.VersionIntent{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Branch: "hotfix"}}},
+		{name: "channel branch whitespace", intent: plan.VersionIntent{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Branch: " hotfix"}}, wantErr: true},
 		{name: "git tag", intent: plan.VersionIntent{Mode: plan.VersionGitTag, Value: "v1.2.3"}},
 		{name: "git branch", intent: plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "release/1.x"}},
 		{name: "git revision", intent: plan.VersionIntent{Mode: plan.VersionGitRevision, Value: "abc123"}},
@@ -86,6 +88,7 @@ func TestVersionIntentRejectsNUL(t *testing.T) {
 		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Name: "stable\x00edge"}},
 		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Track: "latest\x00"}},
 		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Risk: "stable\x00"}},
+		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Branch: "hotfix\x00"}},
 	} {
 		if err := intent.Validate(); err == nil {
 			t.Fatalf("Validate(%+v) unexpectedly accepted NUL", intent)

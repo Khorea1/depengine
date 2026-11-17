@@ -42,6 +42,7 @@ type IdentityField string
 const (
 	FieldPackage      IdentityField = "package"
 	FieldVersion      IdentityField = "version"
+	FieldChannel      IdentityField = "channel"
 	FieldRevision     IdentityField = "revision"
 	FieldDigest       IdentityField = "digest"
 	FieldSource       IdentityField = "source"
@@ -55,6 +56,7 @@ const (
 var identityFields = []IdentityField{
 	FieldPackage,
 	FieldVersion,
+	FieldChannel,
 	FieldRevision,
 	FieldDigest,
 	FieldSource,
@@ -71,6 +73,7 @@ var identityFields = []IdentityField{
 type ObservedIdentity struct {
 	Package      string             `json:"package,omitempty"`
 	Version      string             `json:"version,omitempty"`
+	Channel      string             `json:"channel,omitempty"`
 	Revision     string             `json:"revision,omitempty"`
 	Digest       string             `json:"digest,omitempty"`
 	Source       string             `json:"source,omitempty"`
@@ -341,7 +344,7 @@ func validateDesiredDriftValue(field IdentityField, value string) error {
 func validateKnownObservedIdentity(identity ObservedIdentity, fields []IdentityField) error {
 	for _, field := range fields {
 		switch field {
-		case FieldPackage, FieldVersion, FieldRevision, FieldArchitecture, FieldPlatform:
+		case FieldPackage, FieldVersion, FieldChannel, FieldRevision, FieldArchitecture, FieldPlatform:
 			value := observedField(identity, field)
 			if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
 				return fmt.Errorf("observed %s must not contain surrounding whitespace or NUL", field)
@@ -445,6 +448,8 @@ func desiredField(identity ResolvedIdentity, field IdentityField) string {
 			return identity.RequestedVersion.Value
 		}
 		return ""
+	case FieldChannel:
+		return identity.Channel
 	case FieldRevision:
 		return identity.Revision
 	case FieldDigest:
@@ -481,6 +486,8 @@ func observedField(identity ObservedIdentity, field IdentityField) string {
 		return identity.Package
 	case FieldVersion:
 		return identity.Version
+	case FieldChannel:
+		return identity.Channel
 	case FieldRevision:
 		return identity.Revision
 	case FieldDigest:

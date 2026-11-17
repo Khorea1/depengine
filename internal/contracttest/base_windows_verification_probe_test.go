@@ -74,7 +74,7 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 		}{
 			baseCase("bun", "pkg", "bun pm ls -g", "├── alpha@1.2.0\n", "pkg"),
 			baseCase("bun", "version", "bun pm ls -g", "├── alpha@1.2.0\n", "version"),
-			baseCase("cask", "pkg", "brew list --cask", "alpha\n", "pkg"),
+			baseCase("cask", "pkg", "brew list --cask -1", "alpha\n", "pkg"),
 			baseCase("gem", "pkg", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "pkg"),
 			baseCase("gem", "version", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "version"),
 			baseCase("pipx", "pkg", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "pkg"),
@@ -134,6 +134,15 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 		paths["alpha"], paths["beta"] = true, false
 	case "cask":
 		responses[command] = run.Result{Stdout: []byte(output)}
+	case "composer":
+		responses[command] = run.Result{Stdout: []byte(output)}
+		if field == "pkg" {
+			// Unlike the legacy boolean Check, Observe needs the manager's
+			// explicit not-found diagnostic to distinguish absence from error.
+			responses["composer global show --locked "+valueB] = run.Result{
+				ExitCode: 1, Stderr: []byte(`Package "` + valueB + `" not found.`),
+			}
+		}
 	default:
 		responses[command] = run.Result{Stdout: []byte(output)}
 	}

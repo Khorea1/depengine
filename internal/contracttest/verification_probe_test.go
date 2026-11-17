@@ -9,6 +9,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -16,13 +17,14 @@ type verifyStateRunner struct {
 	responses       map[string]string
 	defaultResponse string
 	exitCodes       map[string]int
+	stderr          map[string]string
 	calls           []string
 }
 
 func (r *verifyStateRunner) Run(_ context.Context, name string, args ...string) run.Result {
 	key := strings.Join(append([]string{name}, args...), " ")
 	r.calls = append(r.calls, key)
-	result := run.Result{ExitCode: r.exitCodes[key]}
+	result := run.Result{ExitCode: r.exitCodes[key], Stderr: []byte(r.stderr[key])}
 	if response, ok := r.responses[key]; ok {
 		result.Stdout = []byte(response)
 		return result
@@ -128,6 +130,7 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 			runner := &verifyStateRunner{
 				responses: map[string]string{"pip show demo-a": "Name: demo-a\nVersion: 1.0\n"},
 				exitCodes: map[string]int{"pip show demo-b": 1},
+				stderr:    map[string]string{"pip show demo-b": "WARNING: Package(s) not found: demo-b"},
 			}
 			methods := [2]*config.MethodCandidate{{Kind: "pip", Config: map[string]any{"pkg": "demo-a"}}, {Kind: "pip", Config: map[string]any{"pkg": "demo-b"}}}
 			for i, method := range methods {
@@ -295,9 +298,9 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["snap"])
 		runPair := func(t *testing.T, a, b map[string]any, packageA, packageB string) {
 			t.Helper()
-			response := "demo 1 1 latest/stable publisher -\n"
+			response := "Name Version Rev Tracking Publisher Notes\ndemo 1 1 latest/stable publisher -\n"
 			if requested, ok := a["branch"].(string); ok {
-				response = "demo 1 1 latest/stable/" + requested + " publisher -\n"
+				response = "Name Version Rev Tracking Publisher Notes\ndemo 1 1 latest/stable/" + requested + " publisher -\n"
 			}
 			runner := &verifyStateRunner{defaultResponse: response}
 			methods := [2]*config.MethodCandidate{{Kind: "snap", Config: a}, {Kind: "snap", Config: b}}
@@ -305,14 +308,25 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 				obs := probeObservation(t, adapter, runner, method)
 				want := plan.StateSatisfied
 				if i == 1 {
-					want = plan.StateAbsent
+					want = plan.StateDrifted
+				}
+				intent, err := planner.BuildCandidateIntent(&config.Tool{Name: "probe"}, method)
+				if err != nil {
+					t.Fatalf("BuildCandidateIntent: %v", err)
 				}
 				pkg := packageA
 				if i == 1 {
 					pkg = packageB
 				}
-				if got := plan.Reconcile(plan.ResolvedIdentity{Package: pkg}, obs).State; got != want {
-					t.Fatalf("state=%s want=%s calls=%v", got, want, runner.calls)
+				if intent.Identity.Package != pkg {
+					t.Fatalf("projected package=%q want=%q", intent.Identity.Package, pkg)
+				}
+				result := plan.Reconcile(intent.Identity, obs)
+				if result.State != want {
+					t.Fatalf("state=%s want=%s channel=%q observed=%q calls=%v", result.State, want, intent.Identity.Channel, obs.Identity.Channel, runner.calls)
+				}
+				if i == 1 && (len(result.Drift) != 1 || result.Drift[0].Field != plan.FieldChannel) {
+					t.Fatalf("channel mismatch drift=%+v", result.Drift)
 				}
 			}
 		}

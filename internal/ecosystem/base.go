@@ -235,7 +235,9 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
 	requestedVersion, _ := mc.Config["version"].(string)
-	if contract, ok := methodkind.Lookup(a.config.KindName); requestedVersion != "" && ok && contract.Supports(methodkind.CapabilityExactVersion) {
+	// A versionless declaration still needs a verified inventory; a failed
+	// boolean Check does not prove absence for methods with version queries.
+	if contract, ok := methodkind.Lookup(a.config.KindName); ok && contract.Supports(methodkind.CapabilityExactVersion) {
 		installedVersion, err := a.InstalledVersion(ctx, rn, tool, mc)
 		if errors.Is(err, errInstalledPackageAbsent) {
 			return absent, nil
@@ -292,20 +294,39 @@ func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Ru
 			}
 		}
 		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+	case "snap":
+		return a.observeSnapInventory(ctx, rn, pkg), true
+	case "vscode", "vscodium":
+		return a.observeEditorExtensions(ctx, rn, pkg), true
 	case "appman":
 		if a.Check(ctx, rn, tool, mc) {
 			return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
 		}
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "appman path lookup cannot prove package absence"}, true
 	case "cask":
-		res := a.runConfiguredBinary(ctx, rn, "list", "--cask")
+		// -1 makes the line-oriented inventory explicit even if the
+		// invocation environment is changed to a terminal.
+		res := a.runConfiguredBinary(ctx, rn, "list", "--cask", "-1")
 		if err := run.CheckResultCompleteOutput(res, "brew: cask inventory"); err != nil {
 			return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, true
 		}
+		seen := make(map[string]bool)
+		found := false
 		for line := range strings.Lines(string(res.Stdout)) {
-			if strings.TrimSpace(line) == pkg {
-				return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+			row := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+			if row == "" {
+				continue
 			}
+			if !validCaskInventoryToken(row) || seen[row] {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "brew: malformed cask inventory"}, true
+			}
+			seen[row] = true
+			if row == pkg {
+				found = true
+			}
+		}
+		if found {
+			return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
 		}
 		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
 	case "flatpak":
@@ -378,6 +399,22 @@ func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Ru
 	default:
 		return plan.Observation{}, false
 	}
+}
+
+// Homebrew's `brew list --cask -1` emits bare cask tokens, one per line.
+// The accepted punctuation is the Homebrew cask-token alphabet (including
+// version/channel suffixes such as @beta), not arbitrary diagnostic text.
+func validCaskInventoryToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, ch := range token {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || strings.ContainsRune("-_.@+", ch) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func projectObservedScope(kind string, mc *config.MethodCandidate, observation *plan.Observation) {
@@ -539,6 +576,9 @@ func applyResolvedSelector(cfg map[string]any, kind string, requested *plan.Vers
 		if requested.Channel.Risk != "" {
 			cfg["risk"] = requested.Channel.Risk
 		}
+		if requested.Channel.Branch != "" {
+			cfg["branch"] = requested.Channel.Branch
+		}
 	}
 }
 
@@ -678,13 +718,49 @@ func snapRequestedChannel(mc *config.MethodCandidate) string {
 	return channel
 }
 
+func snapTrackingFromInfo(output, pkg string) (string, bool) {
+	name, tracking, hasTracking := "", "", false
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(key) {
+		case "name":
+			if name != "" {
+				return "", false
+			}
+			name = strings.TrimSpace(value)
+		case "tracking":
+			if hasTracking {
+				return "", false
+			}
+			tracking, hasTracking = strings.TrimSpace(value), true
+		}
+	}
+	if name != pkg {
+		return "", false
+	}
+	if !hasTracking || tracking == "" {
+		return "-", true
+	}
+	return tracking, validSnapTracking(tracking) && !strings.Contains(tracking, "…")
+}
+
+func snapChannelPrefix(channel string) (string, bool) {
+	parts := strings.Split(channel, "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+		return "", false
+	}
+	return parts[0] + "/" + parts[1], true
+}
+
 func snapTrackingFromList(output, pkg string) (string, bool) {
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 4 || fields[0] != pkg {
-			continue
+		if len(fields) == 6 && fields[0] == pkg {
+			return fields[3], true
 		}
-		return fields[3], true
 	}
 	return "", false
 }
@@ -699,11 +775,31 @@ func (a *BaseAdapter) checkSnap(ctx context.Context, rn run.Runner, tool *config
 	if want == "" {
 		return true
 	}
-	got, ok := snapTrackingFromList(string(res.Stdout), pkg)
+	got, found := snapTrackingFromList(string(res.Stdout), pkg)
+	if found && !strings.Contains(got, "…") {
+		if !strings.Contains(want, "/") {
+			want = "latest/" + want
+		}
+		return got == want
+	}
+	listTracking := got
+	// `snap list` abbreviates branches, so use `snap info` for the full
+	// daemon-reported tracking channel before comparing it.
+	res = rn.Run(ctx, "snap", "info", pkg)
+	if err := run.CheckResultCompleteOutput(res, "snap: tracking channel"); err != nil {
+		return false
+	}
+	got, ok := snapTrackingFromInfo(string(res.Stdout), pkg)
 	if !ok {
 		return false
 	}
-	// Risk-only shorthand maps to Snap's implicit `latest/<risk>` track.
+	if found {
+		listPrefix, listOK := snapChannelPrefix(listTracking)
+		infoPrefix, infoOK := snapChannelPrefix(got)
+		if strings.Contains(listTracking, "…") && (!listOK || !infoOK || listPrefix != infoPrefix) {
+			return false
+		}
+	}
 	if !strings.Contains(want, "/") {
 		want = "latest/" + want
 	}
@@ -830,11 +926,11 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	switch a.config.KindName {
 	case "pip":
 		res := a.runConfiguredBinary(ctx, rn, "show", pkg)
-		if res.Err != nil || res.ExitCode != 0 {
-			if res.Err == nil && pipShowReportsMissing(string(res.Stderr), pkg) {
+		if err := run.CheckResultCompleteOutput(res, "pip: show installed version"); err != nil {
+			if res.Err == nil && res.WaitErr == nil && res.ExitCode != 0 && pipShowReportsMissing(string(res.Stderr), pkg) {
 				return "", absentInstalledPackage("pip", pkg)
 			}
-			return "", run.CheckResult(res, "pip: show installed version")
+			return "", err
 		}
 		version, ok := pipVersionFromShow(string(res.Stdout))
 		if !ok {
@@ -912,8 +1008,8 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 		args = append(args, "--global")
 	}
 	res := a.runConfiguredBinary(ctx, rn, args...)
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "pipx: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "pipx: list installed version"); err != nil {
+		return "", err
 	}
 	var parsed pipxListOutput
 	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed.Venvs == nil {
@@ -1030,8 +1126,8 @@ func uvVersionFromList(output, pkg string) (string, bool) {
 
 func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "tool", "list")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "uv: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "uv: list installed version"); err != nil {
+		return "", err
 	}
 	stdout := string(res.Stdout)
 	if strings.TrimSpace(stdout) == "" && strings.EqualFold(strings.TrimSpace(string(res.Stderr)), "No tools installed") {
@@ -1140,8 +1236,8 @@ func gemVersionsFromList(output, pkg string) ([]string, bool) {
 
 func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg, requested string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "list", "--local", "--exact", pkg, "--all")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "gem: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "gem: list installed version"); err != nil {
+		return "", err
 	}
 	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
 	if found {
@@ -1259,12 +1355,12 @@ func composerReportsMissingPackage(output, pkg string) bool {
 
 func (a *BaseAdapter) composerInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "show", "--locked", pkg)
-	if res.Err != nil || res.ExitCode != 0 {
+	if err := run.CheckResultCompleteOutput(res, "composer: show installed version"); err != nil {
 		output := string(res.Stdout) + "\n" + string(res.Stderr)
-		if res.Err == nil && composerReportsMissingPackage(output, pkg) {
+		if res.Err == nil && res.WaitErr == nil && res.ExitCode != 0 && composerReportsMissingPackage(output, pkg) {
 			return "", absentInstalledPackage("composer", pkg)
 		}
-		return "", run.CheckResult(res, "composer: show installed version")
+		return "", err
 	}
 	version, ok := composerVersionFromShow(string(res.Stdout))
 	if !ok {
@@ -1308,8 +1404,8 @@ func buildBunCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 
 func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "bun: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "bun: list installed version"); err != nil {
+		return "", err
 	}
 	version, found, valid := bunGlobalList(string(res.Stdout), pkg)
 	if !valid {
@@ -1468,8 +1564,8 @@ func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	pkg = registryInventoryName(pkg)
 	res := a.runConfiguredBinary(ctx, rn, "list", "-g", "--depth=0", "--json")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "pnpm: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "pnpm: list installed version"); err != nil {
+		return "", err
 	}
 	var roots []*pnpmListOutput
 	if err := json.Unmarshal(res.Stdout, &roots); err != nil || roots == nil {
@@ -1527,8 +1623,8 @@ func buildYarnCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 
 func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "list", "--depth=0")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "yarn: list installed version")
+	if err := run.CheckResultCompleteOutput(res, "yarn: list installed version"); err != nil {
+		return "", err
 	}
 	version, found, valid := yarnGlobalList(string(res.Stdout), pkg)
 	if !valid {
@@ -1647,8 +1743,10 @@ func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pk
 	// `{"name": ...}` document that proves nothing, while a successful full
 	// listing proves absence when it omits the package.
 	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json")
-	if res.Err != nil {
-		return "", run.CheckResult(res, "npm: list installed version")
+	// npm can return a structured missing-package diagnostic on nonzero exit,
+	// but an incomplete capture cannot be trusted even in that case.
+	if res.Err != nil || res.WaitErr != nil {
+		return "", run.CheckResultCompleteOutput(res, "npm: list installed version")
 	}
 	var parsed npmListOutput
 	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Problems == nil && parsed.Name == "") {

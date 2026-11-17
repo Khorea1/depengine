@@ -712,7 +712,40 @@ every path and `Remove` deletes only those exact targets.
 
 `flatpak` no longer assumes Flathub. `remote` selects and verifies the origin, `branch` is appended to the application ref (`APP//BRANCH`), and `scope = "user" | "system"` is applied consistently to check/install/remove. If `remote` is omitted, depengine leaves remote resolution to Flatpak rather than silently forcing `flathub`.
 
-`snap` keeps `channel = "edge"`-style shorthand for risk-only selection. For full channel identity, use `track`, optional `risk` (default `stable`), and optional `branch`; depengine composes `track/risk[/branch]` and verifies the installed tracking channel from `snap list`. `channel` cannot be combined with the structured fields.
+`snap` keeps `channel = "edge"`-style shorthand for risk-only selection
+(`latest/edge`). For full channel identity, use `track`, optional `risk`
+(default `stable`), and optional `branch`; depengine composes
+`track/risk[/branch]`, preserving the branch in resolved install plans.
+`channel` cannot be combined with the structured fields. V2 uses the complete
+unfiltered `snap list` inventory to establish package presence/absence; a
+successful empty result is absent only with snapd's documented
+`No snaps are installed yet. Try 'snap install hello-world'.` stderr message.
+The command's `Tracking` column is not always a complete channel: snapd 2.63
+formats `track/risk/branch` as `track/risk/…`. The ellipsis is display
+abbreviation, never channel identity. For such a row, depengine obtains the
+full installed tracking value from `snap info <package>` and accepts it only
+when the package identity and the `track/risk` prefix agree with the list row;
+it rechecks the listed package, version, revision, and abbreviated tracking
+value around that query. Invalid, inconsistent, or incomplete evidence is
+`Unknown`, not channel drift.
+
+A local snap is shown with tracking `-`; this means no tracked channel was
+reported, not a channel named `-`. depengine does not mark `FieldChannel` as
+known for that value, so it cannot create channel drift from it. For a full,
+consistent channel, a mismatch is reported as `Drifted`; it does not authorize
+automatic channel changes. A channel selector cannot serve as the immutable
+target required by the destructive replacement journal. The executor fails
+the unsupported transition before invoking candidate hooks or lazy
+prerequisites; it never substitutes remove/install for an in-place channel
+change. To reconcile tracking manually, operators may use
+`snap switch --channel=<channel> <package>` (tracking only) or
+`snap refresh --channel=<channel> <package>` (also refreshes the installed
+revision), then rerun depengine observation. Automatic switching still needs
+its own durable transaction and recovery contract; neither command is
+executed by depengine for channel drift. Even with the recheck, a channel
+branch changing under the same `track/risk` prefix and installed revision
+between CLI queries is not detectable atomically; the inventory is not an
+atomic lock or a guarantee against that race.
 
 
 `msi` accepts exactly one artifact source (`url`, or `repo` + `asset`) plus
@@ -806,11 +839,23 @@ Bun, RubyGems, Yarn Classic, Composer, SDKMAN, Conda, and asdf/mise. Their
 installed-version checks read the selected package manager's installed
 metadata or the manager's version-specific install target. Exact checks require
 the requested version, while observations retain a different installed version
-so status/reconciliation reports version drift rather than absence. RubyGems
+so status/reconciliation reports version drift rather than absence. For pip,
+pipx, uv, RubyGems, Composer, npm, pnpm, Bun, and Yarn Classic, versionless
+observations also use installed-version queries: a failed command or incomplete
+capture cannot prove absence, and a trustworthy version is reported when found.
+Only recognized not-installed responses or complete inventories without the
+requested package establish absence.
+RubyGems
 can keep multiple versions installed, so its observation selects the requested
 version when it appears anywhere in the installed version list. asdf/mise and
 SDKMAN likewise distinguish an installed-but-different version from a missing
-tool.
+tool. For asdf/mise, observation checks both available managers and selects the
+requested exact version if either reports it; a failed query cannot establish
+absence or drift without positive evidence. Removal queries the inventories
+again and uninstalls only when the requested version has one verified backend
+owner. With no exact version, exactly one installed version across both managers
+is required; missing, duplicated, or ambiguous ownership requires manual
+resolution instead of guessing which manager to modify.
 Source or registry selection is available where the adapter has a typed field.
 
 These methods are not yet universally lockable to immutable package identities.

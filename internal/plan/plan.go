@@ -89,6 +89,7 @@ type ResolvedIdentity struct {
 	Package          string             `json:"package,omitempty"`
 	RequestedVersion *VersionIntent     `json:"requested_version,omitempty"`
 	Version          string             `json:"version,omitempty"`
+	Channel          string             `json:"channel,omitempty"`
 	Revision         string             `json:"revision,omitempty"`
 	Digest           string             `json:"digest,omitempty"`
 	Source           string             `json:"source,omitempty"`
@@ -111,7 +112,7 @@ func (i ResolvedIdentity) Validate() error {
 		return errors.New("package contains NUL")
 	}
 	for label, value := range map[string]string{
-		"version": i.Version, "revision": i.Revision,
+		"version": i.Version, "revision": i.Revision, "channel": i.Channel,
 		"architecture": i.Architecture, "platform": i.Platform,
 	} {
 		if strings.TrimSpace(value) != value {

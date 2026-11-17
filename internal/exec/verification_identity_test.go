@@ -130,3 +130,23 @@ func TestProjectedGitCheckoutRevisionDriftIsActionable(t *testing.T) {
 		t.Fatalf("TransitionForVerification() = %+v, %v; want required upgrade", decision, err)
 	}
 }
+
+func TestSnapChannelSurvivesVerificationProjection(t *testing.T) {
+	desired := plan.ResolvedIdentity{Package: "demo", Channel: "latest/stable"}
+	method := &config.MethodCandidate{Kind: "snap", Config: map[string]any{"pkg": "demo", "channel": "stable"}}
+	projected := projectVerificationIdentity(method, desired)
+	if projected.Channel != "latest/stable" {
+		t.Fatalf("channel was dropped from Snap verification identity: %+v", projected)
+	}
+	drifted := plan.Reconcile(projected, plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: "demo", Channel: "latest/beta"},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldChannel},
+	})
+	if drifted.State != plan.StateDrifted || !reflect.DeepEqual(drifted.Drift, []plan.IdentityDrift{{Field: plan.FieldChannel, Desired: "latest/stable", Observed: "latest/beta"}}) {
+		t.Fatalf("Snap channel drift was not preserved: %+v", drifted)
+	}
+	if got := projectVerificationIdentity(&config.MethodCandidate{Kind: "cargo"}, desired); got.Channel != "" {
+		t.Fatalf("unrelated method inherited channel verification: %+v", got)
+	}
+}

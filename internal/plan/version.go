@@ -37,9 +37,10 @@ const (
 // ChannelSelector represents channel-style version intent without flattening
 // distinct concepts such as Snap track/risk into an ambiguous string.
 type ChannelSelector struct {
-	Name  string `json:"name,omitempty"`
-	Track string `json:"track,omitempty"`
-	Risk  string `json:"risk,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Track  string `json:"track,omitempty"`
+	Risk   string `json:"risk,omitempty"`
+	Branch string `json:"branch,omitempty"`
 }
 
 // VersionIntent is the requested version/revision semantics before a method
@@ -66,10 +67,11 @@ func (v VersionIntent) Validate() error {
 	if v.Channel != nil {
 		if v.Channel.Name != strings.TrimSpace(v.Channel.Name) ||
 			v.Channel.Track != strings.TrimSpace(v.Channel.Track) ||
-			v.Channel.Risk != strings.TrimSpace(v.Channel.Risk) {
+			v.Channel.Risk != strings.TrimSpace(v.Channel.Risk) ||
+			v.Channel.Branch != strings.TrimSpace(v.Channel.Branch) {
 			return errors.New("channel fields must not have surrounding whitespace")
 		}
-		if strings.ContainsRune(v.Channel.Name, '\x00') || strings.ContainsRune(v.Channel.Track, '\x00') || strings.ContainsRune(v.Channel.Risk, '\x00') {
+		if strings.ContainsRune(v.Channel.Name, '\x00') || strings.ContainsRune(v.Channel.Track, '\x00') || strings.ContainsRune(v.Channel.Risk, '\x00') || strings.ContainsRune(v.Channel.Branch, '\x00') {
 			return errors.New("channel fields must not contain NUL")
 		}
 	}
@@ -95,7 +97,7 @@ func (v VersionIntent) Validate() error {
 		if v.Value != "" {
 			return errors.New("channel version intent uses channel fields, not value")
 		}
-		if v.Channel == nil || (v.Channel.Name == "" && v.Channel.Track == "" && v.Channel.Risk == "") {
+		if v.Channel == nil || (v.Channel.Name == "" && v.Channel.Track == "" && v.Channel.Risk == "" && v.Channel.Branch == "") {
 			return errors.New("channel version intent requires at least one channel field")
 		}
 	default:

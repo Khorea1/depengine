@@ -43,6 +43,9 @@ func applyVersionIdentity(identity *plan.ResolvedIdentity, cfg map[string]any, c
 		return err
 	}
 	identity.RequestedVersion = intent
+	if contract.Kind == "snap" && intent.Mode == plan.VersionChannel {
+		identity.Channel = snapTrackingChannel(intent.Channel)
+	}
 	if intent.Mode == plan.VersionExact {
 		identity.Version = intent.Value
 	}

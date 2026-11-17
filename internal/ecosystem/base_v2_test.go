@@ -640,6 +640,39 @@ func TestBaseAdapterV2InstallResolvedRejectsNonCanonicalOperations(t *testing.T)
 		})
 	}
 }
+
+func TestCaskInventoryValidatesAllRowsBeforePresence(t *testing.T) {
+	cases := []struct {
+		name     string
+		stdout   string
+		presence plan.PresenceState
+	}{
+		{"installed cask", "firefox\ngoogle-chrome\n", plan.PresencePresent},
+		{"absent from complete inventory", "google-chrome\n", plan.PresenceAbsent},
+		{"empty inventory", "", plan.PresenceAbsent},
+		{"valid CRLF", "firefox\r\ngoogle-chrome\r\n", plan.PresencePresent},
+		{"malformed before match", "Error: truncated inventory\nfirefox\n", plan.PresenceBroken},
+		{"malformed after match", "firefox\nError: truncated inventory\n", plan.PresenceBroken},
+		{"columnar output", "firefox google-chrome\n", plan.PresenceBroken},
+		{"duplicate entry", "firefox\nfirefox\n", plan.PresenceBroken},
+		{"non-token row", "!unexpected!\n", plan.PresenceBroken},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &run.FakeRunner{Stdout: tc.stdout}
+			tool := &config.Tool{Name: "firefox"}
+			method := &config.MethodCandidate{Kind: "cask", Config: map[string]any{"pkg": "firefox"}}
+			observation, err := NewBaseAdapter(Configs["cask"]).Observe(context.Background(), runner, tool, method)
+			if err != nil || observation.Presence != tc.presence {
+				t.Fatalf("Observe() = %#v, %v; want %s", observation, err, tc.presence)
+			}
+			if len(runner.Calls) != 1 || runner.Calls[0].Name != "brew" || !reflect.DeepEqual(runner.Calls[0].Args, []string{"list", "--cask", "-1"}) {
+				t.Fatalf("brew argv = %#v; want explicit one-entry-per-line inventory", runner.Calls)
+			}
+		})
+	}
+}
+
 func TestBaseAdapterSpecializedInventoryObservations(t *testing.T) {
 	tests := []struct {
 		name     string
