@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -219,16 +221,35 @@ func writeTestSnapshot(t *testing.T, stateHome string, tools map[string]state.To
 	}
 }
 
+// fakeBinary builds a small real Go executable so `go version -m` can verify
+// its package identity. A shell-script placeholder would make the removal
+// scenario test an invalid installation rather than the intended lifecycle.
 func fakeBinary(t *testing.T, binDir, name string) string {
 	t.Helper()
-	// `go install` produces name.exe on Windows and the adapter removes
-	// exactly that; fixtures must carry the suffix.
+	module := "example.test"
+	if name == "stringer" {
+		module = "golang.org/x/tools"
+	}
+	moduleDir := t.TempDir()
+	commandDir := filepath.Join(moduleDir, "cmd", name)
+	if err := os.MkdirAll(commandDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	path := filepath.Join(binDir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
-		t.Fatal(err)
+	// -mod=mod isolates this temporary standalone module from the repository's
+	// offline vendor mode. No external dependencies are needed.
+	res := (run.OSExecRunner{}).RunInDir(context.Background(), moduleDir, "go", "build", "-mod=mod", "-o", path, "./cmd/"+strings.TrimSuffix(name, ".exe"))
+	if err := run.CheckResult(res, "build Go test binary"); err != nil {
+		t.Fatalf("build Go fixture %s: %v", name, err)
 	}
 	return path
 }

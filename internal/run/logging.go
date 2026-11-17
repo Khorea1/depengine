@@ -166,6 +166,11 @@ func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
 	return found
 }
 
+// ResolvePath preserves path resolution through the wrapped runner.
+func (lr *LoggingRunner) ResolvePath(ctx context.Context, name string) (string, bool) {
+	return ResolvePath(ctx, lr.inner, name)
+}
+
 func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]string, sensitive []string, name string, args ...string) Result {
 	baseAttrs := lr.commandAttrs(name, args, dir)
 	lr.logger.Debug("run", baseAttrs...)

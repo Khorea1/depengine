@@ -68,60 +68,23 @@ func goInstallTarget(pkg, version string) (string, error) {
 	return target, nil
 }
 
-// Check runs `which {bin}` where {bin} is derived from the import path
-// (last path element, or the element after /cmd/). Checking the import path
-// itself could never pass. Falls back to tool.Name as the binary name when
-// it differs from both the import path and the derived binary name (some
-// manifests key the tool by its binary name).
+// Check verifies the build-info package identity, not merely the existence of a
+// same-named executable on PATH or in GOBIN. The V2 observation distinguishes
+// an absent binary from an unverifiable or mismatched one.
 func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
-	if !a.checkPresent(ctx, rn, tool, mc) {
+	observation, err := a.Observe(ctx, rn, tool, mc)
+	if err != nil || observation.Presence != plan.PresencePresent {
 		return false
 	}
 	version, _ := mc.Config["version"].(string)
 	if version == "" {
 		return true
 	}
-	installed, err := a.InstalledVersion(ctx, rn, tool, mc)
-	if err != nil || installed == "" {
-		return false
-	}
-	return sameGoVersion(installed, version)
+	return observation.Identity.Version != "" && sameGoVersion(observation.Identity.Version, version)
 }
 
 func sameGoVersion(left, right string) bool {
 	return strings.TrimPrefix(left, "v") == strings.TrimPrefix(right, "v")
-}
-
-func (a *GoAdapter) checkPresent(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
-	// Removal targets the Go install directory even when that directory is not
-	// on PATH. Observe that owned target before falling back to PATH probes.
-	if target, err := goInstalledBinaryPath(tool, mc); err == nil {
-		if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() { // #nosec G703 -- target is derived from a validated Go package binary name under GOBIN/GOPATH/bin.
-			return true
-		}
-	}
-	method := *mc
-	method.Config = make(map[string]any, len(mc.Config))
-	for key, value := range mc.Config {
-		if key != "version" {
-			method.Config[key] = value
-		}
-	}
-	present := a.BaseAdapter.Check(ctx, rn, tool, &method)
-	if !present {
-		// Fallback: tool.Name may be the actual binary name (e.g. the manifest
-		// key doubles as the installed binary while the import path ends in a
-		// different name). Never run `which` on the import path itself.
-		importPath := importPathFromTool(tool, &method)
-		if tool.Name != importPath && tool.Name != goBinaryName(importPath) {
-			fallbackMC := &config.MethodCandidate{
-				Kind:   method.Kind,
-				Config: map[string]any{"pkg": tool.Name},
-			}
-			present = a.BaseAdapter.Check(ctx, rn, tool, fallbackMC)
-		}
-	}
-	return present
 }
 
 // ResolvePlan records the import path selected by the candidate without
@@ -144,11 +107,10 @@ func (a *GoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.To
 	return &resolved, nil
 }
 
-// Observe reports the same installed-state result as Check using
-// VerificationResult-compatible semantics. The installed version is read from
-// the host binary when discoverable (mirroring Check's version reconciliation);
-// presence is established independently from version equality so an installed
-// but different exact version is reported as identity drift rather than absence.
+// Observe verifies the package path in Go build metadata before claiming
+// presence. A same-named file or PATH executable alone cannot establish Go
+// package identity; failed inspection is unknown and malformed/mismatched build
+// metadata is broken. Verified version drift remains present for reconciliation.
 func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("go: tool and method are required")
@@ -162,7 +124,8 @@ func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Too
 		Identity:    plan.ObservedIdentity{Package: importPath},
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
-	if !a.checkPresent(ctx, rn, tool, mc) {
+	target := goBinaryPathForObservation(ctx, rn, tool, mc)
+	if target == "" {
 		return absent, nil
 	}
 	observation := plan.Observation{
@@ -170,20 +133,17 @@ func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Too
 		Identity:    plan.ObservedIdentity{Package: importPath},
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
-	installed, err := a.InstalledVersion(ctx, rn, tool, mc)
+	installed, err := a.installedVersionAt(ctx, rn, tool, mc, target)
 	if err != nil {
-		// A package mismatch is authoritative build metadata proving that the
-		// binary at the Go install target is not the requested package. Do not
-		// silently re-label it as the desired package.
-		if errors.Is(err, errGoBuildInfoPackageMismatch) {
+		if errors.Is(err, errGoBuildInfoPackageMismatch) || errors.Is(err, errGoBuildInfoMalformed) {
 			observation.Presence = plan.PresenceBroken
-			observation.KnownFields = nil
-			observation.Detail = err.Error()
-			return observation, err
+		} else {
+			observation.Presence = plan.PresenceUnknown
 		}
-		// Version inspection remains best-effort for generic probe failures. The
-		// binary is still known to be present from checkPresent above.
-		return observation, nil
+		observation.Identity = plan.ObservedIdentity{}
+		observation.KnownFields = nil
+		observation.Detail = err.Error()
+		return observation, err
 	}
 	if installed != "" {
 		// The planner preserves the requested spelling while Go treats a leading
@@ -343,10 +303,14 @@ func (a *GoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *c
 	if rn == nil {
 		return "", errors.New("go: runner is required")
 	}
-	target, err := goInstalledBinaryPath(tool, mc)
-	if err != nil {
-		return "", fmt.Errorf("go: %w", err)
+	target := goBinaryPathForObservation(ctx, rn, tool, mc)
+	if target == "" {
+		return "", fmt.Errorf("go: cannot resolve installed binary for %q", importPathFromTool(tool, mc))
 	}
+	return a.installedVersionAt(ctx, rn, tool, mc, target)
+}
+
+func (a *GoAdapter) installedVersionAt(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, target string) (string, error) {
 	res := rn.Run(ctx, "go", "version", "-m", target)
 	if err := run.CheckResultCompleteOutput(res, "go: inspect installed build info"); err != nil {
 		return "", err
@@ -358,7 +322,34 @@ func (a *GoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *c
 	return goModuleVersionFromBuildInfo(res.Stdout, expectedPath)
 }
 
-var errGoBuildInfoPackageMismatch = errors.New("go: build info package mismatch")
+func goBinaryPathForObservation(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
+	if target, err := goInstalledBinaryPath(tool, mc); err == nil {
+		if path, ok := run.ResolvePath(ctx, rn, target); ok {
+			return path
+		}
+	}
+	binary := goBinaryName(importPathFromTool(tool, mc))
+	if path, ok := run.ResolvePath(ctx, rn, binary); ok {
+		return path
+	}
+	if run.LookPath(ctx, rn, binary) {
+		return binary
+	}
+	if tool.Name != binary {
+		if path, ok := run.ResolvePath(ctx, rn, tool.Name); ok {
+			return path
+		}
+		if run.LookPath(ctx, rn, tool.Name) {
+			return tool.Name
+		}
+	}
+	return ""
+}
+
+var (
+	errGoBuildInfoPackageMismatch = errors.New("go: build info package mismatch")
+	errGoBuildInfoMalformed       = errors.New("go: malformed build info")
+)
 
 func goModuleVersionFromBuildInfo(stdout []byte, expectedPath string) (string, error) {
 	var packagePath, moduleVersion string
@@ -377,7 +368,7 @@ func goModuleVersionFromBuildInfo(stdout []byte, expectedPath string) (string, e
 		}
 	}
 	if packagePath == "" {
-		return "", errors.New("go: build info did not report a package path")
+		return "", fmt.Errorf("%w: package path missing", errGoBuildInfoMalformed)
 	}
 	if expectedPath != "" && packagePath != expectedPath {
 		return "", fmt.Errorf("%w: embedded package %q does not match requested package %q", errGoBuildInfoPackageMismatch, packagePath, expectedPath)

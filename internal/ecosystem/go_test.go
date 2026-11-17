@@ -32,7 +32,9 @@ func TestGoObserveFindsInstallTargetOutsidePATH(t *testing.T) {
 	if err := os.WriteFile(goFixturePath(binDir, "stringer"), []byte("fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	observation, err := NewGoAdapter().Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, method)
+	observation, err := NewGoAdapter().Observe(context.Background(), &run.FakeRunner{
+		Stdout: "\tpath\tgolang.org/x/tools/cmd/stringer\n\tmod\tgolang.org/x/tools\tv0.1.0\n",
+	}, tool, method)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +218,10 @@ func TestGoPkgFieldControlsInstallAndCheck(t *testing.T) {
 	}
 	assertLastGoCall(t, installRunner, []string{"install", "example.com/project/cmd/realbin@latest"})
 
-	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": true}}
+	checkRunner := &run.FakeRunner{
+		LookPaths: map[string]bool{"go": true, "realbin": true},
+		Stdout:    "\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\tv1.2.3\n",
+	}
 	if !adapter.Check(ctx, checkRunner, tool, mc) {
 		t.Fatal("Check should look for the binary derived from go.pkg")
 	}
@@ -227,12 +232,17 @@ func TestGoInstalledVersionUsesPkgField(t *testing.T) {
 	binDir := t.TempDir()
 	t.Setenv("GOBIN", binDir)
 	adapter := NewGoAdapter()
-	fr := &run.FakeRunner{Stdout: strings.Join([]string{
-		goFixturePath(binDir, "realbin") + ": go1.27.1",
-		"\tpath\texample.com/project/cmd/realbin",
-		"\tmod\texample.com/project\tv1.2.3\th1:fixture",
-		"",
-	}, "\n")}
+	fr := &run.FakeRunner{
+		Stdout: strings.Join([]string{
+			goFixturePath(binDir, "realbin") + ": go1.27.1",
+			"\tpath\texample.com/project/cmd/realbin",
+			"\tmod\texample.com/project\tv1.2.3\th1:fixture",
+			"",
+		}, "\n"),
+		ResolvedPaths: map[string]string{
+			goFixturePath(binDir, "realbin"): goFixturePath(binDir, "realbin"),
+		},
+	}
 	tool := &config.Tool{Name: "friendly-name"}
 	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin"}}
 

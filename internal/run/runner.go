@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -284,6 +285,21 @@ type PathLookupRunner interface {
 	LookPath(ctx context.Context, name string) bool
 }
 
+// PathResolver resolves an executable name or an absolute file path without
+// running it.
+type PathResolver interface {
+	ResolvePath(ctx context.Context, name string) (string, bool)
+}
+
+// ResolvePath resolves through rn when it supports PathResolver.
+func ResolvePath(ctx context.Context, rn Runner, name string) (string, bool) {
+	resolver, ok := rn.(PathResolver)
+	if !ok {
+		return "", false
+	}
+	return resolver.ResolvePath(ctx, name)
+}
+
 // RunInDir executes a command through rn with dir as its working directory.
 func RunInDir(ctx context.Context, rn Runner, dir, name string, args ...string) Result {
 	dr, ok := rn.(DirectoryRunner)
@@ -342,6 +358,17 @@ const maxCapturedOutput = 1 << 20 // 1 MiB per stream
 func (OSExecRunner) LookPath(_ context.Context, name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
+}
+
+// ResolvePath returns the resolved executable path, or validates an absolute
+// regular file path without requiring it to be executable.
+func (OSExecRunner) ResolvePath(_ context.Context, name string) (string, bool) {
+	if filepath.IsAbs(name) {
+		info, err := os.Stat(name)
+		return name, err == nil && info.Mode().IsRegular()
+	}
+	path, err := exec.LookPath(name)
+	return path, err == nil
 }
 
 // Run executes name with args under ctx, capturing stdout and stderr.

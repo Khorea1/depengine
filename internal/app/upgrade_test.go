@@ -110,7 +110,8 @@ func main() {}
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		res := (run.OSExecRunner{}).RunInDir(context.Background(), buildDir, "go", "build", "-o", path, "golang.org/x/tools/cmd/stringer")
+		// This temporary module uses a local replacement, not the parent module's vendor directory.
+		res := (run.OSExecRunner{}).RunInDir(context.Background(), buildDir, "go", "build", "-mod=mod", "-o", path, "golang.org/x/tools/cmd/stringer")
 		if err := run.CheckResult(res, "go build fake upgrade binary"); err != nil {
 			t.Fatalf("build fake upgrade binary %s: %v", name, err)
 		}
