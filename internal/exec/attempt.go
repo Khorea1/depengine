@@ -210,6 +210,30 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	return proceed
 }
 
+// gateUnpinnableReplacement catches mutable channel drift before any source
+// preparation or hooks. A channel's tracking selector cannot be persisted as
+// an immutable replacement target. Other methods keep their existing probe
+// sequence; replacement WAL admissibility is checked before lifecycle hooks.
+func (ex *Executor) gateUnpinnableReplacement(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	if ac.resolved == nil {
+		return proceed
+	}
+	// The native upgrade path already knows a replacement is required. Check
+	// its journal target before potentially adding a missing package source.
+	if ac.resolution != nil && ac.resolution.requireUpgrade {
+		return ex.preflightReplacementTarget(ac, result)
+	}
+	projection, err := plan.ProjectLock(*ac.resolved)
+	if err != nil || projection.Stability == plan.LockImmutable ||
+		ac.resolved.Identity.RequestedVersion == nil || ac.resolved.Identity.RequestedVersion.Channel == nil {
+		return proceed
+	}
+	// A mutable selector is already concrete enough to verify before a
+	// candidate prepares a source. Handle satisfied, indeterminate, and
+	// drifted states here; only confirmed absence may proceed to install.
+	return ex.gateAlreadyInstalled(ac, result)
+}
+
 // gateAlreadyInstalled finishes only when the observed identity satisfies the
 // fully resolved desired state. Presence alone is insufficient.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
@@ -233,7 +257,7 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		// Adapter observations may only prove package presence, not version equality,
 		// so StateSatisfied must not suppress an explicit upgrade.
 		ac.transition = plan.TransitionUpgrade
-		return proceed
+		return ex.preflightReplacementTarget(ac, result)
 	}
 	decision, decisionErr := plan.TransitionForVerification(verification)
 	if decisionErr != nil {
@@ -250,6 +274,31 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		return ex.finishAlreadyInstalled(ac, result)
 	}
 	ac.transition = decision.Transition
+	if ac.transition == plan.TransitionUpgrade {
+		return ex.preflightReplacementTarget(ac, result)
+	}
+	return proceed
+}
+
+// preflightReplacementTarget rejects a replacement that cannot be journaled
+// before any source preparation, prerequisite installation, or lifecycle hook.
+// The replacement WAL requires an immutable target and must not be weakened
+// to accommodate mutable manager selectors such as Snap channels.
+func (ex *Executor) preflightReplacementTarget(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	projection, err := plan.ProjectLock(*ac.resolved)
+	if err == nil {
+		err = projection.RequireImmutable()
+	}
+	if err != nil {
+		detail := fmt.Sprintf("%s: upgrade target cannot be journaled safely: %v", ac.displayKind, err)
+		// A second probe can discover drift after source preparation. Its
+		// transaction must be compensated before rejecting the transition.
+		if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
+			detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
+		}
+		ex.failCandidate(ac, result, detail)
+		return finishTool
+	}
 	return proceed
 }
 
