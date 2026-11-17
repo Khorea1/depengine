@@ -82,7 +82,7 @@ func TestAsdfAdapterMiseBackendLifecycle(t *testing.T) {
 	if err := a.Remove(context.Background(), runner, tool, mc); err != nil {
 		t.Fatal(err)
 	}
-	want := [][]string{{"mise", "install", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "use", "-g", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "uninstall", "github:can1357/oh-my-pi@1.2.3"}}
+	want := [][]string{{"mise", "install", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "use", "-g", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "uninstall", "github:can1357/oh-my-pi@1.2.3"}}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("mise calls = %#v, want %#v", runner.calls, want)
 	}
@@ -162,7 +162,7 @@ func TestAsdfAdapterV2InstallsMise(t *testing.T) {
 func TestAsdfAdapterV2ObserveAbsentAndBackendError(t *testing.T) {
 	a := NewAsdfAdapter()
 	tool, mc := asdfTool("node", "nodejs")
-	obs, err := a.Observe(context.Background(), &run.FakeRunner{ExitCode: 0, Stdout: ""}, tool, mc)
+	obs, err := a.Observe(context.Background(), &run.FakeRunner{ExitCode: 0, Stdout: "", LookPaths: map[string]bool{"asdf": true, "mise": false}}, tool, mc)
 	if err != nil || obs.Presence != plan.PresenceAbsent {
 		t.Fatalf("absent observation = %#v, %v", obs, err)
 	}
@@ -185,7 +185,7 @@ func TestAsdfOrMiseInstalledVersionsFallsBackToMise(t *testing.T) {
 				"asdf": tc.asdf,
 				"mise": {Stdout: []byte(`[{"version":"20.17.0","installed":true}]`)},
 			}}
-			installed, found, err := asdfOrMiseInstalledVersions(context.Background(), runner, "nodejs")
+			installed, found, err := asdfOrMiseInstalledVersions(context.Background(), runner, "nodejs", "latest")
 			if err != nil {
 				t.Fatalf("asdfOrMiseInstalledVersions() error = %v", err)
 			}
