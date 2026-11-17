@@ -122,7 +122,7 @@ func parseNixProfileList(out []byte) ([]nixProfileElement, error) {
 		return nil, fmt.Errorf("nix: parse profile list: %w", err)
 	}
 	if len(doc.Elements) == 0 || string(doc.Elements) == "null" {
-		return nil, nil
+		return nil, errors.New("nix: profile list has no elements inventory")
 	}
 	var byName map[string]nixProfileElement
 	if err := json.Unmarshal(doc.Elements, &byName); err == nil {
