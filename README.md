@@ -170,6 +170,30 @@ to Homebrew; MacPorts is an explicit alternative with examples in the
 
 ## Lockfile and dry run
 
+Lock paths are **per schema**, even when several schemas share a directory.
+`schema.toml` continues to use `depengine.lock`; an alternate name such as
+`desktop.toml` uses `desktop.toml.lock`. The mapping depends only on the schema
+filename, not how many schemas happen to be present. `update`, `install`,
+`upgrade`, `status`, `audit`, `doctor` and `sbom` use the same default rule; pass
+`--lock path/to/custom.lock` to select an explicit path on those commands.
+The SBOM uses the schema recorded in state when no `--lock` is supplied.
+
+**Migration:** If you previously used `depengine.toml` or `depends.toml` with
+`depengine.lock`, check which schema generated that lock. Move it to the
+corresponding `<filename>.lock` only when its provenance is known; otherwise
+regenerate with `depengine update --schema <filename>`. Frozen installs **do not
+fall back** to a neighboring legacy lock. When renaming a schema, move its lock
+explicitly or regenerate it. Symlink aliases are treated as separately named
+schema paths unless the same explicit `--lock` is selected. Lockfile isolation
+does **not** arbitrate conflicting global installs. Concurrent `update` and
+non-dry-run `install` operations using the **same lock path** are serialized for
+the full read/resolve/write operation via an OS file lock. A persistent hidden
+sidecar `.<lockfile-name>.depengine-txn` is created alongside that lock; leave it
+in place (and add `.*.depengine-txn` to your Git ignore rules if desired).
+Crashes release the OS lock, while a second invocation may wait for an active
+long-running installation. Separate lock paths are independent, and this does
+not protect global package state across different projects.
+
 `depengine.lock` v2 stores the immutable projection of each selected resolved
 install plan. `depengine update` fails instead of writing a partial lock when a
 non-native manager cannot expose a concrete version, revision, digest,

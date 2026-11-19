@@ -12,8 +12,12 @@ depengine.toml
 schema.toml
 # Root schemas are operator-local; their generated lock is not repository truth.
 /depengine.lock
+# Advisory transaction guards are persistent and never part of a project commit.
+.*.depengine-txn
 # Test-suite runs generate locks next to fixture schemas; never commit those.
 tests/**/depengine.lock
+# Advisory transaction guards are persistent and never part of a project commit.
+.*.depengine-txn
 # Build output
 dist/
 # Generated at release time by goreleaser before-hooks.

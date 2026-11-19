@@ -22,6 +22,7 @@ import (
 // newStatusCmd builds `depengine status`.
 func newStatusCmd() *cobra.Command {
 	statusSchema := new(string)
+	statusLock := new(string)
 	statusManifest := new(string)
 	statusNoManifest := new(bool)
 	statusFormat := new(string)
@@ -51,11 +52,12 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusOrphans, statusQuiet, catalog)
+			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusOrphans, statusQuiet, catalog, *statusLock)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(statusSchema, "schema", "", "override schema path")
+	f.StringVar(statusLock, "lock", "", "lockfile to inspect (default: derived from schema path)")
 	f.StringVar(statusManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(statusNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, statusCatalog, statusNoCatalog)
@@ -67,7 +69,7 @@ func newStatusCmd() *cobra.Command {
 }
 
 // runStatus compares tracked and observed host state with the current schema.
-func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusOrphans, statusQuiet *bool, catalog *config.Catalog) error {
+func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusOrphans, statusQuiet *bool, catalog *config.Catalog, lockOverride ...string) error {
 	ls, err := openStatusState(ctx)
 	if err != nil {
 		return err
@@ -81,7 +83,7 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return nil
 	}
 
-	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest, *statusQuiet, catalog)
+	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest, *statusQuiet, catalog, lockOverride...)
 	if err != nil {
 		log.Default.Error("load lock for status", "error", err)
 		return exitWithCode(3)
@@ -156,7 +158,7 @@ func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, boo
 // installed-vs-pinned version comparisons (outdated detection). A missing
 // lock is fine. A schema that fails to parse (or a manifest that fails to
 // merge) degrades to state-only reporting with a warning.
-func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool, quiet bool, catalog *config.Catalog) (*loadedProject, *lock.Lock, error) {
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool, quiet bool, catalog *config.Catalog, lockOverride ...string) (*loadedProject, *lock.Lock, error) {
 	if schemaPath == "" {
 		return nil, nil, nil
 	}
@@ -187,7 +189,7 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		}
 	}
 
-	lk, err := lock.Load(lock.DefaultPath(lockSchemaPath))
+	lk, err := lock.Load(lock.Path(lockSchemaPath, lockOverride...))
 	if err != nil {
 		return nil, nil, fmt.Errorf("load lock for status: %w", err)
 	}

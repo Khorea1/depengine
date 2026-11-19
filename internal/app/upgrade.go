@@ -34,6 +34,7 @@ type upgradeResult struct {
 // newUpgradeCmd builds `depengine upgrade`.
 func newUpgradeCmd() *cobra.Command {
 	upgradeSchema := new(string)
+	upgradeLock := new(string)
 	upgradeManifest := new(string)
 	upgradeNoManifest := new(bool)
 	upgradeDryRun := new(bool)
@@ -65,11 +66,12 @@ func newUpgradeCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeSkip, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
+			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeSkip, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog, *upgradeLock)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(upgradeSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(upgradeLock, "lock", "", "lockfile to read (default: derived from schema path)")
 	f.StringVar(upgradeManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(upgradeNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, upgradeCatalog, upgradeNoCatalog)
@@ -211,8 +213,8 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *platform.Facts, 
 
 // loadUpgradeLock loads the lockfile, warning on corruption. A missing
 // lockfile is fatal: there is nothing to upgrade toward.
-func loadUpgradeLock(schemaPath string, lg *slog.Logger) (*lock.Lock, error) {
-	lockPath := lock.DefaultPath(schemaPath)
+func loadUpgradeLock(schemaPath string, lg *slog.Logger, override ...string) (*lock.Lock, error) {
+	lockPath := lock.Path(schemaPath, override...)
 	lk, err := lock.Load(lockPath)
 	if err != nil && !os.IsNotExist(err) {
 		lg.Warn("load lock", "error", err)
@@ -497,7 +499,7 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 // runUpgrade reconciles installed tools against depengine.lock, then executes
 // exact targets for drifted candidates. It orchestrates schema/lock loading,
 // executor wiring, discovery, confirmation, execution, and reporting.
-func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly, upgradeSkip *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) error {
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly, upgradeSkip *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog, lockOverride ...string) error {
 	lg := log.Default
 	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeSkip, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
 
@@ -520,7 +522,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
 	}
 
-	lk, err := loadUpgradeLock(opts.schema, lg)
+	lk, err := loadUpgradeLock(opts.schema, lg, lockOverride...)
 	if err != nil {
 		return err
 	}

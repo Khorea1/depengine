@@ -1387,17 +1387,22 @@ The package name must match the file name (`fd.toml` declares `[packages.fd]`).
 Names are ASCII and must match `[A-Za-z0-9][A-Za-z0-9._+-]{0,127}`; they may not
 end with a dot or be a Windows reserved device name (`CON`, `PRN`, `COM1`, ...).
 A recipe may not declare `[defaults]` or `[manifest]`, and lifecycle hooks,
-command-typed fields and arbitrary-code plans are rejected.
+command-typed fields, arbitrary-code plans and typed credential references are
+rejected. Private credentials must be configured in an operator-controlled
+project schema or personal manifest, never supplied by a shared catalog recipe.
 
 `depengine import <recipe.toml>` applies that check before writing, and adds an
 integrity floor: a candidate that downloads an artifact must declare
-`checksum` or `checksum_secret_ref`. `checksum = "<algo>:auto"` is accepted but
+`checksum`. A `checksum_secret_ref` is not allowed in catalog recipes.
+`checksum = "<algo>:auto"` is accepted but
 warned as trust-on-first-use (TOFU) because the checksum is fetched with the
-artifact. Import also warns when a candidate resolves to an external origin,
-because depengine does not verify recipe or artifact origins. The preview
-prints the canonical digest that lock v2 pins; the recipe is written
-atomically as authored, so the digest matches the reviewed bytes. Use
-`--dry-run` to preview without writing and `--force` to replace an existing
+artifact. Import also inventories declared source selectors, package sources and
+artifact/checksum/signature origins, including per-distribution sidecars. This
+is not a complete inventory of runtime network requests or a verification of
+publisher identity. The preview prints the canonical digest that lock v2 pins;
+the recipe is written atomically as authored. Use `--expected-digest sha256:<hex>`
+with a separately trusted canonical digest to reject changed recipe content.
+Use `--dry-run` to preview without writing and `--force` to replace an existing
 recipe with the same name.
 
 The project schema then declares only its intent; the recipe supplies the

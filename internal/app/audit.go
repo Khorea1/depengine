@@ -29,6 +29,7 @@ var auditCheckLabel = map[string]string{
 // the effective schema, the lockfile, tracked state and observed host identity.
 func newAuditCmd() *cobra.Command {
 	auditSchema := new(string)
+	auditLockPath := new(string)
 	auditManifest := new(string)
 	auditNoManifest := new(bool)
 	auditCatalog := new([]string)
@@ -57,11 +58,12 @@ func newAuditCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runAudit(cmd.Context(), auditSchema, auditManifest, auditNoManifest, auditFormat, auditStrict, catalog)
+			return runAudit(cmd.Context(), auditSchema, auditManifest, auditNoManifest, auditFormat, auditStrict, catalog, *auditLockPath)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(auditSchema, "schema", "", "path to schema.toml (default: the path recorded in state)")
+	f.StringVar(auditLockPath, "lock", "", "lockfile to audit (default: derived from schema path)")
 	f.StringVar(auditManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(auditNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, auditCatalog, auditNoCatalog)
@@ -103,7 +105,7 @@ func (r *auditReport) add(check, severity, code, tool, message, remediation stri
 }
 
 // runAudit collects the four consistency surfaces and renders one report.
-func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoManifest *bool, auditFormat *string, auditStrict *bool, catalog *config.Catalog) error {
+func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoManifest *bool, auditFormat *string, auditStrict *bool, catalog *config.Catalog, lockOverride ...string) error {
 	jsonOut := *auditFormat == "json"
 	report := &auditReport{Findings: []auditFinding{}}
 
@@ -160,7 +162,7 @@ func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoMa
 			"run 'depengine install' with the current schema to refresh tracked state")
 	}
 
-	lk := auditLock(report, project)
+	lk := auditLock(report, project, lockOverride...)
 	auditState(ctx, report, project, lk, st.Tools)
 
 	code := 0
@@ -173,8 +175,8 @@ func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoMa
 
 // auditLock validates the lockfile against the effective schema and records
 // findings. A readable lock is returned for state reconciliation.
-func auditLock(report *auditReport, project *loadedProject) *lock.Lock {
-	lockPath := lock.DefaultPath(project.SchemaPath)
+func auditLock(report *auditReport, project *loadedProject, override ...string) *lock.Lock {
+	lockPath := lock.Path(project.SchemaPath, override...)
 	report.LockPath = lockPath
 	lk, err := lock.Load(lockPath)
 	if err != nil {

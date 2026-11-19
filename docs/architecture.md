@@ -133,6 +133,10 @@ catalog recipes participate only for project-declared names and their
 transitive `requires` closure. Lookup never scans the catalog, and a missing
 default root means no catalog rather than an error.
 
+Catalog lookup rejects executable fields and credential references; shared
+recipes cannot nominate the operator's env-backed tokens. A local schema or
+manifest may still supply authenticated method configuration.
+
 Each lookup retains the recipe bytes privately alongside its canonical digest.
 `Recipe.Specialize` expands host facts from that snapshot rather than rereading
 the path, so replacement or removal cannot mix recipe content with its digest;

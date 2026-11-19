@@ -240,15 +240,8 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 
 	if extractTo != "" {
-		target := binary
-		if target == "" {
-			if tool == nil {
-				return false
-			}
-			target = tool.Name
-		}
-		info, err := os.Stat(filepath.Join(extractTo, target))
-		return err == nil && info.Mode().IsRegular()
+		observation, _ := observeExplicitHTTPFile(tool, mc)
+		return observation.Presence == plan.PresencePresent
 	}
 
 	if binary != "" {
@@ -271,13 +264,36 @@ func (a *HTTPAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if err := a.rejectUntrackedDebLifecycle(mc, nil, ""); err != nil {
 		return plan.Observation{}, err
 	}
-	if !a.Check(ctx, rn, tool, mc) {
+	if observed, handled := observeExplicitHTTPFile(tool, mc); handled {
+		if observed.Presence != plan.PresencePresent {
+			return observed, nil
+		}
+	} else if !a.Check(ctx, rn, tool, mc) {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	// Presence is not sufficient evidence of an installed raw artifact when
+	// the recipe pins its exact bytes. Verify the file that was installed,
+	// not the download cache or the checksum of an unrelated archive.
+	required, verified, err := a.verifyInstalledRawChecksum(tool, mc)
+	if err != nil {
+		return plan.Observation{
+			Presence: plan.PresenceBroken,
+			Detail:   "installed raw payload failed checksum verification: " + err.Error(),
+		}, nil
+	}
+	if required && !verified {
+		return plan.Observation{
+			Presence: plan.PresenceUnknown,
+			Detail:   "cannot verify pinned raw payload without an exact installed file location",
+		}, nil
 	}
 	observation := plan.Observation{Presence: plan.PresencePresent}
 	if tool.Name != "" {
 		observation.Identity = plan.ObservedIdentity{Package: tool.Name}
 		observation.KnownFields = []plan.IdentityField{plan.FieldPackage}
+	}
+	if resource, ok := a.observedRawFileSlot(tool, mc); ok {
+		observation.Resources = []plan.ObservedResource{resource}
 	}
 	return observation, nil
 }

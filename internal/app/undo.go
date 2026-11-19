@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -141,6 +142,14 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON
 		return nil
 	}
 
+	// The global v5 state does not track project claims. Never treat a
+	// snapshot from a different schema (or an altered shared entry) as
+	// authorization to remove packages from the current host.
+	if err := validateUndoSnapshot(curState, snapState); err != nil {
+		log.Default.Error("unsafe undo", "error", err)
+		return exitWithCode(3)
+	}
+
 	facts := gatherUndoFacts()
 	clan := platform.ResolveFamily(facts)
 	executor := exec.New()
@@ -150,7 +159,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
 	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
-	saveErr := finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
+	saveErr := finalizeUndo(ls, curState, snapState, toRemove, succeeded, hadFailure)
 	requested := make(map[string]bool, len(toRemove))
 	for _, name := range toRemove {
 		requested[name] = true
@@ -303,6 +312,39 @@ func diffUndoTools(curTools, snapTools map[string]state.ToolState) []string {
 	return toRemove
 }
 
+// validateUndoSnapshot rejects detectable cross-schema and stale snapshots
+// before any adapter probe or removal. SchemaPath is only the last writer,
+// not per-tool ownership: passing this check does not establish exclusive
+// ownership and is not a substitute for project claims.
+func validateUndoSnapshot(current, snapshot *state.State) error {
+	if current == nil || snapshot == nil {
+		return fmt.Errorf("missing current or snapshot state")
+	}
+	if snapshot.SchemaPath != "" {
+		if current.SchemaPath == "" || filepath.Clean(current.SchemaPath) != filepath.Clean(snapshot.SchemaPath) {
+			return fmt.Errorf("snapshot schema %q differs from current state schema %q; undo requires project ownership evidence", snapshot.SchemaPath, current.SchemaPath)
+		}
+	} else if len(snapshot.Tools) > 0 && current.SchemaPath != "" {
+		return fmt.Errorf("snapshot has no schema identity but current state references %q; undo cannot establish ownership", current.SchemaPath)
+	}
+
+	// Undo only removes additions. It cannot restore an earlier version or
+	// identity of a shared entry, and must not replace its tracked metadata.
+	shared := make([]string, 0, len(snapshot.Tools))
+	for name := range snapshot.Tools {
+		if _, present := current.Tools[name]; present {
+			shared = append(shared, name)
+		}
+	}
+	sort.Strings(shared)
+	for _, name := range shared {
+		if !reflect.DeepEqual(snapshot.Tools[name], current.Tools[name]) {
+			return fmt.Errorf("tool %q changed since snapshot; undo cannot safely revert shared state", name)
+		}
+	}
+	return nil
+}
+
 // resolveUndoMethodKind returns the adapter kind for a tracked tool,
 // falling back to the legacy Method field for old state files. Pure.
 func resolveUndoMethodKind(toolState state.ToolState) string {
@@ -411,23 +453,13 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 	return originalTools, succeeded, hadFailure
 }
 
-// mergeUndoTools restores tool state after removal: on full success the
-// snapshot tools win outright; on partial failure the snapshot tools are kept
-// and tools whose removal failed are re-added from the pre-removal copy, so
-// failed tools stay tracked for retry. Pure: no I/O.
-func mergeUndoTools(curState, snapState *state.State, toRemove []string, succeeded map[string]bool, originalTools map[string]state.ToolState, hadFailure bool) {
-	if !hadFailure {
-		curState.Tools = snapState.Tools
-		return
-	}
-	// Preserve snapshot tools and re-add tools that failed removal.
-	curState.Tools = make(map[string]state.ToolState, len(snapState.Tools)+len(toRemove))
-	for k, v := range snapState.Tools {
-		curState.Tools[k] = v
-	}
+// mergeUndoTools only releases additions actually removed by undo. Restoring
+// the snapshot's whole Tools map would resurrect records for tools removed
+// after the snapshot and overwrite newer observations of shared entries.
+func mergeUndoTools(curState *state.State, toRemove []string, succeeded map[string]bool) {
 	for _, name := range toRemove {
-		if !succeeded[name] {
-			curState.Tools[name] = originalTools[name]
+		if succeeded[name] {
+			delete(curState.Tools, name)
 		}
 	}
 }
@@ -435,12 +467,12 @@ func mergeUndoTools(curState, snapState *state.State, toRemove []string, succeed
 // finalizeUndo merges removal results into state (resource release),
 // persists, and reports. Exit 3 on save failure, exit 1 when any removal
 // failed, nil on full success.
-func finalizeUndo(ls *state.LockedState, curState, snapState *state.State, toRemove []string, originalTools map[string]state.ToolState, succeeded map[string]bool, hadFailure bool) error {
+func finalizeUndo(ls *state.LockedState, curState, snapState *state.State, toRemove []string, succeeded map[string]bool, hadFailure bool) error {
 	if hadFailure {
 		log.Default.Error("undo: some removals failed — saving partial state")
 	}
 
-	mergeUndoTools(curState, snapState, toRemove, succeeded, originalTools, hadFailure)
+	mergeUndoTools(curState, toRemove, succeeded)
 	curState.SchemaPath = snapState.SchemaPath
 	curState.SchemaModifiedAt = snapState.SchemaModifiedAt
 

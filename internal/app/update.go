@@ -127,15 +127,21 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		)
 	}
 
-	lockPath := *updateLock
-	if lockPath == "" {
-		lockPath = lock.DefaultPath(*updateSchema)
-	}
+	lockPath := lock.Path(*updateSchema, *updateLock)
 	if *updateFrozen {
 		if _, err := os.Stat(lockPath); err != nil {
 			lg.Error("frozen-lockfile: lockfile not found", "path", lockPath)
 			return exitWithCode(2)
 		}
+	}
+	// Hold the per-file OS lock across Load -> resolution -> Save. Locking
+	// only Save would still lose concurrent profile updates.
+	if !*updateDryRun {
+		txn, err := lock.AcquireTransaction(ctx, lockPath)
+		if err != nil {
+			return fmt.Errorf("acquire update lock transaction: %w", err)
+		}
+		defer func() { _ = txn.Close() }()
 	}
 	oldLock, err := lock.Load(lockPath)
 	if err != nil {

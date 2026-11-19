@@ -33,6 +33,7 @@ Examples:
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for audit |
 | `--json` | local | `false` | shorthand for --format=json |
+| `--lock <string>` | local | `` | lockfile to audit (default: derived from schema path) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -174,6 +175,7 @@ Examples:
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for doctor |
 | `--json` | local | `false` | shorthand for --format=json |
+| `--lock <string>` | local | `` | lockfile to inspect (default: derived from schema path) |
 | `--manifest <string>` | local | `` | personal manifest path to inspect (default: auto-detect) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | ignore the personal manifest |
@@ -256,7 +258,7 @@ Help about any command
 
 ## `depengine import <recipe.toml> [flags]`
 
-Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+Validate a recipe before writing it to the catalog: preview declared origins, integrity and candidates; reject arbitrary code and credential references; require a checksum and warn about TOFU. Use --expected-digest to verify a separately trusted recipe identity.
 
 Examples:
 
@@ -264,12 +266,14 @@ Examples:
   depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
   depengine import ./fd.toml --dry-run --json  # inspect the preview in scripts
   depengine import ./fd.toml --force     # replace an existing recipe
+  depengine import ./fd.toml --expected-digest sha256:YOUR_TRUSTED_DIGEST  # verify an out-of-band pin
 ```
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | destination catalog root (repeatable; the first root wins) |
 | `--dry-run` | local | `false` | preview the import without writing the recipe |
+| `--expected-digest <string>` | local | `` | require the canonical sha256:<64 hex> recipe digest from a trusted source |
 | `--force` | local | `false` | replace an existing recipe with the same tool name |
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for import |
@@ -328,6 +332,7 @@ Examples:
 | `-h, --help` | local | `false` | help for install |
 | `--jobs <int>` | local | `1` | max concurrent installations (default 1 = sequential) |
 | `--json` | local | `false` | shorthand for --format=json |
+| `--lock <string>` | local | `` | lockfile to read and update (default: derived from schema path) |
 | `--log-level <string>` | local | `` | log level: debug, info, warn, error |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
@@ -405,6 +410,7 @@ Examples:
 |---|---|---|---|
 | `--format <string>` | local | `cyclonedx` | output format: cyclonedx or spdx |
 | `-h, --help` | local | `false` | help for sbom |
+| `--lock <string>` | local | `` | lockfile to read for missing versions (default: derived from recorded schema) |
 
 ## `depengine status [flags]`
 
@@ -426,6 +432,7 @@ Examples:
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for status |
 | `--json` | local | `false` | shorthand for --format=json |
+| `--lock <string>` | local | `` | lockfile to inspect (default: derived from schema path) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -525,6 +532,7 @@ Examples:
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for upgrade |
 | `--json` | local | `false` | shorthand for --format=json |
+| `--lock <string>` | local | `` | lockfile to read (default: derived from schema path) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |

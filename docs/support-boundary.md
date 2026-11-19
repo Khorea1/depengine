@@ -13,6 +13,28 @@ Package-manager and ecosystem adapters use their native concepts. File and
 archive adapters track concrete paths, checksums, and entrypoints so depengine
 can tell what it owns and remove it safely.
 
+For HTTP and GitHub **raw file** installations with a literal checksum and a
+known destination (`extract_to` or a scoped placement), the observation path
+now hashes the installed file against the **resolved artifact checksum** before
+reporting it present. A mismatch is `broken` and prevents `already` from
+rewriting the global state; if the file location is only inferred from `PATH`,
+a pinned raw payload is `unknown` rather than assumed satisfied. Without a
+literal checksum, presence-only behavior is retained. An `*:auto` checksum
+is not a stable installed-file pin until concrete resolution supplies one.
+Archive checksums apply to the downloaded archive, **not** to an extracted
+binary: presence and the archive ownership marker alone cannot prove the
+original archive's bytes or per-project ownership. These checks do not
+implement a cross-project claim ledger, prove the publisher's identity, or
+serialize independent schemas mutating the same physical resource.
+
+For HTTP methods with a known file destination, `Observe` distinguishes a
+missing target (`absent`) from an inaccessible or uninspectable target
+(`unknown`). A dangling or unresolvable symlink occupying the final target is
+`broken`, not `absent`. This applies even when the artifact has no literal
+checksum. These results prevent an unsafe install fallback but do not provide
+physical ownership evidence; archive entrypoints and PATH-only methods still
+have their own, less complete observation boundaries.
+
 The npm, pnpm, Bun, and Yarn adapters accept scoped registry package names. They
 also accept npm alias specs such as `omp@npm:@oh-my-pi/pi-coding-agent`; install
 keeps the alias spec, while presence, exact-version checks, and removal use the
@@ -32,6 +54,30 @@ but it provides no observation or removal semantics.
 ## Reproducibility
 
 New `depengine.lock` files use format v2; existing v1 locks remain readable.
+`schema.toml` uses `depengine.lock`, while other schema filenames use
+`<schema-filename>.lock` (for example `desktop.toml.lock`) to avoid accidental
+writes across unrelated schemas in the same directory. All schema-aware lock
+consumers accept `--lock` for an explicit alternate path. The default is based
+on the **lexical filename**; symlink aliases are not automatically collapsed.
+Legacy `depengine.lock` files produced from alternate schemas are not
+implicitly migrated or adopted. Rename or regenerate them only after verifying
+their origin; `--frozen-lockfile` fails closed when the selected lock is missing.
+`update` and non-dry-run `install` take an exclusive, OS-backed transaction
+lock for the **selected lockfile** before reading it and keep that lock across
+resolution, execution when applicable, and final persistence. Competing writers
+through the same path wait (and respect context cancellation), rather than
+merging stale reads or overwriting one another. A persistent sidecar named
+`.<lockfile-name>.depengine-txn` lives beside the lockfile; it must **not** be
+removed while depengine may be running, since unlinking a held advisory lock
+can split synchronization. OS locks release automatically after process exit,
+including crashes. The sidecar contains no secrets and may be Git-ignored.
+Directory symlink aliases are canonicalized for synchronization; a selected
+lockfile that is itself a symlink is rejected for write transactions. Pure
+readers still rely on atomic lockfile replacement and do not acquire this
+transaction lock. This protocol does **not** arbitrate distinct lockfiles,
+external processes modifying a lock without the protocol, or conflicting
+physical installations across projects; those require separate global
+ownership/transaction rules.
 When producing a v2 lock, `depengine update` resolves selected install candidates
 through the executor's read-only `AdapterV2` plan resolution, then projects
 credential-free immutable identities into an adapter-neutral `LockDocument`.
@@ -326,3 +372,31 @@ version syntax, or prove that an upstream package is trustworthy.
 New method options should be represented by validated fields with defined
 runtime behavior. Generic argument bags are avoided because they hide details
 depengine needs for checks, removal, locks, and dry runs.
+
+## Global state across schemas and undo
+
+Lockfiles are independent per schema, but the v5 installation state is global
+per user. It currently records tools by logical name, not per-project claims.
+Separate `schema.toml` and `desktop.toml` lockfiles therefore do **not**
+prove that their requested global installations can coexist. Two names may
+address one physical executable, while one name may be requested by multiple
+projects with incompatible versions. The last-written `schema_path` in the
+state file is diagnostic metadata, **not** proof of ownership of each tool.
+
+`undo` removes only additions relative to a snapshot; it cannot restore
+previous tool versions. Before any removal it now rejects a snapshot whose
+recorded schema differs from the current state's recorded schema, a legacy
+snapshot containing tools without schema provenance, or shared tool entries
+whose recorded identity changed since the snapshot. On success it removes only
+the newly added entries whose physical removal completed and does not resurrect
+entries independently removed since the snapshot. An empty snapshot without
+schema provenance remains accepted to preserve first-install undo.
+
+This is a **partial safety barrier**, not project isolation: a single
+`schema_path` cannot reveal every intervening schema, unknown or inherited
+ownership, and a snapshot from an empty global state cannot prove exclusivity.
+Do not use `undo` or `remove --all` as a project-scoped cleanup mechanism on
+shared hosts. Proper isolation requires a host-local claim ledger keyed by
+schema identity and verified physical resources, plus transaction-level
+serialization across writers. Until that exists, prefer scoped removal with
+explicit verification and review of the observed target.

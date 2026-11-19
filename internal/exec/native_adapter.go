@@ -501,10 +501,7 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 		}
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil || res.ExitCode != 0 {
-		return false
-	}
-	if a.managerName == "port" && res.WaitErr != nil {
+	if res.Err != nil || res.WaitErr != nil || res.ExitCode != 0 {
 		return false
 	}
 	if a.managerName == "port" {
@@ -648,8 +645,10 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	if res.Err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
 	}
-	if a.managerName == "port" && res.WaitErr != nil {
-		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "MacPorts inventory output incomplete"}, nil
+	// WaitErr signals that captured output may be incomplete even when the
+	// manager exited successfully. Neither presence nor absence is proven.
+	if res.WaitErr != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "native manager inventory output incomplete"}, nil
 	}
 	if res.ExitCode != 0 {
 		if a.managerName == "port" {

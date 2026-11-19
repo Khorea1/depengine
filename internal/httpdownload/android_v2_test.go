@@ -82,6 +82,11 @@ func TestAndroidAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 				Presence:    plan.PresencePresent,
 				Identity:    plan.ObservedIdentity{Package: tt.tool.Name},
 				KnownFields: []plan.IdentityField{plan.FieldPackage},
+				// The cached APK is a real observed file slot, not proof that
+				// the Android package installer completed the user-driven install.
+				Resources: []plan.ObservedResource{{
+					Scope: "host-filesystem", Kind: "file-slot", Identity: filepath.Join(apkDir, "present-app.apk"),
+				}},
 			}
 			if !reflect.DeepEqual(observation, want) {
 				t.Fatalf("Observe() = %#v, want %#v", observation, want)

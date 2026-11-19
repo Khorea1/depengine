@@ -30,19 +30,40 @@ mutable URLs.
 
 A catalog recipe is declarative, not automatically safe. `depengine import`
 rejects lifecycle hooks, command-typed fields and plans that require arbitrary
-code (using the same predicate as the execution gate). It also requires a
-checksum, or a `checksum_secret_ref`, for every candidate that downloads an
-artifact, and warns when `checksum = "<algo>:auto"` makes verification
-trust-on-first-use (TOFU).
+code (using the same predicate as the execution gate). It additionally rejects
+`secret_ref`, `checksum_secret_ref`, `signature_secret_ref` and credential
+references on declared package sources. Shared recipes cannot select an
+operator's environment credentials or silently forward them to a publisher.
+Declare any credentials needed for private installations in the **local**
+project schema or personal manifest, not in a shared catalog recipe.
+
+Import requires a `checksum` for every candidate that downloads an artifact,
+and warns when `checksum = "<algo>:auto"` makes verification trust-on-first-use
+(TOFU). A `checksum_secret_ref` cannot satisfy this requirement in a catalog
+recipe because credential references themselves are forbidden.
 
 The same rule applies when a recipe is read from the catalog, so placing a file
-in a catalog root manually cannot bypass import. Lookup fails closed before the
-recipe is merged or executed.
+in a catalog root manually cannot bypass import. For candidates with
+`distributions`, every declared variant must inherit or declare a checksum;
+a checksum on one sibling does not cover another. Lookup fails closed before
+the recipe is merged or executed.
 
 Import does not verify where a recipe or its artifacts come from: depengine does
-not sign or allowlist recipe sources. The preview names the external origin so
-the operator can review it. The recipe is written atomically as authored, and
-the previewed canonical digest is the identity a v2 lock pins.
+not sign or allowlist recipe sources. The preview lists the *declared* source
+selectors, package sources, artifact origins, checksum/signature sidecars and
+per-distribution sidecar overrides. It cannot predict runtime redirects,
+package-manager defaults or external manager network requests. Preview URL
+origins are sanitized to a scheme and host, not the full requested path.
+
+For a recipe received from outside the machine, obtain its canonical digest
+from an **independently trusted** channel, then use
+`depengine import ./tool.toml --expected-digest sha256:<64 lowercase hex>`.
+An absent or mismatched pin is rejected before the recipe is written. The pin
+protects the contents accepted at import against unexpected modification; it
+does **not** prove publisher identity, guarantee artifact safety, or establish
+trust in the channel that supplied the digest. Without the flag, import remains
+explicitly unverified (for backward compatibility). The recipe is written
+atomically as authored, and the canonical digest is also what v2 locks pin.
 
 ## Checksums and signatures
 

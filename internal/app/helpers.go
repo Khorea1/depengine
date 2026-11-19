@@ -444,8 +444,8 @@ func printNextStep(cs *cliStyle, quiet, jsonMode bool, hint string) {
 // loadLockfile reads, frozen-validates, and applies legacy v1 pins. V2 locks
 // are decoded by universal-lock consumers and never mutate the schema through
 // their compatibility ToolPin payload.
-func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) (*lock.Lock, error) {
-	lockPath := lock.DefaultPath(schemaPath)
+func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger, override ...string) (*lock.Lock, error) {
+	lockPath := lock.Path(schemaPath, override...)
 	lk, err := lock.Load(lockPath)
 	if err != nil {
 		if frozen {

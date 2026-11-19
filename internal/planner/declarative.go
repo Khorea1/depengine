@@ -52,6 +52,36 @@ func ToolDeclarativeFindings(tool *config.Tool) []string {
 	return findings
 }
 
+// CandidateCredentialFindings identifies references to environment credentials
+// that a shared catalog recipe must not select for the operator. The user may
+// supply these references in their own schema or manifest instead. Only field
+// paths, never variable names or values, are exposed in diagnostics.
+func CandidateCredentialFindings(method *config.MethodCandidate) []string {
+	if method == nil {
+		return nil
+	}
+	display := CandidateDisplayName(method)
+	var findings []string
+	for _, field := range []struct {
+		name string
+		ref  *config.SecretReference
+	}{
+		{"secret_ref", method.SecretRef},
+		{"checksum_secret_ref", method.ChecksumSecretRef},
+		{"signature_secret_ref", method.SignatureSecretRef},
+	} {
+		if field.ref != nil {
+			findings = append(findings, display+" "+field.name+" credential reference")
+		}
+	}
+	for i, source := range method.Sources {
+		if source.SecretRef != nil {
+			findings = append(findings, fmt.Sprintf("%s sources[%d] secret_ref credential reference", display, i))
+		}
+	}
+	return findings
+}
+
 // InspectDeclarative reports every executable surface of one candidate:
 // lifecycle hooks, command-typed config fields, and a plan that requires
 // arbitrary code. It returns an inspection error when the candidate cannot be
@@ -91,9 +121,9 @@ func InspectDeclarative(tool *config.Tool, method *config.MethodCandidate) ([]st
 	return findings, nil
 }
 
-// ValidateDeclarativeRecipe applies ADR-008 decision 4 to a complete recipe.
-// Catalog lookup calls it before returning a recipe; import calls the same
-// inspector to build its preview.
+// ValidateDeclarativeRecipe applies the catalog entry rules to a complete
+// recipe: executable code and credential references are rejected. Catalog
+// lookup calls it before returning a recipe; import uses the same inspectors.
 func ValidateDeclarativeRecipe(recipe *config.Schema) error {
 	if recipe == nil {
 		return &DeclarativeError{Problems: []string{"recipe is nil"}}
@@ -114,6 +144,9 @@ func ValidateDeclarativeRecipe(recipe *config.Schema) error {
 			problems = append(problems, fmt.Sprintf("tool %q: %s", name, finding))
 		}
 		for _, method := range tool.Methods {
+			for _, finding := range CandidateCredentialFindings(method) {
+				problems = append(problems, fmt.Sprintf("tool %q: %s", name, finding))
+			}
 			findings, err := InspectDeclarative(tool, method)
 			for _, finding := range findings {
 				problems = append(problems, fmt.Sprintf("tool %q: %s", name, finding))

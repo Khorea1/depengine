@@ -118,6 +118,13 @@ recipe that omits `checksum` installs with no integrity check
    same predicate the executor gate uses). Defining "declarative" by the gate's
    own predicate keeps the import validator and the executor from drifting.
 
+**Security tightening (2026-11-18).** Catalog recipes may not declare typed
+credential references (including those on package sources). They must be
+provided by operator-controlled project or manifest configuration. This extends
+the catalog entry gate without altering the schema grammar for local layers:
+"declarative" alone is insufficient when data can cause a token to be sent to
+an author-controlled endpoint.
+
 5. **Identity pin.** *(Accepted 2026-10-25; D1 resolved.)* For every tool in the
    install closure that came from a catalog, the v2 lock records a content
    digest of the recipe. Frozen validation fails on mismatch. The digest is

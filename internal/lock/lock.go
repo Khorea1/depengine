@@ -115,16 +115,27 @@ type ToolPin struct {
 	PackageSelector string `toml:"package_selector,omitempty"` // hash of requested package and registry
 }
 
-// DefaultPath returns the default lockfile path for a given schema file.
-// Always produces a lockfile named "depengine.lock" in the same directory
-// as the schema file — matches Cargo.lock and package-lock.json conventions.
-//
-//	schema.toml   → depengine.lock
-//	depengine.toml → depengine.lock
-//	depends.toml  → depengine.lock
+// DefaultPath derives a stable, schema-specific lockfile path. schema.toml
+// keeps its historical depengine.lock; named schemas use <filename>.lock so
+// adding another schema in the same directory never redirects existing locks.
+// Renaming a schema requires explicitly moving/regenerating its lock; never
+// silently adopt a potentially unrelated depengine.lock.
 func DefaultPath(schemaPath string) string {
 	dir := filepath.Dir(schemaPath)
-	return filepath.Join(dir, "depengine.lock")
+	name := filepath.Base(schemaPath)
+	if name == "schema.toml" {
+		return filepath.Join(dir, "depengine.lock")
+	}
+	return filepath.Join(dir, name+".lock")
+}
+
+// Path selects the operator-specified lock when given, otherwise the stable
+// schema-derived path. Every lock consumer and writer uses this same rule.
+func Path(schemaPath string, overrides ...string) string {
+	if len(overrides) > 0 && overrides[0] != "" {
+		return overrides[0]
+	}
+	return DefaultPath(schemaPath)
 }
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.

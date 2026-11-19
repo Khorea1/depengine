@@ -95,6 +95,13 @@ func TestGitHubAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 				Identity:    plan.ObservedIdentity{Package: tt.tool.Name},
 				KnownFields: []plan.IdentityField{plan.FieldPackage},
 			}
+			if tt.name == "extract_to file present" {
+				// The delegated HTTP probe now reports the canonical file slot.
+				// The PATH-only probe has no physical-location evidence.
+				want.Resources = []plan.ObservedResource{{
+					Scope: "host-filesystem", Kind: "file-slot", Identity: filepath.Join(extractDir, "gh-tool"),
+				}}
+			}
 			if !reflect.DeepEqual(observation, want) {
 				t.Fatalf("Observe() = %#v, want %#v", observation, want)
 			}

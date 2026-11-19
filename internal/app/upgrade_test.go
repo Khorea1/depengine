@@ -472,7 +472,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"[tools.httptool]\n" +
 		// Literal string (single quotes): Windows paths carry backslashes,
 		// which are escapes in TOML basic strings.
-		"http = {url = \"" + downloadServer.URL + "/tool.bin\", checksum = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", extract_to = '" + installDir + "'}\n"
+		"http = {url = \"" + downloadServer.URL + "/tool.bin\", checksum = \"sha256:cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4\", extract_to = '" + installDir + "'}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}

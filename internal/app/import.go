@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -29,25 +30,27 @@ func newImportCmd() *cobra.Command {
 	importDryRun := new(bool)
 	importJSON := new(bool)
 	importFormat := new(string)
+	expectedDigest := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "import <recipe.toml>",
 		Short:   ifPT("Importar uma receita declarativa para o catálogo", "Import a declarative recipe into the catalog"),
 		GroupID: groupManage,
 		Long: ifPT(
-			"Valida uma receita antes de gravá-la no catálogo: pré-visualiza origem, integridade, candidatos e campos executáveis, rejeita hooks e código arbitrário, exige checksum e sinaliza 'sha256:auto' como TOFU.",
-			"Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.",
+			"Valida uma receita antes de gravá-la no catálogo: apresenta origens declaradas, integridade e candidatos; rejeita código arbitrário e referências a credenciais; exige checksum e alerta sobre TOFU. Use --expected-digest para conferir uma identidade obtida por canal confiável.",
+			"Validate a recipe before writing it to the catalog: preview declared origins, integrity and candidates; reject arbitrary code and credential references; require a checksum and warn about TOFU. Use --expected-digest to verify a separately trusted recipe identity.",
 		),
 		Example: `  depengine import ./fd.toml --dry-run   # preview origin, integrity and candidates
   depengine import ./fd.toml --dry-run --json  # inspect the preview in scripts
-  depengine import ./fd.toml --force     # replace an existing recipe`,
+  depengine import ./fd.toml --force     # replace an existing recipe
+  depengine import ./fd.toml --expected-digest sha256:YOUR_TRUSTED_DIGEST  # verify an out-of-band pin`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := normalizeOutputFormat(importFormat, importJSON); err != nil {
 				writef(cmd.ErrOrStderr(), "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runImportToFormat(cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], *catalogRoots, *importDryRun, *importForce, *importFormat)
+			return runImportToFormatPinned(cmd.OutOrStdout(), cmd.ErrOrStderr(), args[0], *catalogRoots, *importDryRun, *importForce, *importFormat, *expectedDigest, cmd.Flags().Changed("expected-digest"))
 		},
 	}
 	f := cmd.Flags()
@@ -59,15 +62,17 @@ func newImportCmd() *cobra.Command {
 	f.BoolVar(importForce, "force", false, ifPT("substituir uma receita existente com o mesmo nome", "replace an existing recipe with the same tool name"))
 	f.BoolVar(importJSON, "json", false, "shorthand for --format=json")
 	f.StringVar(importFormat, "format", "text", "output format: text or json")
+	f.StringVar(expectedDigest, "expected-digest", "", "require the canonical sha256:<64 hex> recipe digest from a trusted source")
 	return cmd
 }
 
 // importCandidate is one declared candidate as the preview shows it.
 type importCandidate struct {
-	Kind      string `json:"kind"`
-	Label     string `json:"label,omitempty"`
-	Origin    string `json:"origin,omitempty"`
-	Integrity string `json:"integrity"`
+	Kind      string   `json:"kind"`
+	Label     string   `json:"label,omitempty"`
+	Origin    string   `json:"origin,omitempty"` // Legacy primary origin; use Origins for the full list.
+	Origins   []string `json:"origins,omitempty"`
+	Integrity string   `json:"integrity"`
 }
 
 func (c importCandidate) displayName() string {
@@ -77,19 +82,21 @@ func (c importCandidate) displayName() string {
 	return c.Kind
 }
 
-// importReport is the complete preview plus the blocking findings of a recipe
-// import. It is computed before anything is written.
+// importReport is the complete static preview plus the blocking findings of a
+// recipe import. Runtime redirects and external manager defaults are unknown.
+// It is computed before anything is written.
 type importReport struct {
-	Outcome      string            `json:"outcome"`
-	WouldReplace bool              `json:"would_replace"`
-	Name         string            `json:"name"`
-	Source       string            `json:"source"`
-	Destination  string            `json:"destination"`
-	Digest       string            `json:"digest"`
-	Candidates   []importCandidate `json:"candidates"`
-	Executable   []string          `json:"executable"`
-	Warnings     []string          `json:"warnings"`
-	Errors       []string          `json:"errors"`
+	Outcome              string            `json:"outcome"`
+	WouldReplace         bool              `json:"would_replace"`
+	Name                 string            `json:"name"`
+	Source               string            `json:"source"`
+	Destination          string            `json:"destination"`
+	Digest               string            `json:"digest"`
+	Candidates           []importCandidate `json:"candidates"`
+	Executable           []string          `json:"executable"`
+	CredentialReferences []string          `json:"credential_references,omitempty"`
+	Warnings             []string          `json:"warnings"`
+	Errors               []string          `json:"errors"`
 }
 
 func runImportTo(stdout, stderr io.Writer, source string, catalogRoots []string, dryRun, force bool) error {
@@ -97,6 +104,12 @@ func runImportTo(stdout, stderr io.Writer, source string, catalogRoots []string,
 }
 
 func runImportToFormat(stdout, stderr io.Writer, source string, catalogRoots []string, dryRun, force bool, format string) error {
+	return runImportToFormatPinned(stdout, stderr, source, catalogRoots, dryRun, force, format, "", false)
+}
+
+// runImportToFormatPinned optionally verifies an out-of-band recipe digest. The
+// digest pins recipe bytes, not publisher identity or artifact safety.
+func runImportToFormatPinned(stdout, stderr io.Writer, source string, catalogRoots []string, dryRun, force bool, format, expectedDigest string, requireDigest bool) error {
 	preflight := importReport{
 		Outcome:    "rejected",
 		Source:     source,
@@ -125,6 +138,22 @@ func runImportToFormat(stdout, stderr io.Writer, source string, catalogRoots []s
 	raw, err := os.ReadFile(abs) // #nosec G304 -- the recipe path is the operator's explicit argument.
 	if err != nil {
 		return reject(3, fmt.Sprintf("read recipe: %v", err))
+	}
+
+	if requireDigest {
+		value, hasPrefix := strings.CutPrefix(expectedDigest, "sha256:")
+		_, decodeErr := hex.DecodeString(value)
+		if !hasPrefix || len(value) != 64 || value != strings.ToLower(value) || decodeErr != nil {
+			return reject(2, "invalid --expected-digest: expected sha256:<64 lowercase hex characters>")
+		}
+		actual, err := config.CanonicalRecipeDigest(raw)
+		if err != nil {
+			return reject(2, fmt.Sprintf("canonicalize recipe: %v", err))
+		}
+		preflight.Digest = actual
+		if actual != expectedDigest {
+			return reject(2, fmt.Sprintf("recipe digest mismatch: expected %s, got %s", expectedDigest, actual))
+		}
 	}
 
 	// Parse without host facts: a catalog recipe is host-independent, and the
@@ -296,17 +325,25 @@ func inspectImportRecipe(source, name string, tool *config.Tool, raw []byte) (*i
 		}
 		findings, planErr := planner.InspectDeclarative(tool, method)
 		report.Executable = append(report.Executable, findings...)
+		for _, finding := range planner.CandidateCredentialFindings(method) {
+			report.CredentialReferences = append(report.CredentialReferences, finding)
+			report.Errors = append(report.Errors, fmt.Sprintf("candidate %s is not allowed in a shared catalog recipe", finding))
+		}
 		if planErr != nil {
 			report.Errors = append(report.Errors, planErr.Error())
 			continue
 		}
 
-		candidate.Origin = importCandidateOrigin(method)
+		candidate.Origin = importCandidateOrigin(method) // Retain the original JSON field and value.
+		candidate.Origins = importCandidateOrigins(method)
 		candidate.Integrity = inspectImportIntegrity(report, contract, method)
-		if candidate.Origin != "" && !externalOrigins[candidate.Origin] {
-			externalOrigins[candidate.Origin] = true
+		for _, origin := range candidate.Origins {
+			if externalOrigins[origin] {
+				continue
+			}
+			externalOrigins[origin] = true
 			report.Warnings = append(report.Warnings,
-				fmt.Sprintf("candidate %s resolves to %s; import does not verify that origin", display, candidate.Origin))
+				fmt.Sprintf("candidate %s references %s; import does not verify that origin", display, origin))
 		}
 		report.Candidates = append(report.Candidates, candidate)
 	}
@@ -328,45 +365,60 @@ func inspectImportIntegrity(report *importReport, contract *methodkind.Contract,
 	}
 
 	if method.ChecksumSecretRef != nil {
-		// A secret-provided checksum is configured integrity; its value is
-		// intentionally never read or printed here.
+		// The reference is blocked by the catalog credential policy, but the
+		// preview still describes why it would otherwise satisfy the floor.
+		// The value is intentionally never read or printed here.
 		return "checksum from secret reference"
 	}
 	if contract.Artifact == nil {
 		return "n/a (no downloaded artifact)"
 	}
 
+	baseChecksum, _ := method.Config["checksum"].(string)
 	var checksums []string
-	if configured, ok := method.Config["checksum"].(string); ok && configured != "" {
-		checksums = append(checksums, configured)
+	var missing []string
+	check := func(checksum, location string) {
+		if checksum == "" {
+			missing = append(missing, location)
+			return
+		}
+		checksums = append(checksums, checksum)
 	}
-	// A host-independent parse leaves distribution selection unresolved, so
-	// every declared distribution checksum counts toward the floor.
-	for _, distribution := range method.Distributions {
-		if distribution.HasChecksum && distribution.Checksum != "" {
-			checksums = append(checksums, distribution.Checksum)
+	if len(method.Distributions) == 0 {
+		check(baseChecksum, "")
+	} else {
+		// Distributions are exhaustive and their checksum overrides are
+		// independent. A checksum on one sibling cannot protect another.
+		for i, distribution := range method.Distributions {
+			effective := baseChecksum
+			if distribution.HasChecksum {
+				effective = distribution.Checksum
+			}
+			check(effective, fmt.Sprintf(" distributions[%d]", i))
 		}
 	}
-	checksums = uniqueSortedStrings(checksums)
-	if len(checksums) == 0 {
+	for _, location := range missing {
 		report.Errors = append(report.Errors, fmt.Sprintf(
-			"candidate %s downloads an artifact but declares no checksum; import requires an integrity floor (checksum or checksum_secret_ref)",
-			display))
+			"candidate %s%s downloads an artifact but declares no checksum; import requires an integrity floor (checksum or checksum_secret_ref)",
+			display, location))
+	}
+	if len(missing) > 0 {
 		return "missing"
 	}
-	for _, checksum := range checksums {
+	checksums = uniqueSortedStrings(checksums)
+	for i, checksum := range checksums {
 		if strings.HasSuffix(checksum, ":auto") {
 			report.Warnings = append(report.Warnings, fmt.Sprintf(
 				"candidate %s uses %q: integrity is trust-on-first-use (TOFU) because the checksum is fetched with the artifact; verify it before relying on the import",
 				display, checksum))
-			return checksum + " (TOFU)"
+			checksums[i] += " (TOFU)"
 		}
 	}
 	return strings.Join(checksums, ", ")
 }
 
-// importCandidateOrigin names the external origin a candidate reaches, without
-// host facts. It is used only for a warning: depengine does not verify it.
+// importCandidateOrigin keeps the original primary-origin field stable for
+// existing JSON consumers. New clients should use importCandidate.Origins.
 func importCandidateOrigin(method *config.MethodCandidate) string {
 	if repo := configString(method.Config, "repo"); repo != "" {
 		return "github:" + repo
@@ -380,6 +432,68 @@ func importCandidateOrigin(method *config.MethodCandidate) string {
 		}
 	}
 	return ""
+}
+
+// importCandidateOrigins inventories declared source selectors, network origins
+// and verification sidecars in stable order. Runtime redirects, defaults and
+// external package-manager network requests are not discoverable at import.
+func importCandidateOrigins(method *config.MethodCandidate) []string {
+	var origins []string
+	add := func(origin string) {
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	if repo := configString(method.Config, "repo"); repo != "" {
+		add("github:" + repo)
+	}
+	if raw := configString(method.Config, "url"); raw != "" {
+		add(urlOrigin(raw))
+	}
+	// These fields select other package registries, remotes or sources. Some
+	// carry URLs while others contain only an external manager's source name.
+	for _, key := range []string{"source", "registry", "remote", "bucket", "index", "index_url", "git", "backend"} {
+		if value := configString(method.Config, key); value != "" {
+			add(key + " @ " + importOriginValue(value))
+		}
+	}
+	if channels, ok := method.Config["channels"].([]string); ok {
+		for _, channel := range channels {
+			add("channel @ " + importOriginValue(channel))
+		}
+	}
+	for _, source := range method.Sources {
+		identity := source.Kind
+		if source.Name != "" {
+			identity += ":" + source.Name
+		}
+		if source.URL != "" {
+			add("source " + identity + " @ " + urlOrigin(source.URL))
+		} else if identity != "" {
+			add("source " + identity)
+		}
+	}
+	for _, key := range []string{"checksum_url", "signature_url"} {
+		if raw := configString(method.Config, key); raw != "" {
+			add(key + " @ " + urlOrigin(raw))
+		}
+	}
+	for i, distribution := range method.Distributions {
+		if distribution.HasChecksumURL && distribution.ChecksumURL != "" {
+			add(fmt.Sprintf("distributions[%d] checksum_url @ %s", i, urlOrigin(distribution.ChecksumURL)))
+		}
+		if distribution.HasSignatureURL && distribution.SignatureURL != "" {
+			add(fmt.Sprintf("distributions[%d] signature_url @ %s", i, urlOrigin(distribution.SignatureURL)))
+		}
+	}
+	return dedupeStrings(origins)
+}
+
+func importOriginValue(raw string) string {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+		return urlOrigin(raw) // Strip userinfo, path, query and fragment.
+	}
+	return raw
 }
 
 func urlOrigin(raw string) string {
@@ -447,8 +561,8 @@ func writeImportReport(w io.Writer, report *importReport) {
 	origins := make([]string, 0, len(report.Candidates))
 	for _, candidate := range report.Candidates {
 		names = append(names, candidate.displayName())
-		if candidate.Origin != "" {
-			origins = append(origins, candidate.displayName()+": "+candidate.Origin)
+		for _, origin := range candidate.Origins {
+			origins = append(origins, candidate.displayName()+": "+origin)
 		}
 	}
 	if len(names) > 0 {
@@ -470,6 +584,9 @@ func writeImportReport(w io.Writer, report *importReport) {
 		writef(w, "  executable: %s\n", strings.Join(dedupeStrings(report.Executable), "; "))
 	} else {
 		writeln(w, "  executable: none (no hooks, command fields or arbitrary-code plans)")
+	}
+	if len(report.CredentialReferences) > 0 {
+		writef(w, "  credential references: %s\n", strings.Join(dedupeStrings(report.CredentialReferences), "; "))
 	}
 	if len(report.Warnings) > 0 {
 		writeln(w, "  warnings:")

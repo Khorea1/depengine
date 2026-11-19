@@ -126,13 +126,14 @@ Examples:
 Help about any command
 .TP
 .B "depengine import <recipe.toml> [flags]"
-Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+Validate a recipe before writing it to the catalog: preview declared origins, integrity and candidates; reject arbitrary code and credential references; require a checksum and warn about TOFU. Use \-\-expected\-digest to verify a separately trusted recipe identity.
 .PP
 Examples:
 .nf
   depengine import ./fd.toml \-\-dry\-run   # preview origin, integrity and candidates
   depengine import ./fd.toml \-\-dry\-run \-\-json  # inspect the preview in scripts
   depengine import ./fd.toml \-\-force     # replace an existing recipe
+  depengine import ./fd.toml \-\-expected\-digest sha256:YOUR_TRUSTED_DIGEST  # verify an out\-of\-band pin
 .fi
 .TP
 .B "depengine init [flags]"
@@ -289,6 +290,9 @@ help for audit Scope: local. Default: false.
 .B "\-\-json"
 shorthand for \-\-format=json Scope: local. Default: false.
 .TP
+.B "\-\-lock <string>"
+lockfile to audit (default: derived from schema path) Scope: local. Default: .
+.TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
 .TP
@@ -410,6 +414,9 @@ help for doctor Scope: local. Default: false.
 .B "\-\-json"
 shorthand for \-\-format=json Scope: local. Default: false.
 .TP
+.B "\-\-lock <string>"
+lockfile to inspect (default: derived from schema path) Scope: local. Default: .
+.TP
 .B "\-\-manifest <string>"
 personal manifest path to inspect (default: auto\-detect) Scope: local. Default: .
 .TP
@@ -502,6 +509,9 @@ destination catalog root (repeatable; the first root wins) Scope: local. Default
 .B "\-\-dry\-run"
 preview the import without writing the recipe Scope: local. Default: false.
 .TP
+.B "\-\-expected\-digest <string>"
+require the canonical sha256:<64 hex> recipe digest from a trusted source Scope: local. Default: .
+.TP
 .B "\-\-force"
 replace an existing recipe with the same tool name Scope: local. Default: false.
 .TP
@@ -566,6 +576,9 @@ max concurrent installations (default 1 = sequential) Scope: local. Default: 1.
 .TP
 .B "\-\-json"
 shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read and update (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-log\-level <string>"
 log level: debug, info, warn, error Scope: local. Default: .
@@ -662,6 +675,9 @@ output format: cyclonedx or spdx Scope: local. Default: cyclonedx.
 .TP
 .B "\-h, \-\-help"
 help for sbom Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read for missing versions (default: derived from recorded schema) Scope: local. Default: .
 .SS "depengine status flags"
 .TP
 .B "\-\-catalog <stringArray>"
@@ -675,6 +691,9 @@ help for status Scope: local. Default: false.
 .TP
 .B "\-\-json"
 shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to inspect (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
@@ -787,6 +806,9 @@ help for upgrade Scope: local. Default: false.
 .TP
 .B "\-\-json"
 shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .

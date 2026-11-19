@@ -84,12 +84,27 @@ type ObservedIdentity struct {
 	Platform     string             `json:"platform,omitempty"`
 }
 
+// ObservedResource identifies a physical *location* observed by an adapter.
+// It is not evidence of ownership or permission to mutate the location. Scope
+// identifies the host-local namespace and Kind describes what Identity names.
+// Only resources whose location is supported by an actual host observation may
+// appear here; logical package names and guessed PATH entries are insufficient.
+type ObservedResource struct {
+	Scope    string `json:"scope"`
+	Kind     string `json:"kind"`
+	Identity string `json:"identity"`
+}
+
 // Observation is the adapter-neutral output of a host-state probe.
+// Resources is optional evidence of physical locations, not a claim or a
+// lock on them. Callers must reject missing evidence for claim arbitration
+// and revalidate under a host transaction before any physical mutation.
 type Observation struct {
-	Presence    PresenceState    `json:"presence"`
-	Identity    ObservedIdentity `json:"identity,omitempty"`
-	KnownFields []IdentityField  `json:"known_fields,omitempty"`
-	Detail      string           `json:"detail,omitempty"`
+	Presence    PresenceState      `json:"presence"`
+	Identity    ObservedIdentity   `json:"identity,omitempty"`
+	KnownFields []IdentityField    `json:"known_fields,omitempty"`
+	Resources   []ObservedResource `json:"resources,omitempty"`
+	Detail      string             `json:"detail,omitempty"`
 }
 
 // IdentityDrift records one desired-state dimension that is known and differs

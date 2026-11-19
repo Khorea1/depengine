@@ -191,15 +191,38 @@ func TestDefaultPath(t *testing.T) {
 	}
 
 	got3 := DefaultPath("depends.toml")
-	want3 := "depends.toml"
-	if got3 == want3 {
-		t.Fatalf("DefaultPath(depends.toml) should not equal input, got %q", got3)
+	want3 := "depends.toml.lock"
+	if got3 != want3 {
+		t.Fatalf("DefaultPath(depends.toml) = %q, want %q", got3, want3)
 	}
 
 	got4 := DefaultPath("/tmp/foo.yaml")
-	want4 := filepath.Join("/tmp", "depengine.lock")
+	want4 := filepath.Join("/tmp", "foo.yaml.lock")
 	if got4 != want4 {
 		t.Fatalf("DefaultPath(/tmp/foo.yaml) = %q, want %q", got4, want4)
+	}
+}
+
+func TestDefaultPathIsolatedAndStable(t *testing.T) {
+	dir := t.TempDir()
+	names := []string{"schema.toml", "depengine.toml", "depends.toml", "desktop.toml", "server.toml"}
+	seen := make(map[string]string)
+	for _, name := range names {
+		schema := filepath.Join(dir, name)
+		got := DefaultPath(schema)
+		if earlier, ok := seen[got]; ok {
+			t.Fatalf("%s and %s collide on %s", earlier, name, got)
+		}
+		seen[got] = name
+		if Path(schema, "") != got {
+			t.Fatalf("default path changed with empty override for %s", name)
+		}
+		if Path(schema, filepath.Join(dir, "custom.lock")) != filepath.Join(dir, "custom.lock") {
+			t.Fatalf("explicit lock path ignored for %s", name)
+		}
+	}
+	if DefaultPath(filepath.Join(dir, "renamed.toml")) == DefaultPath(filepath.Join(dir, "desktop.toml")) {
+		t.Fatal("renaming a schema must not silently adopt an unrelated lock")
 	}
 }
 

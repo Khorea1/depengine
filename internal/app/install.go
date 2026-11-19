@@ -43,6 +43,7 @@ func newInstallCmd() *cobra.Command {
 	installProfile := new(string)
 	installFrozen := new(bool)
 	installBundle := new(string)
+	installLock := new(string)
 	installDiagnose := new(bool)
 	installLogLevel := new(string)
 	installSortBy := new(string)
@@ -85,6 +86,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock is missing, detectably stale, or lacks a supported required pin")
 	f.StringVar(installBundle, "bundle", "", "install locked artifacts from a local frozen artifact bundle")
+	f.StringVar(installLock, "lock", "", "lockfile to read and update (default: derived from schema path)")
 	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + detailed report")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
@@ -122,6 +124,7 @@ type installPlan struct {
 	allowCode    bool
 	quiet        bool
 	lockDocument *plan.LockDocument
+	lockPath     string
 	bundle       string
 }
 
@@ -265,7 +268,7 @@ func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *pla
 // legacy resolution. Missing or v1 locks retain the compatibility resolver
 // and persistence path; update is the promotion point to v2.
 func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger, rn run.Runner) (*lock.Lock, error) {
-	lk, err := loadLockfile(p.schema, s, p.frozen, lg)
+	lk, err := loadLockfile(p.schema, s, p.frozen, lg, p.lockPath)
 	if err != nil {
 		return nil, err
 	}
@@ -447,6 +450,8 @@ func shouldWarnDeprecatedVerbose(cmd *cobra.Command) bool {
 // execute, render, finish.
 func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen *bool, installBundle *string, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
 	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+	selectedLock, _ := cmd.Flags().GetString("lock")
+	p.lockPath = selectedLock
 	if p.bundle != "" && !p.frozen {
 		return fmt.Errorf("--bundle requires --frozen-lockfile")
 	}
@@ -503,7 +508,17 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
 	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
 
-	lockPath := lock.DefaultPath(p.schema)
+	lockPath := lock.Path(p.schema, p.lockPath)
+	// A non-dry-run install can persist a legacy v1 lock after executing.
+	// Keep its initial lock read and final Save in the same per-file transaction
+	// as update, even if the installation itself takes time.
+	if !p.dryRun {
+		txn, err := lock.AcquireTransaction(ctx, lockPath)
+		if err != nil {
+			return fmt.Errorf("acquire install lock transaction: %w", err)
+		}
+		defer func() { _ = txn.Close() }()
+	}
 	lk, err := resolveInstallLock(ctx, p, s, lg, run.OSExecRunner{})
 	if err != nil {
 		return err

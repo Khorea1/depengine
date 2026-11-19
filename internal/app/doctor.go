@@ -83,6 +83,7 @@ type doctorReport struct {
 // and configuration layers but never writes state, locks, or downloads.
 func newDoctorCmd() *cobra.Command {
 	doctorSchema := new(string)
+	doctorLockPath := new(string)
 	*doctorSchema = defaultSchemaPath()
 	doctorManifest := new(string)
 	doctorNoManifest := new(bool)
@@ -110,6 +111,7 @@ func newDoctorCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(doctorSchema, "schema", *doctorSchema, "schema path to inspect")
+	f.StringVar(doctorLockPath, "lock", "", "lockfile to inspect (default: derived from schema path)")
 	f.StringVar(doctorManifest, "manifest", "", "personal manifest path to inspect (default: auto-detect)")
 	f.BoolVar(doctorNoManifest, "no-manifest", false, "ignore the personal manifest")
 	addCatalogFlags(cmd, doctorCatalog, doctorNoCatalog)
@@ -122,6 +124,7 @@ func newDoctorCmd() *cobra.Command {
 // separate from Cobra makes the report testable without executing a command.
 type doctorOptions struct {
 	schemaPath       string
+	lockPath         string
 	schemaExplicit   bool
 	manifestPath     string
 	manifestExplicit bool
@@ -136,6 +139,7 @@ func runDoctor(cmd *cobra.Command, schema, manifest *string, noManifest *bool, c
 	catalog, catalogErr := catalogFromCommand(cmd)
 	opts := doctorOptions{
 		schemaPath:       *schema,
+		lockPath:         doctorLockFlag(cmd),
 		schemaExplicit:   cmd.Flags().Changed("schema"),
 		manifestPath:     *manifest,
 		manifestExplicit: cmd.Flags().Changed("manifest"),
@@ -292,7 +296,7 @@ func doctorLayersAndLock(opts doctorOptions, factMap map[string]string, report *
 		}
 	}
 
-	return layers, doctorLockFor(absSchema)
+	return layers, doctorLockFor(absSchema, opts.lockPath)
 }
 
 func diagnoseSchema(schemaPath string, factMap map[string]string, manifestPath string, catalog *config.Catalog) error {
@@ -321,8 +325,8 @@ func diagnoseSchema(schemaPath string, factMap map[string]string, manifestPath s
 	return nil
 }
 
-func doctorLockFor(schemaPath string) doctorLock {
-	path := lock.DefaultPath(schemaPath)
+func doctorLockFor(schemaPath string, override ...string) doctorLock {
+	path := lock.Path(schemaPath, override...)
 	lk, err := lock.Load(path)
 	if err != nil {
 		return doctorLock{Path: path, Present: true, Readable: false, Error: err.Error()}
@@ -506,4 +510,10 @@ func yesNo(value bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// doctorLockFlag is optional for direct report tests and older embedded commands.
+func doctorLockFlag(cmd *cobra.Command) string {
+	value, _ := cmd.Flags().GetString("lock")
+	return value
 }

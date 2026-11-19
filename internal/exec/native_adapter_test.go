@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -778,5 +779,51 @@ func TestWingetInstalledVersion(t *testing.T) {
 	}
 	if v != "2.53.0" {
 		t.Fatalf("InstalledVersion = %q, want 2.53.0", v)
+	}
+}
+
+// A completed manager process can still have an incomplete stdout capture.
+// Neither success nor a nonzero exit status proves installed/absent in that case.
+func TestNativeByManagerObserveIncompleteOutputIsUnknown(t *testing.T) {
+	for _, manager := range []string{"brew", "winget", "port"} {
+		for _, exit := range []int{0, 1} {
+			t.Run(fmt.Sprintf("%s_exit_%d", manager, exit), func(t *testing.T) {
+				rn := &run.FakeRunner{
+					ExitCode: exit,
+					Stdout:   "Git Git.Git 2.53.0 winget\n",
+					WaitErr:  errors.New("captured output incomplete"),
+				}
+				a := &NativeByManagerAdapter{managerName: manager}
+				tool := &config.Tool{Name: "git"}
+				mc := &config.MethodCandidate{Config: map[string]any{"pkg": "Git.Git"}}
+				got, err := a.Observe(context.Background(), rn, tool, mc)
+				if err != nil {
+					t.Fatalf("Observe: %v", err)
+				}
+				if got.Presence != plan.PresenceUnknown {
+					t.Fatalf("Observe presence = %q, want unknown", got.Presence)
+				}
+				if len(got.KnownFields) != 0 ||
+					len(got.Resources) != 0 ||
+					got.Identity != (plan.ObservedIdentity{}) {
+					t.Fatalf("incomplete output supplied evidence: %+v", got)
+				}
+			})
+		}
+	}
+}
+
+func TestNativeByManagerCheckRejectsIncompleteOutput(t *testing.T) {
+	for _, manager := range []string{"brew", "winget", "port"} {
+		t.Run(manager, func(t *testing.T) {
+			rn := &run.FakeRunner{
+				Stdout:  "Git Git.Git 2.53.0 winget\n",
+				WaitErr: errors.New("captured output incomplete"),
+			}
+			a := &NativeByManagerAdapter{managerName: manager}
+			if a.Check(context.Background(), rn, &config.Tool{Name: "git"}, &config.MethodCandidate{Config: map[string]any{"pkg": "Git.Git"}}) {
+				t.Fatal("Check returned true with incomplete output")
+			}
+		})
 	}
 }
