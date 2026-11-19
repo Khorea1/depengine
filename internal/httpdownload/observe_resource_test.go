@@ -22,7 +22,7 @@ func TestHTTPObservePhysicalFileSlotEvidence(t *testing.T) {
 	}
 	binary := filepath.Join(installDir, "rust")
 	bytes := []byte("verified raw payload")
-	if err := os.WriteFile(binary, bytes, 0o700); err != nil {
+	if err := os.WriteFile(binary, bytes, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	checksum := sha256.Sum256(bytes)
@@ -82,7 +82,7 @@ func TestHTTPObservePhysicalFileSlotEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 		realFile := filepath.Join(root, "target")
-		if err := os.WriteFile(realFile, bytes, 0o700); err != nil {
+		if err := os.WriteFile(realFile, bytes, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 			t.Fatal(err)
 		}
 		if err := os.Symlink(realFile, binary); err != nil {
@@ -112,7 +112,7 @@ func TestHTTPObservePhysicalResourceRequiresExplicitEvidence(t *testing.T) {
 		t.Fatalf("absent evidence = %+v, %v; want no physical identity", got, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("old"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("old"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	method.Config["checksum"] = "sha256:" + hex.EncodeToString(make([]byte, sha256.Size))

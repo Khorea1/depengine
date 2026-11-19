@@ -58,8 +58,8 @@ func TestHTTPProspectiveEffectsIdentifiesAbsentAndPresentRawTarget(t *testing.T)
 		}
 	}
 
-	check(want) // Target does not yet exist: still a prospective file slot.
-	if err := os.WriteFile(want.Identity, []byte("existing executable"), 0o700); err != nil {
+	check(want)                                                                               // Target does not yet exist: still a prospective file slot.
+	if err := os.WriteFile(want.Identity, []byte("existing executable"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	check(want)

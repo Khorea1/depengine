@@ -51,6 +51,8 @@ general lint baseline still covers unrelated non-`gosec` backlog.
 | G703 | `internal/config/manifest.go`, `DefaultManifestPath` | Intentional operator-selected manifest path from environment/XDG configuration. The reported operation only probes existence; a narrow suppression now records that reviewed trust boundary. |
 | G703 | `internal/platform/gather.go`, detector selection | Intentional operator-selected executable override. An attacker-controlled process environment is a separate trust concern; the warning alone does not establish traversal. No suppression added. |
 | G703 | `internal/state/snapshot.go`, snapshot write | Generated timestamp filename under the operator-selected owner-only state root. No untrusted archive/document filename reaches this write; a narrow suppression records that reviewed boundary. |
+| G301/G703 | `internal/lock/transaction.go`, transaction guard | Reviewed. The guard path is derived from the caller-selected lockfile path: the parent directory is symlink-canonicalized and absolutized, the filename is `filepath.Base(path)`, and the guard adds a fixed prefix/suffix before a regular-file check. The parent keeps `0755` because project lockfiles may live in a shared, traversable repository directory; the guard file itself stays `0600` and its identity is re-verified after open. |
+| G204/G702/G703 | `internal/lock/transaction_test.go`, crash-recovery child | Reviewed. The test re-executes its own test binary with a fixed `-test.run` selector to obtain a genuinely separate process; the ready-file path is supplied by the parent test inside a temporary directory. |
 
 ## Test fixture disposition
 
@@ -62,6 +64,11 @@ states with narrow suppressions. Dynamic fixture paths, synthetic credentials,
 and controlled subprocesses use call-site suppressions with reasons rather than
 package- or test-wide exclusions. Previously ignored setup/decoding/lock errors
 were handled or made explicitly secondary to the primary test failure.
+
+Re-reviewed on 2026-11-19 after the transactional-lock and HTTP observation
+commits: 15 new diagnostics in the transaction guard and observation fixtures
+were triaged back to zero. Executable fixtures retain owner-execute permission
+with call-site suppressions, consistent with the broader fixture policy above.
 
 The current uncapped count is zero across production and tests. Keep `gosec`
 enabled in the normal lint configuration; no repository-wide `gosec` exclusion

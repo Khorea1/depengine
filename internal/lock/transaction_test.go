@@ -23,7 +23,7 @@ func TestTransactionLockChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = guard.Close() }()
-	if err := os.WriteFile(os.Getenv("DEPENGINE_TRANSACTION_READY"), []byte("ready"), 0o600); err != nil {
+	if err := os.WriteFile(os.Getenv("DEPENGINE_TRANSACTION_READY"), []byte("ready"), 0o600); err != nil { // #nosec G703 -- path comes from the parent test process in a temporary directory.
 		t.Fatal(err)
 	}
 	for {
@@ -34,7 +34,7 @@ func TestTransactionLockChild(t *testing.T) {
 func TestTransactionSerializesProcessesAndRecoversAfterCrash(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "depengine.lock")
 	ready := filepath.Join(t.TempDir(), "ready")
-	child := exec.Command(os.Args[0], "-test.run=^TestTransactionLockChild$")
+	child := exec.Command(os.Args[0], "-test.run=^TestTransactionLockChild$") // #nosec G204,G702 -- re-executes this test binary, no external command.
 	child.Env = append(os.Environ(),
 		"DEPENGINE_TRANSACTION_CHILD=1",
 		"DEPENGINE_TRANSACTION_PATH="+path,

@@ -38,7 +38,7 @@ func TestHTTPObserveDestinationEvidence(t *testing.T) {
 	observe(plan.PresenceAbsent)
 	method.Config["extract_to"] = root
 
-	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("valid"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("valid"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	observe(plan.PresencePresent)

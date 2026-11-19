@@ -17,7 +17,7 @@ func TestHTTPObservePinnedRawPayloadRejectsWrongInstalledBytes(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "rust")
 	actual := []byte("installed by schema A")
-	if err := os.WriteFile(path, actual, 0o700); err != nil {
+	if err := os.WriteFile(path, actual, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	pin := func(b []byte) string {
@@ -75,7 +75,7 @@ func TestHTTPObservePinnedPATHRawPayloadIsUnknown(t *testing.T) {
 // binary. Observation must not hash the extracted binary against that digest.
 func TestHTTPObserveArchiveChecksumNotComparedToEntrypoint(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("extracted bytes"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rust"), []byte("extracted bytes"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	tool := &config.Tool{Name: "rust"}

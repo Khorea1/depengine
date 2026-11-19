@@ -19,7 +19,7 @@ func TestFrozenMultiSchemaHTTPDoesNotRelabelWrongInstalledArtifact(t *testing.T)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
 	actual := []byte("installed artifact A")
-	if err := os.WriteFile(filepath.Join(root, "rust"), actual, 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "rust"), actual, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	checksum := func(data []byte) string {
