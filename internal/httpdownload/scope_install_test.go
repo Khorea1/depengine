@@ -131,6 +131,7 @@ func TestHTTPRequiresElevationRegexDistributionUsesEffectiveTargets(t *testing.T
 // install → check/observe → remove cycle for a user-scoped raw binary with no
 // extract_to/link_dir in the candidate.
 func TestHTTPScopeUserRawBinaryInstallCheckRemoveRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	if runtime.GOOS == "windows" {
 		return
 	}

@@ -22,6 +22,7 @@ import (
 // resolution attempt would fail), while the resolved plan carries the concrete
 // httptest URL. A successful install can only have come from the plan.
 func TestHTTPAdapterInstallResolvedUsesConcreteURL(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("#!/bin/sh\necho hello\n"))
 	}))
@@ -105,6 +106,7 @@ func TestHTTPAdapterAuthenticatedInstallBypassesURLCache(t *testing.T) {
 }
 
 func TestHTTPAdapterInstallResolvedUsesResolvedVerificationMetadata(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	payload := []byte("resolved payload\n")
 	digest := sha256.Sum256(payload)
 	wantChecksum := "sha256:" + hex.EncodeToString(digest[:])

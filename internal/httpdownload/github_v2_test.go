@@ -151,6 +151,7 @@ func TestGitHubAdapterV2ObservationReconciles(t *testing.T) {
 }
 
 func TestGitHubAdapterInstallResolvedClassifiesResolvedArtifact(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("#!/bin/sh\necho hello\n"))
 	}))

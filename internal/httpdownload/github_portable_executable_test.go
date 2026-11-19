@@ -17,6 +17,7 @@ import (
 )
 
 func TestGitHubPortableExecutableDistributionInstallsAsRawPayload(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	payload := []byte("MZ portable release payload; never execute")
 	serverURL := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

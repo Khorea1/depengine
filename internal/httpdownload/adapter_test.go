@@ -15,6 +15,7 @@ import (
 )
 
 func TestHTTPAdapterInstallDirectDownloadUsesBinaryName(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("binary-content"))
 	}))

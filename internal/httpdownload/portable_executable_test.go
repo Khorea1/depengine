@@ -15,6 +15,7 @@ import (
 )
 
 func TestPortableWindowsExecutableInstallsObservesAndRemovesAsRawPayload(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	payload := []byte("MZ portable payload; must not execute")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(payload) }))
 	defer server.Close()
@@ -60,6 +61,7 @@ func TestPortableWindowsExecutableInstallsObservesAndRemovesAsRawPayload(t *test
 }
 
 func TestPortableExecutableOptInDoesNotPermitExecutionOrInstallerPayloads(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	for _, tc := range []struct {
 		name string
 		when *config.Condition
@@ -97,6 +99,7 @@ func TestPortableExecutableOptInDoesNotPermitExecutionOrInstallerPayloads(t *tes
 }
 
 func TestInstallerExeWithoutOptInRemainsRejected(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requests++

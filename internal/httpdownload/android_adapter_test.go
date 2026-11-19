@@ -127,6 +127,7 @@ func TestAndroidAdapterInstallNoURL(t *testing.T) {
 // The versioned asset must be downloaded directly under the stable
 // "<tool>.apk" target and then handed to termux-open.
 func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	fakeHome := t.TempDir()
 	exectest.SetHome(t, fakeHome)
 
@@ -175,6 +176,7 @@ func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 // Install error instead of being silently swallowed — the whole point of
 // this adapter is the hand-off, so a failed hand-off is a failed Install.
 func TestAndroidAdapterInstallTermuxOpenFailure(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	fakeHome := t.TempDir()
 	exectest.SetHome(t, fakeHome)
 

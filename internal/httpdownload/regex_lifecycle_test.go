@@ -15,7 +15,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exectest"
@@ -24,10 +23,12 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// redirectGitHubAPI points ghrelease.Default's HTTP client at serverURL for
-// the duration of the test, preserving request paths like the redirect
-// tripper in internal/ghrelease tests. Callers must use a repo unique to
-// the test so Default's in-memory release cache cannot serve a stale hit.
+// redirectGitHubAPI points ghrelease.Default at serverURL for the duration of
+// the test, preserving request paths like the redirect tripper in
+// internal/ghrelease tests. It installs an owned Resolver rather than mutating
+// the shared one: the Resolver's in-memory release cache would otherwise keep
+// resolved asset URLs from this server alive after it closes, so a repeated run
+// in the same process would reuse a dead port instead of re-resolving.
 func redirectGitHubAPI(t *testing.T, serverURL string) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "")
@@ -36,14 +37,15 @@ func redirectGitHubAPI(t *testing.T, serverURL string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ghrelease.Default.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	previous := ghrelease.Default
+	resolver := ghrelease.NewResolver()
+	resolver.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		return http.DefaultTransport.RoundTrip(req)
 	})})
-	t.Cleanup(func() {
-		ghrelease.Default.SetHTTPClient(&http.Client{Timeout: 30 * time.Second})
-	})
+	ghrelease.Default = resolver
+	t.Cleanup(func() { ghrelease.Default = previous })
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -349,6 +351,7 @@ func TestHTTPRawBinaryRemoveUnchanged(t *testing.T) {
 // like a .deb) never influences classification — the concrete artifact URL
 // installs as a raw binary under the tool name.
 func TestGitHubInstallResolvedIgnoresRegexSelectorText(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	payload := []byte("resolved raw payload\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(payload)
