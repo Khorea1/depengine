@@ -91,11 +91,28 @@ The failure domain of a failed tool is its transitive dependent closure, not its
 
 Subprocess failure and incomplete captured output are distinct: a direct process failure is reported as such, while incomplete output capture does not by itself establish that the process failed. This documents the executor/recovery contract, not a scheduler or retry policy.
 
+## Claim arbitration is not persisted ownership
+
+`internal/state.InstallationClaim` and `ClaimLedger` are a **planning
+primitive**, not a state record. The ledger validates an explicit claim set,
+indexes it by observed `scope/kind/identity` keys, and answers whether one
+proposed claim would create, share, transition, remain unchanged, or conflict.
+It never reads the host, never grants ownership, and is not persisted: state v5
+stores no installation claims, and install/remove paths do not consult it.
+
+The persisted "resource-use claims" retained by `ToolState` and the preparation
+WAL remain the authoritative record of depengine-proven ownership and refcount
+release under ADR-002. A shared name is not shared authority; do not treat a
+`ClaimLedger` decision as permission to mutate the host, and do not implement
+recovery from planning claims. See
+[ADR-010](adr-010-global-resource-effects-and-claims.md) for the staged gate.
+
 ## References
 
 - [ADR-001 — Universal lock projection](adr-001-universal-lock-projection.md)
 - [ADR-002 — Transactional preparation](adr-002-transactional-preparation.md)
 - [ADR-003 — Hook lifecycle](adr-003-hook-lifecycle.md)
 - [ADR-005 — Resolved install plan projection](adr-005-resolved-install-plan-projection.md)
+- [ADR-010 — Global resource effects and claims](adr-010-global-resource-effects-and-claims.md)
 - [Support boundary](../support-boundary.md)
 - [Schema reference](../schema-reference.md)

@@ -206,6 +206,42 @@ protocol comparison and unresolved cases are recorded in
 Neither the executor's admission logic nor `AdapterV2`, `state v5`, claims,
 namespace isolation or `disjoint` semantics changed.
 
+### Checkpoint: reusable validated claim index (2026-11-19)
+
+`internal/state/claims.go` separates one-time ledger validation
+(`LoadClaimLedger`) from repeated decisions (`(*ClaimLedger).Plan`). This is
+the plan's "reusable validated indexes" Phase 2 item, **not** the Phase 2 exit
+gate.
+
+- The complete ledger is validated once: duplicate logical claims, incomplete
+  or duplicate resource keys, mutually inconsistent owners and claims that
+  collide with legacy-unassigned resources are rejected before any request is
+  evaluated. A damaged ledger still cannot authorize an unrelated claim.
+- Claim and resource ordering is canonical (schema/tool; scope/kind/identity),
+  so equivalent permuted inputs yield identical dispositions and identical
+  diagnostics. Overlap selection no longer depends on map iteration order.
+- The index owns a copy of its input, so later caller mutation cannot
+  desynchronize the index from the claims it validated.
+- `PlanInstallationClaim` remains a stateless wrapper with the established
+  semantics; every prior planner test passes unchanged.
+- Verification is independent of the implementation: a deterministic seeded
+  differential test judges 300 generated host views with both the index and a
+  naive reference model written directly from the documented rules, and
+  requires the reused index to agree with the stateless entry point. A
+  concurrent test under the race detector holds the documented read-only
+  guarantee, not just the single-threaded result.
+
+Effect envelopes are still **not** accepted as claim evidence. Every current
+envelope is `unknown` completeness with tentative targets, so it cannot
+populate a claim's resource set; `unknown != empty` continues to apply. There
+is no host read, executor caller, `state v5` persistence, admission decision or
+ownership grant.
+
+Local microbenchmark (20k iterations, 1/10/100 claims sharing one slot):
+0.13/0.31/1.97 µs per indexed decision versus 0.64/2.59/19.6 µs for the
+stateless wrapper. The 100-claim case scales with *overlapping* claims, not
+total schemas, and this is not a host-level admission benchmark.
+
 ## Proposed protocol
 
 ### A. Select and resolve one candidate, not the Cartesian product
