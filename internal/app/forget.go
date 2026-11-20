@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,15 @@ func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error 
 		return exitWithCode(1)
 	}
 
+	// Forget drops tracking, not host resources. Release the tool's claims so a
+	// shared source or prerequisite can reach zero references; the zero-ref
+	// record itself is retained because nothing was uninstalled.
+	release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
+	if err != nil {
+		log.Default.Error("release owned resources", "tool", toolName, "error", err)
+		return exitWithCode(1)
+	}
+	st.OwnedResources = release.Updated
 	delete(st.Tools, toolName)
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state", "error", err)

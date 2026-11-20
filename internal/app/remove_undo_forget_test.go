@@ -427,6 +427,46 @@ func TestForgetGoTool(t *testing.T) {
 	}
 }
 
+// TestForgetReleasesOwnedResourceClaims forgets a tracked owner while leaving
+// its shared prerequisite untouched on the host. The forgotten name must not
+// keep a phantom reference that prevents later prerequisite cleanup.
+func TestForgetReleasesOwnedResourceClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+			"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "owner")
+	if code != 0 {
+		t.Fatalf("forget exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["owner"]; ok {
+		t.Fatal("forgotten tool remains tracked")
+	}
+	if _, ok := st.Tools["helper"]; !ok {
+		t.Fatal("forget dropped the unrelated prerequisite's tracking")
+	}
+	if len(st.OwnedResources) != 1 {
+		t.Fatalf("owned resources = %#v, want the retained prerequisite record", st.OwnedResources)
+	}
+	if got := st.OwnedResources[0]; got.Resource != resource || got.RefCount() != 0 {
+		t.Fatalf("owned prerequisite after forget = %#v, want zero-ref %s", got, resource.Key)
+	}
+}
+
 func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
