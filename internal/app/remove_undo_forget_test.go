@@ -594,6 +594,54 @@ func TestRemoveLastOwnerCleansUnreferencedPrerequisite(t *testing.T) {
 // verified or removed. Owner removal must still succeed and retain the record.
 // TestRemoveDryRunReportsUntrackedPrerequisiteRetention keeps dry-run aligned
 // with the real path, which retains a prerequisite that is no longer tracked.
+func TestForgetOrphanedPrerequisiteRecord(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version:        state.CurrentVersion,
+		Tools:          map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{Resource: resource, Ownership: plan.OwnershipDepengine}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 0 {
+		t.Fatalf("forget orphaned prerequisite exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 0 {
+		t.Fatalf("owned resources = %#v, want the zero-ref record dropped", st.OwnedResources)
+	}
+}
+
+func TestForgetOrphanedPrerequisiteRefusesClaimedRecord(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{"owner": prerequisiteGoToolState("example.test/cmd/owner", true)},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 1 {
+		t.Fatalf("forget claimed prerequisite exit = %d, want 1 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 1 {
+		t.Fatalf("owned resources = %#v, want the claimed record retained", st.OwnedResources)
+	}
+}
+
 func TestRemoveDryRunReportsUntrackedPrerequisiteRetention(t *testing.T) {
 	stateHome := t.TempDir()
 	binDir := t.TempDir()
