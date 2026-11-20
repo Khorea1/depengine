@@ -20,7 +20,7 @@ func newForgetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "forget <tool>",
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
-		Long:    ifPT("Remove o rastreamento da ferramenta; o sistema não é alterado. Também descarta um registro de ownership de pré-requisito com zero referências deixado após a remoção dos dependentes, e recusa enquanto ferramentas rastreadas ainda o exigirem.", "Drop the tool's tracking; the system is untouched. Also drops a zero-reference prerequisite ownership record left after its dependents were removed, and refuses while tracked tools still require it."),
+		Long:    ifPT("Remove o rastreamento da ferramenta; o sistema não é alterado. Para um nome não rastreado, libera reivindicações pendentes de recursos compartilhados e descarta um registro de ownership de pré-requisito com zero referências; recusa enquanto ferramentas rastreadas ainda exigirem o pré-requisito.", "Drop the tool's tracking; the system is untouched. For an untracked name, releases dangling shared-resource claims and drops a zero-reference prerequisite ownership record; refuses while tracked tools still require the prerequisite."),
 		Example: `  depengine forget nvim   # drop install state; the system is untouched`,
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),
@@ -46,7 +46,7 @@ func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error 
 	defer func() { _ = ls.Close() }()
 	st := ls.State()
 	if _, ok := st.Tools[toolName]; !ok {
-		if err := forgetOrphanedPrerequisite(st, toolName); err != nil {
+		if err := forgetUntrackedTool(st, toolName); err != nil {
 			log.Default.Error("forget", "tool", toolName, "error", err)
 			return exitWithCode(1)
 		}
@@ -84,25 +84,53 @@ func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error 
 	return nil
 }
 
-// forgetOrphanedPrerequisite drops a zero-reference prerequisite ownership
-// record whose tool is no longer tracked. This is the manual-cleanup path for
-// a helper retained after its last dependent was removed. It refuses while
-// tracked tools still claim the helper and never touches the host.
-func forgetOrphanedPrerequisite(st *state.State, toolName string) error {
-	resource, err := plan.PrerequisiteResource(toolName)
-	if err != nil {
+// forgetUntrackedTool clears ownership claims for a name that has no tracked
+// tool state: dangling dependent references from older state files and a
+// zero-reference prerequisite record for the same name. It refuses while
+// tracked tools still require the prerequisite and never touches the host.
+func forgetUntrackedTool(st *state.State, toolName string) error {
+	referenced := false
+	for _, owned := range st.OwnedResources {
+		for _, dependent := range owned.Dependents {
+			if dependent == toolName {
+				referenced = true
+				break
+			}
+		}
+		if referenced {
+			break
+		}
+	}
+
+	resource, resourceErr := plan.PrerequisiteResource(toolName)
+	orphanRecord := false
+	if resourceErr == nil {
+		for _, owned := range st.OwnedResources {
+			if owned.Resource != resource {
+				continue
+			}
+			if owned.Ownership != plan.OwnershipDepengine {
+				return errors.New("ownership is not depengine-managed")
+			}
+			if owned.RefCount() != 0 {
+				return fmt.Errorf("prerequisite is still required by tracked tools: %s", strings.Join(owned.Dependents, ","))
+			}
+			orphanRecord = true
+			break
+		}
+	}
+	if !referenced && !orphanRecord {
 		return errors.New("tool not found in state")
 	}
-	for _, owned := range st.OwnedResources {
-		if owned.Resource != resource {
-			continue
+
+	if referenced {
+		release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
+		if err != nil {
+			return err
 		}
-		if owned.Ownership != plan.OwnershipDepengine {
-			return errors.New("ownership is not depengine-managed")
-		}
-		if owned.RefCount() != 0 {
-			return fmt.Errorf("prerequisite is still required by tracked tools: %s", strings.Join(owned.Dependents, ","))
-		}
+		st.OwnedResources = release.Updated
+	}
+	if orphanRecord {
 		next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
 			Updated:   st.OwnedResources,
 			Removable: []plan.ResourceIdentity{resource},
@@ -111,7 +139,6 @@ func forgetOrphanedPrerequisite(st *state.State, toolName string) error {
 			return err
 		}
 		st.OwnedResources = next
-		return nil
 	}
-	return errors.New("tool not found in state")
+	return nil
 }

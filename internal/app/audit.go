@@ -195,6 +195,18 @@ func auditOwnership(report *auditReport, st *state.State) {
 			fmt.Sprintf("retained zero-ref prerequisite record for untracked tool %q", helper),
 			fmt.Sprintf("run 'depengine forget %s' to drop the record", helper))
 	}
+	seen := make(map[string]bool)
+	for _, owned := range st.OwnedResources {
+		for _, dependent := range owned.Dependents {
+			if _, tracked := st.Tools[dependent]; tracked || seen[dependent] {
+				continue
+			}
+			seen[dependent] = true
+			report.add("ownership", "warning", "W_OWNERSHIP_UNTRACKED_DEPENDENT", dependent,
+				fmt.Sprintf("owned resource %s/%s lists untracked dependent %q", owned.Resource.Kind, owned.Resource.Key, dependent),
+				fmt.Sprintf("run 'depengine forget %s' to release the claim", dependent))
+		}
+	}
 }
 
 // auditLock validates the lockfile against the effective schema and records

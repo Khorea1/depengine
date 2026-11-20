@@ -203,7 +203,7 @@ Examples:
 
 ## `depengine forget <tool> [flags]`
 
-Drop the tool's tracking; the system is untouched. Also drops a zero-reference prerequisite ownership record left after its dependents were removed, and refuses while tracked tools still require it.
+Drop the tool's tracking; the system is untouched. For an untracked name, releases dangling shared-resource claims and drops a zero-reference prerequisite ownership record; refuses while tracked tools still require the prerequisite.
 
 Examples:
 
@@ -765,7 +765,7 @@ remediation:
 | `layers` | Manifest/catalog merge facts and layer warnings |
 | `lock` | `depengine.lock` is readable, decodable, and still matches the schema; a method, package-source, or recipe change reports `E_LOCK_STALE` |
 | `state` | Tracked tools are installed, not outdated, and their host identity is verifiable; state entries missing from the schema are reported |
-| `ownership` | Retained zero-ref prerequisite records whose tool is no longer tracked are reported with the `depengine forget <prerequisite>` repair command |
+| `ownership` | Retained zero-ref prerequisite records and dangling dependent claims whose tool is no longer tracked are reported with the `depengine forget <tool>` repair command |
 
 Exit codes aggregate the checks: `0` without errors (warnings alone do not
 fail), `1` with at least one error, and `--strict` promotes warnings to

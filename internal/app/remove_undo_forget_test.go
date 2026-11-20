@@ -617,6 +617,31 @@ func TestForgetOrphanedPrerequisiteRecord(t *testing.T) {
 	}
 }
 
+func TestForgetReleasesDanglingDependentClaim(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"ghost"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "ghost")
+	if code != 0 {
+		t.Fatalf("forget dangling dependent exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources = %#v, want the retained zero-ref record", st.OwnedResources)
+	}
+}
+
 func TestForgetOrphanedPrerequisiteRefusesClaimedRecord(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()

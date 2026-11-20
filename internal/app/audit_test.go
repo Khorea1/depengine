@@ -160,6 +160,33 @@ func TestAuditReportsOrphanPrerequisiteOwnership(t *testing.T) {
 	}
 }
 
+func TestAuditReportsUntrackedOwnershipDependent(t *testing.T) {
+	schemaPath, _ := auditFixture(t, strings.Repeat("a", 64))
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, os.Getenv("XDG_STATE_HOME"), state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"ghost"},
+		}},
+	})
+
+	report, err := runAuditForTest(t, schemaPath, "json", false)
+	if err != nil {
+		t.Fatalf("audit untracked dependent should not fail without --strict: %v", err)
+	}
+	finding := findAuditFinding(report, "W_OWNERSHIP_UNTRACKED_DEPENDENT")
+	if finding == nil || finding.Tool != "ghost" || finding.Severity != "warning" {
+		t.Fatalf("findings missing W_OWNERSHIP_UNTRACKED_DEPENDENT for ghost: %+v", report.Findings)
+	}
+	if !strings.Contains(finding.Remediation, "forget ghost") {
+		t.Fatalf("remediation = %q, want the forget command", finding.Remediation)
+	}
+}
+
 func TestAuditUnreadableLockIsAnError(t *testing.T) {
 	schemaPath, _ := auditFixture(t, strings.Repeat("a", 64))
 	if err := os.WriteFile(filepath.Join(filepath.Dir(schemaPath), "depengine.lock"), []byte("not = [toml\n"), 0o600); err != nil {

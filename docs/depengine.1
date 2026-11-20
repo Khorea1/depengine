@@ -105,7 +105,7 @@ Examples:
 .fi
 .TP
 .B "depengine forget <tool> [flags]"
-Drop the tool's tracking; the system is untouched. Also drops a zero\-reference prerequisite ownership record left after its dependents were removed, and refuses while tracked tools still require it.
+Drop the tool's tracking; the system is untouched. For an untracked name, releases dangling shared\-resource claims and drops a zero\-reference prerequisite ownership record; refuses while tracked tools still require the prerequisite.
 .PP
 Examples:
 .nf
