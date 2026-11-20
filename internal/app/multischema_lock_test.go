@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -68,6 +69,114 @@ func TestNamedSchemasKeepIndependentFrozenLocks(t *testing.T) {
 		if err := cmd.ExecuteContext(context.Background()); err != nil {
 			t.Fatalf("frozen dry run %s: %v", schema, err)
 		}
+	}
+}
+
+// runFrozenInstallDryRun drives a frozen dry-run install through the selected
+// lock path without touching the host or the lockfile.
+func runFrozenInstallDryRun(t *testing.T, schemaPath, lockOverride string) error {
+	t.Helper()
+	cmd := newInstallCmd()
+	cmd.SilenceErrors, cmd.SilenceUsage = true, true
+	flags := [][2]string{{"schema", schemaPath}, {"no-manifest", "true"}, {"frozen-lockfile", "true"}, {"dry-run", "true"}}
+	if lockOverride != "" {
+		flags = append(flags, [2]string{"lock", lockOverride})
+	}
+	for _, pair := range flags {
+		if err := cmd.Flags().Set(pair[0], pair[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cmd.ExecuteContext(context.Background())
+}
+
+func writeLockedHTTPFixture(t *testing.T, path, url, digit string) {
+	t.Helper()
+	data := "schema_version = 1\n\n[tools.shared.http]\nurl = \"" + url + "\"\nchecksum = \"sha256:" + strings.Repeat(digit, 64) + "\"\n"
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Renaming a schema must not silently adopt the lock generated under the old
+// name. The legacy lock stays put, frozen install and upgrade fail until the
+// operator moves or regenerates it, and both files remain independent.
+func TestSchemaRenameNeverAdoptsLegacyLock(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "schema.toml")
+	renamed := filepath.Join(dir, "app.toml")
+	writeLockedHTTPFixture(t, legacy, "https://example.com/app", "e")
+	runTestUpdate(t, legacy, "")
+	legacyLock, err := os.ReadFile(lock.DefaultPath(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(legacy, renamed); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runFrozenInstallDryRun(t, renamed, ""); exitCodeOf(err) != 2 {
+		t.Fatalf("frozen install after rename = %v, want exit 2 (missing lock)", err)
+	}
+	if _, err := loadUpgradeLock(renamed, log.Default); err == nil || exitCodeOf(err) != 1 {
+		t.Fatalf("upgrade lock load after rename = %v, want exit 1 (no lock)", err)
+	}
+	after, err := os.ReadFile(lock.DefaultPath(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(legacyLock, after) {
+		t.Fatal("the renamed schema's legacy lock was rewritten during failed lookups")
+	}
+
+	runTestUpdate(t, renamed, "")
+	if err := runFrozenInstallDryRun(t, renamed, ""); err != nil {
+		t.Fatalf("frozen install with regenerated lock: %v", err)
+	}
+	if _, err := os.Stat(lock.DefaultPath(renamed)); err != nil {
+		t.Fatalf("renamed schema did not get its own lock: %v", err)
+	}
+}
+
+// The lock path depends only on the lexical schema filename. A symlink alias
+// is a separate schema path; it must not reuse or overwrite the real schema's
+// lock unless the operator passes the same --lock explicitly.
+func TestSymlinkAliasKeepsLexicalLockSelection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs privileges on Windows")
+	}
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	real := filepath.Join(dir, "desktop.toml")
+	alias := filepath.Join(dir, "alias.toml")
+	writeLockedHTTPFixture(t, real, "https://example.com/desktop", "f")
+	runTestUpdate(t, real, "")
+	realLock, err := os.ReadFile(lock.DefaultPath(real))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runFrozenInstallDryRun(t, alias, ""); exitCodeOf(err) != 2 {
+		t.Fatalf("frozen install through alias = %v, want exit 2 (missing lock)", err)
+	}
+	if err := runFrozenInstallDryRun(t, alias, lock.DefaultPath(real)); err != nil {
+		t.Fatalf("frozen install through alias with explicit --lock: %v", err)
+	}
+
+	runTestUpdate(t, alias, "")
+	if _, err := os.Stat(lock.DefaultPath(alias)); err != nil {
+		t.Fatalf("alias did not get its own lock: %v", err)
+	}
+	afterReal, err := os.ReadFile(lock.DefaultPath(real))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(realLock, afterReal) {
+		t.Fatal("updating through the alias overwrote the target schema's lock")
 	}
 }
 
