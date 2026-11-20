@@ -19,6 +19,7 @@ type recordingRemoveAdapter struct {
 	err       error
 	presence  plan.PresenceState
 	packageID string
+	version   string
 	called    bool
 	gotTool   *config.Tool
 	gotMethod *config.MethodCandidate
@@ -60,7 +61,12 @@ func (a *recordingRemoveAdapter) Observe(_ context.Context, _ run.Runner, _ *con
 	if presence == "" {
 		presence = plan.PresencePresent
 	}
-	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+	observation := plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}
+	if a.version != "" {
+		observation.Identity.Version = a.version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	}
+	return observation, nil
 }
 
 func TestRemoveAbsentTargetReleasesTrackingWithoutCallingRemover(t *testing.T) {
@@ -82,7 +88,7 @@ func TestRemoveAbsentTargetReleasesTrackingWithoutCallingRemover(t *testing.T) {
 	}
 }
 
-func TestRemoveDriftedTargetStillInvokesRemover(t *testing.T) {
+func TestRemoveDriftedPhysicalIdentityNeverInvokesRemover(t *testing.T) {
 	adapter := &recordingRemoveAdapter{presence: plan.PresencePresent, packageID: "another-package"}
 	trackedConfig := map[string]any{"pkg": "example/tool"}
 	st := &state.State{Tools: map[string]state.ToolState{
@@ -91,23 +97,39 @@ func TestRemoveDriftedTargetStillInvokesRemover(t *testing.T) {
 	sess := testRemoveSession(st, "tool")
 	exec.WithAdapters(adapter)(sess.executor)
 
-	if !sess.removeTrackedTool(context.Background(), "tool", false) {
-		t.Fatal("removeTrackedTool returned false for present drifted target")
+	if sess.removeTrackedTool(context.Background(), "tool", false) {
+		t.Fatal("removeTrackedTool succeeded with changed physical package identity")
 	}
-	if !adapter.called {
-		t.Fatal("Remove was not called for a present drifted target")
-	}
-	if got := adapter.gotMethod.Config["pkg"]; got != "example/tool" {
-		t.Fatalf("Remove config package = %v, want verified package", got)
-	}
-	if adapter.Runner != sess.runner {
-		t.Fatal("Remove did not receive the session runner")
+	if adapter.called {
+		t.Fatal("Remove called for a different physical package")
 	}
 	if got := trackedConfig["pkg"]; got != "example/tool" {
 		t.Fatalf("persisted config package mutated to %v", got)
 	}
-	if _, exists := st.Tools["tool"]; exists {
-		t.Fatal("tracking retained after drifted target was removed")
+	if _, exists := st.Tools["tool"]; !exists {
+		t.Fatal("tracking deleted despite changed physical package identity")
+	}
+}
+
+func TestRemoveDriftedVersionPreservesTracking(t *testing.T) {
+	adapter := &recordingRemoveAdapter{version: "1.0"}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool", "version": "2.0"}},
+	}}
+	sess := testRemoveSession(st, "tool")
+	exec.WithAdapters(adapter)(sess.executor)
+
+	if sess.removeTrackedTool(context.Background(), "tool", false) {
+		t.Fatal("removed a physical resource with a different observed version")
+	}
+	if adapter.called {
+		t.Fatal("Remove called for a different installed version")
+	}
+	if _, tracked := st.Tools["tool"]; !tracked {
+		t.Fatal("tracking deleted after version mismatch")
+	}
+	if sess.planDryRunRemoval("tool", st.Tools["tool"]) {
+		t.Fatal("dry-run approved removal with version mismatch")
 	}
 }
 

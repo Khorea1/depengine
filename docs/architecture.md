@@ -223,8 +223,10 @@ consume that result. Presence alone does not establish satisfaction: known
 identity fields must match the resolved plan. `absent` and `drifted` remain
 distinct; `unknown` means the adapter cannot prove the desired identity, while
 `broken` means observation data or verification is invalid. Upgrade and remove
-fail closed for unknown/broken targets. Remove accepts drift, and a proven
-absent target releases state and ownership without invoking the remover.
+fail closed for unknown/broken targets. Remove and undo also fail closed on
+known drift, because removal projects the resolved (tracked) identity into the
+adapter and may otherwise target a version or package that is not installed. A
+proven absent target releases state and ownership without invoking the remover.
 
 Native dpkg-backed observation (Debian, Mint, and Termux) is owned by
 `internal/native`, with process execution retained in `internal/run.Runner` and

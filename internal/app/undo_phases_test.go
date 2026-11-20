@@ -24,6 +24,9 @@ type undoPlanAdapter struct {
 	canRemove  bool
 	removed    bool
 	removePkg  string
+	// observedVersion overrides the version echoed back from the requested
+	// config so tests can simulate a host that drifted from tracked state.
+	observedVersion string
 }
 
 func (a *undoPlanAdapter) Kind() string                             { return a.kind }
@@ -42,11 +45,15 @@ func (a *undoPlanAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Too
 	}
 	pkg, _ := method.Config["pkg"].(string)
 	version, _ := method.Config["version"].(string)
+	observed := plan.ObservedIdentity{Package: pkg, Version: version}
+	if a.observedVersion != "" {
+		observed.Version = a.observedVersion
+	}
 	known := []plan.IdentityField{plan.FieldPackage}
 	if version != "" {
 		known = append(known, plan.FieldVersion)
 	}
-	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: known}, nil
+	return plan.Observation{Presence: presence, Identity: observed, KnownFields: known}, nil
 }
 func (*undoPlanAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	return nil
@@ -126,6 +133,24 @@ func TestRemoveUndoToolsPreservesTrackingOnUnverifiableTarget(t *testing.T) {
 				t.Fatal("Remove called for unverifiable target")
 			}
 		})
+	}
+}
+
+func TestRemoveUndoToolsPreservesTrackingOnDriftedTarget(t *testing.T) {
+	adapter := &undoPlanAdapter{kind: "cargo", canRemove: true, observedVersion: "1.0.0"}
+	current := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool", "version": "2.0.0"}},
+	}}
+	_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
+	if !failed || succeeded["tool"] {
+		t.Fatalf("removeUndoTools failed=%t succeeded=%v, want failure", failed, succeeded)
+	}
+	if adapter.removed {
+		t.Fatal("Remove called for a version-drifted target")
+	}
+	mergeUndoTools(current, []string{"tool"}, succeeded)
+	if _, ok := current.Tools["tool"]; !ok {
+		t.Fatal("drifted target lost its tracked state")
 	}
 }
 

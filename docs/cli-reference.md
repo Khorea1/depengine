@@ -371,7 +371,7 @@ Examples:
 
 ## `depengine remove [tool...] [flags]`
 
-Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail.
+Observes the tracked target before removal. Proven-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail.
 
 Aliases: `rm`, `uninstall`.
 
@@ -461,7 +461,7 @@ Examples:
 
 ## `depengine undo [flags]`
 
-Revert to a previous state snapshot
+Revert to a previous state snapshot. Removing tools added after the snapshot verifies the recorded target first; drifted, unknown or broken observations preserve state and fail.
 
 Aliases: `rollback`.
 

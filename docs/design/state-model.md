@@ -44,7 +44,7 @@ This is an order of authority, not a requirement that every command materialize 
 - **`unknown`** — presence cannot be established, or a present target lacks authoritative values for one or more desired identity fields, with no known mismatch.
 - **`broken`** — desired identity, presence value, observation field set, or verification probe is invalid or failed.
 
-A missing known field is not an empty value: `KnownFields` determines which reported values are authoritative. The support boundary describes command-specific behavior; notably, remove and upgrade stop on `unknown`/`broken`, while proven absence can release tracked ownership without invoking a remover.
+A missing known field is not an empty value: `KnownFields` determines which reported values are authoritative. The support boundary describes command-specific behavior; notably, remove and undo stop on `drifted`/`unknown`/`broken` (a projected removal identity that no longer matches the host could target another version or package), upgrade stops on `unknown`/`broken`, and proven absence can release tracked ownership without invoking a remover.
 
 ## Adapter verification after install
 

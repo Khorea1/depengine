@@ -36,7 +36,7 @@ func newRemoveCmd() *cobra.Command {
 		Use:     "remove [tool...]",
 		Aliases: []string{"rm", "uninstall"},
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
-		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail."),
+		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações drifted, unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail."),
 		Example: `  depengine remove bat                  # remove one tool
   depengine remove bat lsd --dry-run    # preview the removal
   depengine remove --all --force        # remove everything without prompting`,
@@ -490,7 +490,7 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 		return false
 	}
 	switch target.verification.State {
-	case plan.StateSatisfied, plan.StateDrifted:
+	case plan.StateSatisfied:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
@@ -501,8 +501,8 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 	case plan.StateAbsent:
 		log.Default.Warn("tracked target already absent; releasing state and ownership", "tool", toolName)
 		s.removedThisRun[toolName] = true
-	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot safely remove target with unverifiable state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot safely remove target with unverified identity or presence", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
@@ -629,7 +629,7 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 		return false
 	}
 	switch target.verification.State {
-	case plan.StateSatisfied, plan.StateDrifted:
+	case plan.StateSatisfied:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
@@ -637,8 +637,8 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 		log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
 	case plan.StateAbsent:
 		log.Default.Info("target already absent; would release tracked ownership/resources", "tool", toolName, "method", toolState.Method)
-	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot plan removal with unverifiable target state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot plan removal with unverified identity or presence", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)

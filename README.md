@@ -350,6 +350,7 @@ does not fall back to shared temporary paths or the current working directory.
 | [`docs/compatibility.md`](docs/compatibility.md) | File-format version policy |
 | [`docs/architecture.md`](docs/architecture.md) | Internal packages and execution flow |
 | [`docs/development.md`](docs/development.md) | Where project notes and design records belong |
+| [`docs/testing.md`](docs/testing.md) | Property tests, fuzzing, security checks and reproduction |
 | [`docs/alternatives.md`](docs/alternatives.md) | Where depengine fits against mise, aqua, Nix, and Brewfile |
 | [`docs/roadmap.md`](docs/roadmap.md) | Unfinished project work |
 

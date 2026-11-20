@@ -83,6 +83,7 @@ func newUndoCmd() *cobra.Command {
 		Use:     "undo",
 		Aliases: []string{"rollback"},
 		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
+		Long:    ifPT("Reverte para um snapshot anterior do estado. A remoção de ferramentas adicionadas depois do snapshot verifica o alvo registrado antes de agir; observações drifted, unknown ou broken preservam o state e falham.", "Revert to a previous state snapshot. Removing tools added after the snapshot verifies the recorded target first; drifted, unknown or broken observations preserve state and fail."),
 		Example: `  depengine undo --list                # list available snapshots
   depengine undo --snapshot <path>     # restore one snapshot`,
 		GroupID: groupManage,
@@ -422,14 +423,14 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 			log.Default.Info("tracked target already absent during undo", "tool", name)
 			succeeded[name] = true
 			continue
-		case plan.StateSatisfied, plan.StateDrifted:
+		case plan.StateSatisfied:
 			if !adapter.CanRemove() {
 				log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 				hadFailure = true
 				continue
 			}
-		case plan.StateUnknown, plan.StateBroken:
-			log.Default.Error("cannot safely remove target during undo", "tool", name, "state", verification.State, "detail", verification.Detail)
+		case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+			log.Default.Error("cannot safely remove target during undo with unverified identity or presence", "tool", name, "state", verification.State, "detail", verification.Detail)
 			hadFailure = true
 			continue
 		default:
