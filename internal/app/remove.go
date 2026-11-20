@@ -324,7 +324,13 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 			return verifiedRemovalTarget{}, err
 		}
 		*tool = *schemaTool
-		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
+		// State owns the installed config; the schema candidate still supplies
+		// typed metadata the state does not persist: secret references,
+		// sources, distribution selection, and conditions used to resolve the
+		// same variant that was installed.
+		methodCopy := *tracked
+		method = &methodCopy
+		method.OwnsArchivePayload = toolState.ArchivePayloadOwned()
 		if toolState.Config != nil {
 			method.Config = toolState.Config
 		}

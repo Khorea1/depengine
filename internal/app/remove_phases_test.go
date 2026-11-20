@@ -69,6 +69,40 @@ func (a *recordingRemoveAdapter) Observe(_ context.Context, _ run.Runner, _ *con
 	return observation, nil
 }
 
+func TestVerifyRemovalTargetKeepsSchemaCandidateMetadata(t *testing.T) {
+	adapter := &recordingRemoveAdapter{packageID: "state-pkg"}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "state-pkg"}},
+	}}
+	sess := testRemoveSession(st, "tool")
+	sess.schemaTools = map[string]*config.Tool{
+		"tool": {
+			Name: "tool",
+			Methods: []*config.MethodCandidate{{
+				Kind:      "cargo",
+				Config:    map[string]any{"pkg": "schema-pkg"},
+				SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_TOKEN"},
+				Sources:   []config.Source{{Kind: "git", Name: "tap"}},
+			}},
+		},
+	}
+	exec.WithAdapters(adapter)(sess.executor)
+
+	target, err := sess.verifyRemovalTarget(context.Background(), "tool", st.Tools["tool"])
+	if err != nil {
+		t.Fatalf("verifyRemovalTarget: %v", err)
+	}
+	if got := target.method.Config["pkg"]; got != "state-pkg" {
+		t.Fatalf("removal config package = %v, want state value", got)
+	}
+	if target.method.SecretRef == nil || target.method.SecretRef.Name != "PRIVATE_TOKEN" {
+		t.Fatalf("removal candidate lost the schema secret reference: %#v", target.method.SecretRef)
+	}
+	if len(target.method.Sources) != 1 || target.method.Sources[0].Name != "tap" {
+		t.Fatalf("removal candidate lost schema sources: %#v", target.method.Sources)
+	}
+}
+
 func TestRemoveAbsentTargetReleasesTrackingWithoutCallingRemover(t *testing.T) {
 	adapter := &recordingRemoveAdapter{presence: plan.PresenceAbsent}
 	st := &state.State{Tools: map[string]state.ToolState{
