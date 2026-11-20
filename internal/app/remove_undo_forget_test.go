@@ -592,6 +592,39 @@ func TestRemoveLastOwnerCleansUnreferencedPrerequisite(t *testing.T) {
 // TestRemoveOwnerAfterForgottenPrerequisiteSucceeds covers the forgotten-helper
 // case: the claim is released, but the untracked prerequisite cannot be
 // verified or removed. Owner removal must still succeed and retain the record.
+// TestRemoveDryRunReportsUntrackedPrerequisiteRetention keeps dry-run aligned
+// with the real path, which retains a prerequisite that is no longer tracked.
+func TestRemoveDryRunReportsUntrackedPrerequisiteRetention(t *testing.T) {
+	stateHome := t.TempDir()
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	fakeBinary(t, binDir, "owner")
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner": prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "remove",
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+		"--dry-run", "owner",
+	)
+	if code != 0 {
+		t.Fatalf("remove --dry-run exit = %d, want 0 (output: %s)", code, out)
+	}
+	if !strings.Contains(out, "would retain zero-ref") {
+		t.Fatalf("dry-run should report retained untracked prerequisite, got: %s", out)
+	}
+}
+
 func TestRemoveOwnerAfterForgottenPrerequisiteSucceeds(t *testing.T) {
 	stateHome := t.TempDir()
 	binDir := t.TempDir()

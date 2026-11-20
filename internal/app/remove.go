@@ -666,11 +666,15 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 				log.Default.Error("decode owned prerequisite", "tool", toolName, "resource", resource.Key, "error", err)
 				return false
 			}
-			if helperState, exists := s.state.Tools[helperName]; exists && helperState.RootRequested {
+			helperState, tracked := s.state.Tools[helperName]
+			switch {
+			case tracked && helperState.RootRequested:
 				log.Default.Info("would retain prerequisite requested as root", "tool", toolName, "prerequisite", helperName)
-			} else if s.requestedRemoval[helperName] {
+			case !tracked:
+				log.Default.Info("prerequisite is not tracked; would retain zero-ref ownership record", "tool", toolName, "prerequisite", helperName)
+			case s.requestedRemoval[helperName]:
 				log.Default.Info("prerequisite is also explicitly scheduled for removal", "tool", toolName, "prerequisite", helperName)
-			} else {
+			default:
 				log.Default.Info("would remove owned prerequisite", "tool", toolName, "prerequisite", helperName)
 			}
 		default:
