@@ -473,6 +473,20 @@ func finalizeUndo(ls *state.LockedState, curState, snapState *state.State, toRem
 		log.Default.Error("undo: some removals failed — saving partial state")
 	}
 
+	// Undo uninstalls the tool, so its dependent claims must go with it. The
+	// now-zero-ref resources stay recorded: undo has no authority to delete
+	// host resources it did not verify as safe to remove.
+	for _, name := range toRemove {
+		if !succeeded[name] {
+			continue
+		}
+		release, err := plan.ReleaseDependentResources(curState.OwnedResources, name)
+		if err != nil {
+			log.Default.Error("release owned resources after undo", "tool", name, "error", err)
+			return exitWithCode(3)
+		}
+		curState.OwnedResources = release.Updated
+	}
 	mergeUndoTools(curState, toRemove, succeeded)
 	curState.SchemaPath = snapState.SchemaPath
 	curState.SchemaModifiedAt = snapState.SchemaModifiedAt

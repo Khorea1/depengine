@@ -337,6 +337,46 @@ func TestFinalizeUndoSuccess(t *testing.T) {
 	}
 }
 
+func TestFinalizeUndoReleasesRemovedToolClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"helper": {Method: "go", MethodKind: "go"},
+			"extra":  {Method: "go", MethodKind: "go"},
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"extra"},
+		}},
+	})
+
+	ls, err := state.LoadLocked()
+	if err != nil {
+		t.Fatalf("LoadLocked: %v", err)
+	}
+	defer func() { _ = ls.Close() }()
+	curState := ls.State()
+	snapState := &state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{"helper": {Method: "go", MethodKind: "go"}},
+	}
+	if err := finalizeUndo(ls, curState, snapState, []string{"extra"}, map[string]bool{"extra": true}, false); err != nil {
+		t.Fatalf("finalizeUndo: %v", err)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["extra"]; ok {
+		t.Fatal("removed tool remains tracked after undo")
+	}
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources after undo = %#v, want retained zero-ref prerequisite", st.OwnedResources)
+	}
+}
+
 func TestFinalizeUndoPartialFailure(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
