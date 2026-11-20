@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -56,6 +57,14 @@ func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error 
 		return exitWithCode(1)
 	}
 	st.OwnedResources = release.Updated
+	if resource, err := plan.PrerequisiteResource(toolName); err == nil {
+		for _, owned := range st.OwnedResources {
+			if owned.Resource == resource && owned.RefCount() > 0 {
+				log.Default.Warn("forgetting a prerequisite still required by tracked tools; its ownership record is retained", "tool", toolName, "dependents", strings.Join(owned.Dependents, ","))
+				break
+			}
+		}
+	}
 	delete(st.Tools, toolName)
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state", "error", err)

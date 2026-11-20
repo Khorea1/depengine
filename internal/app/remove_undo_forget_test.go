@@ -467,6 +467,40 @@ func TestForgetReleasesOwnedResourceClaims(t *testing.T) {
 	}
 }
 
+func TestForgetRequiredPrerequisiteWarnsAndRetainsClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+			"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 0 {
+		t.Fatalf("forget helper exit = %d, want 0 (output: %s)", code, out)
+	}
+	if !strings.Contains(out, "still required") {
+		t.Fatalf("output should warn about dependents, got: %s", out)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["owner"]; !ok {
+		t.Fatal("forget dropped the dependent owner's tracking")
+	}
+	if len(st.OwnedResources) != 1 || !reflect.DeepEqual(st.OwnedResources[0].Dependents, []string{"owner"}) {
+		t.Fatalf("owned resources after forget = %#v, want owner's retained claim", st.OwnedResources)
+	}
+}
+
 func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()

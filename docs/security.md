@@ -225,13 +225,14 @@ pin mutable repository contents or prove publisher trust.
 
 Source ownership is reference-counted per tool. A successful candidate claim
 stores the tool as a dependent of every source it uses, atomically with the
-tool state through the candidate WAL. Removal releases that claim; a source is
-removed only when the last depengine dependent is released, its host presence
-is still proven (including the configured Git origin for Brew taps and Scoop
-buckets), and the ownership record says depengine created it. Sources observed
-as pre-existing stay `external` with zero dependents and are never removed by
-depengine. Failed cleanup keeps the zero-ref owned record so the next removal
-can retry.
+tool state through the candidate WAL. Removal, undo and forget release that
+claim; a source is removed only when the last depengine dependent is released,
+its host presence is still proven (including the configured Git origin for
+Brew taps and Scoop buckets), and the ownership record says depengine created
+it. Undo and forget keep the zero-ref record because they do not verify host
+cleanup; a source observed as pre-existing stays `external` with zero
+dependents and is never removed by depengine. Failed cleanup keeps the
+zero-ref owned record so the next removal can retry.
 
 ## Lockfile
 
