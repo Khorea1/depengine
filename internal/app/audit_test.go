@@ -137,11 +137,13 @@ func TestAuditFlagsStaleLockAfterMethodChange(t *testing.T) {
 
 func TestAuditReportsOrphanPrerequisiteOwnership(t *testing.T) {
 	schemaPath, _ := auditFixture(t, strings.Repeat("a", 64))
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
 	resource, err := plan.PrerequisiteResource("helper")
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFullState(t, os.Getenv("XDG_STATE_HOME"), state.State{
+	writeTestFullState(t, stateHome, state.State{
 		Version:        state.CurrentVersion,
 		Tools:          map[string]state.ToolState{},
 		OwnedResources: []plan.OwnedResourceState{{Resource: resource, Ownership: plan.OwnershipDepengine}},
@@ -162,11 +164,13 @@ func TestAuditReportsOrphanPrerequisiteOwnership(t *testing.T) {
 
 func TestAuditReportsUntrackedOwnershipDependent(t *testing.T) {
 	schemaPath, _ := auditFixture(t, strings.Repeat("a", 64))
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
 	resource, err := plan.PrerequisiteResource("helper")
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFullState(t, os.Getenv("XDG_STATE_HOME"), state.State{
+	writeTestFullState(t, stateHome, state.State{
 		Version: state.CurrentVersion,
 		Tools:   map[string]state.ToolState{},
 		OwnedResources: []plan.OwnedResourceState{{
