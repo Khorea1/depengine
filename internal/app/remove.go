@@ -36,7 +36,7 @@ func newRemoveCmd() *cobra.Command {
 		Use:     "remove [tool...]",
 		Aliases: []string{"rm", "uninstall"},
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
-		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações drifted, unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail."),
+		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações drifted, unknown ou broken preservam o state e falham. Se a instalação mudou fora do depengine, use 'depengine forget' para largar o rastreamento e limpe manualmente.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail. If the installation changed outside depengine, use 'depengine forget' to drop tracking and clean up manually."),
 		Example: `  depengine remove bat                  # remove one tool
   depengine remove bat lsd --dry-run    # preview the removal
   depengine remove --all --force        # remove everything without prompting`,
@@ -502,7 +502,7 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 		log.Default.Warn("tracked target already absent; releasing state and ownership", "tool", toolName)
 		s.removedThisRun[toolName] = true
 	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot safely remove target with unverified identity or presence", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+		log.Default.Error("cannot safely remove target with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
@@ -640,7 +640,7 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 	case plan.StateAbsent:
 		log.Default.Info("target already absent; would release tracked ownership/resources", "tool", toolName, "method", toolState.Method)
 	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot plan removal with unverified identity or presence", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+		log.Default.Error("cannot plan removal with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)

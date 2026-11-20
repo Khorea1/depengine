@@ -430,7 +430,7 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 				continue
 			}
 		case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
-			log.Default.Error("cannot safely remove target during undo with unverified identity or presence", "tool", name, "state", verification.State, "detail", verification.Detail)
+			log.Default.Error("cannot safely remove target during undo with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", name, "state", verification.State, "detail", verification.Detail)
 			hadFailure = true
 			continue
 		default:

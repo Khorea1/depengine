@@ -173,7 +173,7 @@ Examples:
 .fi
 .TP
 .B "depengine remove [tool...] [flags]"
-Observes the tracked target before removal. Proven\-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail.
+Observes the tracked target before removal. Proven\-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail. If the installation changed outside depengine, use 'depengine forget' to drop tracking and clean up manually.
 Aliases: rm, uninstall.
 .PP
 Examples:
