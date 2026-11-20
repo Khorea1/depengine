@@ -31,8 +31,8 @@ jobs:
     - name: Check gofmt
       run: scripts/check-gofmt.sh
 
-    - name: Run tests
-      run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+    - name: Run race tests
+      run: scripts/check-quality.sh race -coverprofile=coverage.out -covermode=atomic
 
     - name: Report coverage
       run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
@@ -47,17 +47,22 @@ jobs:
       uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
       with:
         version: v2.14.0
+    - name: Run staticcheck (standalone)
+      run: |
+        go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+        scripts/check-quality.sh staticcheck
+
     - name: Run govulncheck
       run: |
         go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-        govulncheck ./...
+        scripts/check-quality.sh govulncheck
 
     - name: Test fuzz harness
       run: go test ./internal/tools/fuzzall
 
-    - name: Run all declared fuzz targets runnable on Linux (bounded)
+    - name: Smoke-test every declared fuzz target (bounded)
       timeout-minutes: 15
-      run: go run ./internal/tools/fuzzall -fuzztime=10s
+      run: go run ./internal/tools/fuzzall -fuzztime=3s
 
     - name: Derive version
       id: version

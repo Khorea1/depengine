@@ -11,3 +11,7 @@
 ./internal/plan FuzzSanitizeLockReferenceCanonicalizesValidIdentity
 ./internal/state FuzzStatePersistenceRoundTripPreservesInvariants
 ./internal/state FuzzRejectedStateNeverReplacesPersistedState
+./internal/config FuzzParsePersonalManifest
+./internal/ecosystem FuzzPipxInventoryObservation
+./internal/ecosystem FuzzSnapInventoryObservation
+./internal/run FuzzCapturedProcessOutput

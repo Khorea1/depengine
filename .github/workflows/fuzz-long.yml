@@ -1,0 +1,32 @@
+name: Extended fuzzing
+
+# Run independently of the PR gate: long campaigns are for discovery, while
+# ci.yml smoke-tests every declared target on each PR.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '13 3 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
+        with:
+          go-version: '1.27.x'
+      - run: go mod download
+      - name: Fuzz each registered target for two minutes
+        run: go run ./internal/tools/fuzzall -fuzztime=2m
+      - name: Upload reproducible fuzz failures
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.x.x
+        with:
+          name: fuzz-regressions
+          path: |
+            internal/**/testdata/fuzz/**
+          if-no-files-found: warn
