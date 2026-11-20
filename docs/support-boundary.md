@@ -307,7 +307,8 @@ Desired-state checks reconcile the resolved plan with the adapter's reported
 identity. `unknown` means depengine lacks authoritative observations for one or
 more desired fields; it does not mean the target is absent. `broken` means the
 observation is invalid or verification failed. Destructive upgrade and remove
-operations stop for either state.
+operations stop for either state. Remove and undo also stop on known `drifted`
+identity, because the projected removal target would no longer match the host.
 
 ## Package sources
 
@@ -388,9 +389,11 @@ previous tool versions. Before any removal it now rejects a snapshot whose
 recorded schema differs from the current state's recorded schema, a legacy
 snapshot containing tools without schema provenance, or shared tool entries
 whose recorded identity changed since the snapshot. On success it removes only
-the newly added entries whose physical removal completed and does not resurrect
-entries independently removed since the snapshot. An empty snapshot without
-schema provenance remains accepted to preserve first-install undo.
+the newly added entries whose physical removal completed, releases their
+shared-resource claims (retaining any zero-ref records, since undo does not
+verify host cleanup), and does not resurrect entries independently removed
+since the snapshot. An empty snapshot without schema provenance remains
+accepted to preserve first-install undo.
 
 This is a **partial safety barrier**, not project isolation: a single
 `schema_path` cannot reveal every intervening schema, unknown or inherited
