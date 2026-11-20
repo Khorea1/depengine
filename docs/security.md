@@ -232,7 +232,9 @@ Brew taps and Scoop buckets), and the ownership record says depengine created
 it. Undo and forget keep the zero-ref record because they do not verify host
 cleanup; a source observed as pre-existing stays `external` with zero
 dependents and is never removed by depengine. Failed cleanup keeps the
-zero-ref owned record so the next removal can retry.
+zero-ref owned record so the next removal can retry. A zero-ref prerequisite
+record whose tool is no longer tracked can be dropped explicitly with
+`depengine forget <prerequisite>` after its dependents are gone.
 
 ## Lockfile
 
