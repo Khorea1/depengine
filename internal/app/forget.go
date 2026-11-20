@@ -20,6 +20,7 @@ func newForgetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "forget <tool>",
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
+		Long:    ifPT("Remove o rastreamento da ferramenta; o sistema não é alterado. Também descarta um registro de ownership de pré-requisito com zero referências deixado após a remoção dos dependentes, e recusa enquanto ferramentas rastreadas ainda o exigirem.", "Drop the tool's tracking; the system is untouched. Also drops a zero-reference prerequisite ownership record left after its dependents were removed, and refuses while tracked tools still require it."),
 		Example: `  depengine forget nvim   # drop install state; the system is untouched`,
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),

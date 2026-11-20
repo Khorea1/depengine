@@ -203,7 +203,7 @@ Examples:
 
 ## `depengine forget <tool> [flags]`
 
-Forget a tool from state without removing it from the system
+Drop the tool's tracking; the system is untouched. Also drops a zero-reference prerequisite ownership record left after its dependents were removed, and refuses while tracked tools still require it.
 
 Examples:
 
