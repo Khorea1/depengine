@@ -555,6 +555,47 @@ func TestRemoveLastOwnerCleansUnreferencedPrerequisite(t *testing.T) {
 	}
 }
 
+// TestRemoveOwnerAfterForgottenPrerequisiteSucceeds covers the forgotten-helper
+// case: the claim is released, but the untracked prerequisite cannot be
+// verified or removed. Owner removal must still succeed and retain the record.
+func TestRemoveOwnerAfterForgottenPrerequisiteSucceeds(t *testing.T) {
+	stateHome := t.TempDir()
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerBin := fakeBinary(t, binDir, "owner")
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner": prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "remove",
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+		"owner",
+	)
+	if code != 0 {
+		t.Fatalf("remove owner with forgotten helper exit = %d, want 0 (output: %s)", code, out)
+	}
+	if _, err := os.Stat(ownerBin); !os.IsNotExist(err) {
+		t.Fatalf("owner binary still present (err=%v)", err)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources = %#v, want retained zero-ref prerequisite", st.OwnedResources)
+	}
+	if !strings.Contains(out, "not tracked") {
+		t.Fatalf("output should report the retained untracked prerequisite, got: %s", out)
+	}
+}
+
 func TestRemoveOwnerRetainsPrerequisiteRequestedAsRoot(t *testing.T) {
 	stateHome := t.TempDir()
 	binDir := t.TempDir()

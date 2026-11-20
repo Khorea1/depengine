@@ -600,8 +600,10 @@ func (s *removeSession) cleanupReleasedPrerequisites(ctx context.Context, ownerN
 
 		helperState, exists := s.state.Tools[helperName]
 		if !exists {
-			log.Default.Error("owned prerequisite is not tracked as a tool; retaining zero-ref state", "tool", ownerName, "prerequisite", helperName)
-			ok = false
+			// The helper was forgotten or never tracked, so depengine has no target
+			// to verify. Retaining the zero-ref record is the only safe action; the
+			// requested owner removal still succeeded.
+			log.Default.Warn("owned prerequisite is not tracked; retaining zero-ref state for manual cleanup", "tool", ownerName, "prerequisite", helperName)
 			continue
 		}
 		if helperState.RootRequested {
