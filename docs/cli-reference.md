@@ -756,7 +756,7 @@ machine-output envelope with `<tutorial>` placeholders instead of random paths.
 ## `audit` consistency gate
 
 `audit` answers "is this project consistent?" without changing anything. It
-runs four checks and reports one finding per divergence, each with a suggested
+runs five checks and reports one finding per divergence, each with a suggested
 remediation:
 
 | Check | Verifies |
@@ -765,6 +765,7 @@ remediation:
 | `layers` | Manifest/catalog merge facts and layer warnings |
 | `lock` | `depengine.lock` is readable, decodable, and still matches the schema; a method, package-source, or recipe change reports `E_LOCK_STALE` |
 | `state` | Tracked tools are installed, not outdated, and their host identity is verifiable; state entries missing from the schema are reported |
+| `ownership` | Retained zero-ref prerequisite records whose tool is no longer tracked are reported with the `depengine forget <prerequisite>` repair command |
 
 Exit codes aggregate the checks: `0` without errors (warnings alone do not
 fail), `1` with at least one error, and `--strict` promotes warnings to

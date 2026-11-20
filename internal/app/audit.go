@@ -11,18 +11,20 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 
 // auditCheckOrder fixes the order checks appear in text and machine output.
-var auditCheckOrder = []string{"schema", "layers", "lock", "state"}
+var auditCheckOrder = []string{"schema", "layers", "lock", "state", "ownership"}
 
 var auditCheckLabel = map[string]string{
-	"schema": "schema",
-	"layers": "layer merge",
-	"lock":   "lock",
-	"state":  "state/host",
+	"schema":    "schema",
+	"layers":    "layer merge",
+	"lock":      "lock",
+	"state":     "state/host",
+	"ownership": "ownership",
 }
 
 // newAuditCmd builds `depengine audit`: one read-only report that reconciles
@@ -164,6 +166,7 @@ func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoMa
 
 	lk := auditLock(report, project, lockOverride...)
 	auditState(ctx, report, project, lk, st.Tools)
+	auditOwnership(report, st)
 
 	code := 0
 	severity := report.summarize()
@@ -171,6 +174,27 @@ func runAudit(ctx context.Context, auditSchema, auditManifest *string, auditNoMa
 		code = 1
 	}
 	return writeAuditReport(report, jsonOut, code)
+}
+
+// auditOwnership reports retained zero-reference prerequisite records whose
+// tool is no longer tracked. They are safe but only removable by forgetting
+// the prerequisite, so the report names that command.
+func auditOwnership(report *auditReport, st *state.State) {
+	for _, owned := range st.OwnedResources {
+		if owned.Ownership != plan.OwnershipDepengine || owned.RefCount() != 0 || owned.Resource.Kind != plan.ResourcePrerequisite {
+			continue
+		}
+		helper, err := plan.PrerequisiteToolName(owned.Resource)
+		if err != nil {
+			continue
+		}
+		if _, tracked := st.Tools[helper]; tracked {
+			continue
+		}
+		report.add("ownership", "info", "I_ORPHAN_PREREQUISITE", helper,
+			fmt.Sprintf("retained zero-ref prerequisite record for untracked tool %q", helper),
+			fmt.Sprintf("run 'depengine forget %s' to drop the record", helper))
+	}
 }
 
 // auditLock validates the lockfile against the effective schema and records

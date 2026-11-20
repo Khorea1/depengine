@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/state"
 )
 
 // auditFixture writes a schema with one static-checksum HTTP tool so the
@@ -129,6 +132,31 @@ func TestAuditFlagsStaleLockAfterMethodChange(t *testing.T) {
 	}
 	if findAuditFinding(stale, "E_LOCK_STALE") == nil {
 		t.Fatalf("findings missing E_LOCK_STALE: %+v", stale.Findings)
+	}
+}
+
+func TestAuditReportsOrphanPrerequisiteOwnership(t *testing.T) {
+	schemaPath, _ := auditFixture(t, strings.Repeat("a", 64))
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, os.Getenv("XDG_STATE_HOME"), state.State{
+		Version:        state.CurrentVersion,
+		Tools:          map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{Resource: resource, Ownership: plan.OwnershipDepengine}},
+	})
+
+	report, err := runAuditForTest(t, schemaPath, "json", false)
+	if err != nil {
+		t.Fatalf("audit orphan prerequisite should not fail without --strict: %v", err)
+	}
+	finding := findAuditFinding(report, "I_ORPHAN_PREREQUISITE")
+	if finding == nil || finding.Tool != "helper" || finding.Severity != "info" {
+		t.Fatalf("findings missing I_ORPHAN_PREREQUISITE for helper: %+v", report.Findings)
+	}
+	if !strings.Contains(finding.Remediation, "forget helper") {
+		t.Fatalf("remediation = %q, want the forget command", finding.Remediation)
 	}
 }
 
