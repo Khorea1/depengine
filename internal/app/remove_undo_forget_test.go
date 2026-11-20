@@ -876,6 +876,45 @@ func TestExplicitOwnerAndPrerequisiteRemovalIsOrderIndependent(t *testing.T) {
 	}
 }
 
+// TestRemoveAllWithSharedPrerequisiteIsOrderIndependent exercises --all, whose
+// map iteration may visit an owner before or after its helper. Neither order
+// may fail the run or leave state behind.
+func TestRemoveAllWithSharedPrerequisiteIsOrderIndependent(t *testing.T) {
+	for attempt := 0; attempt < 3; attempt++ {
+		stateHome := t.TempDir()
+		binDir := t.TempDir()
+		homeDir := t.TempDir()
+		fakeBinary(t, binDir, "owner")
+		fakeBinary(t, binDir, "helper")
+		resource, err := plan.PrerequisiteResource("helper")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFullState(t, stateHome, state.State{
+			Version: state.CurrentVersion,
+			Tools: map[string]state.ToolState{
+				"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+				"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+			},
+			OwnedResources: []plan.OwnedResourceState{{
+				Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+			}},
+		})
+
+		code, out := runCommand(t, "remove",
+			append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+			"--all", "--force",
+		)
+		if code != 0 {
+			t.Fatalf("remove --all attempt %d exit = %d, want 0 (output: %s)", attempt, code, out)
+		}
+		st := loadTestState(t, stateHome)
+		if len(st.Tools) != 0 || len(st.OwnedResources) != 0 {
+			t.Fatalf("remove --all attempt %d state = tools:%#v resources:%#v, want empty", attempt, st.Tools, st.OwnedResources)
+		}
+	}
+}
+
 func TestPrerequisiteCleanupFailureRetainsZeroRefOwnershipForRetry(t *testing.T) {
 	stateHome := t.TempDir()
 	binDir := t.TempDir()
