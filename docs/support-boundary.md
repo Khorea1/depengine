@@ -102,14 +102,16 @@ Without `--prune`, existing lockfile compatibility retention is unchanged.
 Combine `--prune --dry-run` to preview without writing; JSON output includes
 `pruned_tools` only when obsolete tool names were identified.
 
-A Git revision in a v2 lock is exactly comparable only when the installation
-retains its checkout: `extract_to` points at the clone root (the default or
-root artifact) and `managed_paths` is not active. Non-root artifacts,
-managed-path outputs, and binary-only installs remain presence-only because
-they cannot identify the installed commit. During v2 upgrade discovery, a
-locked Git target with a concrete revision that cannot be observed is reported
-as a terminal failure instead of being classified as up to date from presence
-alone; retained checkouts continue to compare their actual HEAD.
+A Git revision in a v2 lock is exactly comparable when the installation
+retains its checkout (`extract_to` points at the clone root, the default or
+root artifact, and `managed_paths` is not active). Additionally, a binary-only
+Go build installed at an explicitly declared `extract_to` + `binary` path can
+be compared by reading the executable's embedded **clean** VCS stamp
+(`vcs.revision`, `vcs.modified=false`). A stamped commit is informational, not
+a cryptographic proof of publisher identity. Unstamped or dirty Go builds,
+non-Go binaries, and other non-root artifacts remain presence-only. During v2
+upgrade discovery, a locked Git target with a revision that cannot be observed
+is reported as a terminal failure rather than presumed up to date.
 
 ### Legacy lock v1 lifecycle
 

@@ -6,6 +6,7 @@ package git
 
 import (
 	"context"
+	"debug/buildinfo"
 	"errors"
 	"fmt"
 	urlpkg "net/url"
@@ -65,6 +66,9 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 			}
 			return true
 		}
+		if observation, ok := observeGitGoBinary(mc); ok {
+			return observation.Presence == plan.PresencePresent
+		}
 	}
 	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
 		if run.LookPath(ctx, rn, binary) {
@@ -74,9 +78,9 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 	return false
 }
 
-// Observe reports actual Git checkout identity only when the configured copy
-// preserves the checkout metadata. Other output modes retain presence-only
-// behavior because they cannot authoritatively identify the installed commit.
+// Observe reports Git checkout identity when the clone is retained. For
+// binary-only Go builds, it uses embedded VCS metadata when available; other
+// artifacts remain presence-only instead of claiming an unverified revision.
 func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("git: tool and method are required")
@@ -86,6 +90,9 @@ func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 			if _, err := os.Stat(path); err != nil {
 				return plan.Observation{Presence: plan.PresenceAbsent}, nil
 			}
+		}
+		if observation, ok := observeGitGoBinary(mc); ok && observation.Presence == plan.PresencePresent {
+			return observation, nil
 		}
 		return plan.Observation{Presence: plan.PresencePresent}, nil
 	}
@@ -121,6 +128,9 @@ func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 		if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
 			return plan.Observation{Presence: plan.PresencePresent}, nil
 		}
+		if observation, ok := observeGitGoBinary(mc); ok {
+			return observation, nil
+		}
 	}
 	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
 		if run.LookPath(ctx, rn, binary) {
@@ -128,6 +138,61 @@ func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 		}
 	}
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+// observeGitGoBinary examines the declared installation path, never an
+// unrelated executable found earlier on PATH. Go's VCS stamp is available on
+// binary-only builds even after the temporary clone has been deleted. An
+// unstamped or dirty build cannot establish the installed revision.
+func observeGitGoBinary(mc *config.MethodCandidate) (plan.Observation, bool) {
+	extractTo, _ := mc.Config["extract_to"].(string)
+	binary, _ := mc.Config["binary"].(string)
+	if extractTo == "" || binary == "" || binary != filepath.Base(binary) || binary == "." || binary == ".." {
+		return plan.Observation{}, false
+	}
+	target := filepath.Join(config.ExpandHomeDir(extractTo), binary)
+	info, err := os.Lstat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, true
+	}
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "git: installed binary cannot be inspected"}, true
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		// A Git artifact may intentionally install a symlinked entrypoint.
+		// Keep its presence semantics, but never claim the target's VCS stamp
+		// for the declared path (it could point at an unrelated executable).
+		targetInfo, targetErr := os.Stat(target)
+		if targetErr == nil && targetInfo.Mode().IsRegular() {
+			return plan.Observation{Presence: plan.PresencePresent}, true
+		}
+		if errors.Is(targetErr, os.ErrNotExist) || targetErr == nil {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: binary symlink has no regular target"}, true
+		}
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "git: binary symlink target cannot be inspected"}, true
+	}
+	if !info.Mode().IsRegular() {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: installed binary is not a regular file"}, true
+	}
+	observation := plan.Observation{Presence: plan.PresencePresent}
+	build, err := buildinfo.ReadFile(target)
+	if err != nil {
+		return observation, true // Non-Go binaries retain presence-only semantics.
+	}
+	var revision, modified string
+	for _, setting := range build.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value
+		}
+	}
+	if isFullCommitID(revision) && modified == "false" {
+		observation.Identity.Revision = revision
+		observation.KnownFields = []plan.IdentityField{plan.FieldRevision}
+	}
+	return observation, true
 }
 
 func isFullCommitID(value string) bool {

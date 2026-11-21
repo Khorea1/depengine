@@ -45,12 +45,54 @@ file, and keyless cosign material. Install the matching artifact for your
 platform and place `depengine` on `PATH`. Building from a source checkout with
 the pinned Go toolchain is also supported.
 
+For an initial **source** installation on Linux or macOS (without an existing
+`depengine` executable), download and inspect the repository's standalone
+bootstrap script, then run it with Git and a compatible Go toolchain installed:
+
+```sh
+curl -fsSLo ./install-source.sh \
+  https://raw.githubusercontent.com/Khorea1/depengine/master/scripts/install-source.sh
+sh ./install-source.sh --bin-dir "$HOME/.local/bin"
+# Optionally choose a specific tag or commit with --ref.
+```
+
+The script clones a temporary checkout, builds using the checkout's `go.mod`,
+checks that the result starts, and stages a new executable in the destination
+directory before an atomic rename. Build/clone failures leave the existing
+executable in place. It does **not** register the bootstrap in depengine's
+managed state or provide cross-platform transactional self-upgrade. Put the
+chosen destination on `PATH`; avoid running unreviewed remote scripts as root.
+
 Version-suffixed module installation such as
 `go install github.com/Khorea1/depengine@vX.Y.Z` is **not** a supported
 distribution path. The main module intentionally contains `replace` directives
 for transitive `gopkg.in` sources, and the Go tool rejects `go install
 pkg@version` when the providing module contains `replace` directives. Use a
 published release artifact or build from a checkout instead.
+
+After bootstrapping, a depengine source checkout can be declared as an **ordinary
+Git method**, without a special `self` command:
+
+```toml
+schema_version = 1
+
+[tools.depengine]
+method_only = ["git"]
+
+[tools.depengine.git]
+url = "https://github.com/Khorea1/depengine.git"
+branch = "master"
+build = { run = ["go", "build", "-buildvcs=true", "-o", "depengine", "."] }
+artifact = "depengine"
+extract_to = "~/.local/bin"
+binary = "depengine"
+```
+
+The Git adapter now verifies the installed revision from the clean Go build's
+VCS stamp. **Do not use this recipe to upgrade the running depengine binary yet**:
+the generic upgrade replacement still removes the previous installation before
+building the replacement. The standalone bootstrap above stages the replacement
+safely, but transactional managed self-upgrade remains separate follow-up work.
 
 ## Quick start
 
