@@ -522,6 +522,12 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
 	}
 
+	unlockMutations, err := holdHostMutations(ctx, opts.dryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	lk, err := loadUpgradeLock(opts.schema, lg, lockOverride...)
 	if err != nil {
 		return err

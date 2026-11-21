@@ -492,6 +492,7 @@ Examples:
   depengine update                    # resolve mutable references; write depengine.lock
   depengine update --dry-run -v       # show the pins without writing
   depengine update --profile desktop  # re-resolve only tagged tools; keep other pins
+  depengine update --prune             # remove metadata for deleted tools
 ```
 
 | Flag | Scope | Default | Description |
@@ -507,6 +508,7 @@ Examples:
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
+| `--prune` | local | `false` | remove obsolete lock metadata for tools absent from the full effective schema |
 | `--quiet` | local | `false` | suppress progress and the Next hint |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `-v, --verbose` | local | `false` | include the resolved lock projection in the output |

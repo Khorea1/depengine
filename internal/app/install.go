@@ -509,6 +509,12 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
 
 	lockPath := lock.Path(p.schema, p.lockPath)
+	unlockMutations, err := holdHostMutations(ctx, p.dryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	// A non-dry-run install can persist a legacy v1 lock after executing.
 	// Keep its initial lock read and final Save in the same per-file transaction
 	// as update, even if the installation itself takes time.

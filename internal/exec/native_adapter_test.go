@@ -747,7 +747,7 @@ func TestWingetTypedSelectionAndDesiredState(t *testing.T) {
 		t.Fatalf("install args = %v, want %v", got, wantInstall)
 	}
 
-	check := &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 winget\n"}
+	check := &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.53.0 winget\n")}
 	if !a.Check(context.Background(), check, tool, mc) {
 		t.Fatal("Check should accept matching exact version")
 	}
@@ -756,7 +756,7 @@ func TestWingetTypedSelectionAndDesiredState(t *testing.T) {
 		t.Fatalf("check args = %v, want %v", got, wantCheck)
 	}
 
-	drift := &run.FakeRunner{Stdout: "Git Git.Git 2.52.0 winget\n"}
+	drift := &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.52.0 winget\n")}
 	if a.Check(context.Background(), drift, tool, mc) {
 		t.Fatal("Check should reject version drift")
 	}
@@ -773,7 +773,7 @@ func TestWingetTypedSelectionAndDesiredState(t *testing.T) {
 
 func TestWingetInstalledVersion(t *testing.T) {
 	a := &NativeByManagerAdapter{managerName: "winget"}
-	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 winget\n"}, &config.Tool{Name: "git"}, &config.MethodCandidate{Config: map[string]any{"pkg": "Git.Git"}})
+	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.53.0 winget\n")}, &config.Tool{Name: "git"}, &config.MethodCandidate{Config: map[string]any{"pkg": "Git.Git"}})
 	if err != nil {
 		t.Fatalf("InstalledVersion: %v", err)
 	}
@@ -790,7 +790,7 @@ func TestNativeByManagerObserveIncompleteOutputIsUnknown(t *testing.T) {
 			t.Run(fmt.Sprintf("%s_exit_%d", manager, exit), func(t *testing.T) {
 				rn := &run.FakeRunner{
 					ExitCode: exit,
-					Stdout:   "Git Git.Git 2.53.0 winget\n",
+					Stdout:   wingetTestTable("Git Git.Git 2.53.0 winget\n"),
 					WaitErr:  errors.New("captured output incomplete"),
 				}
 				a := &NativeByManagerAdapter{managerName: manager}
@@ -817,7 +817,7 @@ func TestNativeByManagerCheckRejectsIncompleteOutput(t *testing.T) {
 	for _, manager := range []string{"brew", "winget", "port"} {
 		t.Run(manager, func(t *testing.T) {
 			rn := &run.FakeRunner{
-				Stdout:  "Git Git.Git 2.53.0 winget\n",
+				Stdout:  wingetTestTable("Git Git.Git 2.53.0 winget\n"),
 				WaitErr: errors.New("captured output incomplete"),
 			}
 			a := &NativeByManagerAdapter{managerName: manager}

@@ -65,9 +65,25 @@ func lockFilePathContext(ctx context.Context, path string, mode int, desc string
 	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- generated owner-only lock path.
+	// A lock path is a stable synchronization object, not arbitrary content.
+	// Never follow a symlink into another file and never block opening a FIFO.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600) // #nosec G304 -- generated private lock path; no symlink traversal.
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("stat lock file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, fmt.Errorf("lock file is not a regular file: %s", path)
+	}
+	// chmod on a hardlinked lock would silently chmod an unrelated file.
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Nlink != 1 {
+		_ = f.Close()
+		return nil, fmt.Errorf("lock file must have exactly one link: %s", path)
 	}
 	if err := f.Chmod(0600); err != nil {
 		_ = f.Close()
@@ -78,6 +94,13 @@ func lockFilePathContext(ctx context.Context, path string, mode int, desc string
 	for {
 		err := syscall.Flock(int(f.Fd()), mode|syscall.LOCK_NB)
 		if err == nil {
+			// Reject a pathname swapped while we were waiting. File locks
+			// protect inodes, so locking an orphaned inode is not exclusion.
+			current, statErr := os.Lstat(path)
+			if statErr != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) {
+				_ = (&fileLock{f: f}).Close()
+				return nil, fmt.Errorf("%s: lock file path changed during acquisition", desc)
+			}
 			return &fileLock{f: f}, nil
 		}
 		if errors.Is(err, syscall.EINTR) {

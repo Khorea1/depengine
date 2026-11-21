@@ -206,6 +206,36 @@ protocol comparison and unresolved cases are recorded in
 Neither the executor's admission logic nor `AdapterV2`, `state v5`, claims,
 namespace isolation or `disjoint` semantics changed.
 
+### Checkpoint: WinGet inventory error classification (2026-11-21)
+
+Both the Windows native-clan adapter and the explicit WinGet adapter now
+classify `winget list --id ... --exact` using the distinct WinGet HRESULT
+`0x8A150014` (`APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND`) as the
+**only validated no-match result**. Other nonzero exits indicate `unknown`,
+not `absent`; success without a recognized matching package row also indicates
+`unknown`, not `present` or `absent`. The boolean `Check` in the native-clan
+adapter likewise requires a matching package row. The explicit adapter still
+reports observed version and source when available, while the native-clan
+adapter retains its package-only identity contract.
+
+Tests cover both adapters with ordinary command failures, WinGet HRESULTs,
+empty or unrecognized output, wrong-package rows and validated installed and
+absent results. These are simulated CLI responses, not verification against
+all real Windows locales or WinGet versions. The textual parser rejects
+repeated exact-ID rows (even identical), incomplete rows, raw messages with
+ID-shaped words, and rows whose ID appears only in the name column. A presence
+claim now requires an English WinGet fixed-column `Name / Id / Version` table
+with its separator and an exact ID-column match; the version and optional source
+are extracted from their own columns. Unrecognized or localized layouts yield
+`unknown`, never an invented identity. This deliberately limits locale coverage
+until a validated structured WinGet inventory interface is available. It does
+not establish source-inventory completeness, resource ownership or write-set
+confinement. Source-constrained WinGet `Check` and `InstalledVersion` now also
+require matching observed source identity; the `--source` query option alone is
+not proof of the installed package's provenance.
+WinGet return codes: [Microsoft's WinGet HRESULT reference](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md)
+(checked 2026-11-21).
+
 ### Checkpoint: reusable validated claim index (2026-11-19)
 
 `internal/state/claims.go` separates one-time ledger validation
@@ -381,8 +411,16 @@ The complete matrix, scenarios and corresponding planned tests live in
   supported observed locations and often is intentionally absent.
 - **Use schema file paths or `RootRequested` as the owner**: current v5 fields
   do not store independent project claims.
-- **Global mutex for all operations**: might be a temporary diagnostic guard,
-  but damages concurrency without solving unknown effects or compatibility.
+- **Global mutex as a complete ownership solution**: serializes unrelated
+  work without proving physical resource compatibility. The interim
+  per-user `host.mutations.lock` now serializes cooperating mutating CLI
+  operations across different state roots in the same private temp/cache
+  namespace, followed by the original state-root lock. This prevents one
+  class of process interleaving, but it does not coordinate other users,
+  external package managers, or library callers, authorize claims, or
+  satisfy this ADR's admission protocol.
+  Its throughput cost must be revisited when narrower validated writesets
+  become available.
 - **Immediately extend every `AdapterV2` implementation**: a breaking contract
   migration without a validated effects vocabulary. Prototype an isolated
   internal effects planner/registry; revise the public adapter contract only
@@ -474,3 +512,31 @@ contract tests cover absent/present direct raw targets, directory aliases,
 refused symlink/occupied destinations, archive/installer/relative cases and
 unchanged overall uncertainty. Further adapters and bounded/exact claims
 require separate evidence and review.
+
+### Checkpoint: declared native package targets (2026-11-21)
+
+`NativeAdapter.DescribeProspectiveEffects` and
+`NativeByManagerAdapter.DescribeProspectiveEffects` now attach **tentative,
+read-only** package targets to a validated resolved **install** plan. Matching
+native and explicit-manager candidates use the resolved package identity and
+canonicalize known command aliases (for example `dnf`/`dnf5`/`yum`), while
+keeping Homebrew and MacPorts separate. Different logical tool names targeting
+the same declared manager/package can therefore yield a `same` **declared
+target** through the pure overlap comparator. Ambiguous manager names, missing
+package or clan, and mismatched tool/method identities produce no target.
+Auto-detected native clans likewise produce no key: this helper reads only the
+immutable constructor-provided clan, not a potentially concurrent host probe.
+Removal and upgrade produce none because the current install plan does not
+prove which *existing* resource a destructive transition would affect.
+
+The key uses `scope=declared-native-manager`, `kind=package-target` and a
+clan/manager/package identity: it is **not** a canonical host namespace,
+manager database path, file-slot, complete side-effect set, validated absence,
+or ownership claim. All envelope steps and the aggregate remain `unknown`.
+Different declared keys still yield `unknown` overlap, **not disjoint**.
+No host probe, network call, state migration, executor admission or adapter
+interface change was introduced. Host-specific package namespaces, package
+scripts, external manager interference and transactional revalidation remain
+outside this checkpoint. Contract tests cover native/explicit alias collisions,
+distinct manager databases, missing or ambiguous identity, and destructive
+transition conservatism. The Phase 1/2 exit gates are unchanged.

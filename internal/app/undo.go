@@ -112,6 +112,12 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON
 		return runUndoList(*undoJSON)
 	}
 
+	unlockMutations, err := holdHostMutations(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	snapPath, err := resolveUndoSnapshotPath(*undoSpecific)
 	if err != nil {
 		return err

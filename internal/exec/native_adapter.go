@@ -22,13 +22,14 @@ import (
 // Sync is NOT handled here — the executor's SyncManager runs index
 // synchronization once per session before any tool is installed.
 type NativeAdapter struct {
-	clan string    // detected on first Available() call
-	once sync.Once // ensures detectClan runs exactly once
+	clan         string    // detected on first Available() call
+	declaredClan string    // immutable constructor input; safe for host-free effect descriptions
+	once         sync.Once // ensures detectClan runs exactly once
 }
 
-// NewNativeAdapter creates an adapter. Clan is detected automatically.
+// NewNativeAdapter creates an adapter. Clan is detected automatically when omitted.
 func NewNativeAdapter(clan string) *NativeAdapter {
-	return &NativeAdapter{clan: clan}
+	return &NativeAdapter{clan: clan, declaredClan: clan}
 }
 
 func (a *NativeAdapter) Kind() string { return "native" }
@@ -141,7 +142,14 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool
 		return false
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return res.Err == nil && res.WaitErr == nil && res.ExitCode == 0
+	if res.Err != nil || res.WaitErr != nil || res.ExitCode != 0 {
+		return false
+	}
+	if clan == "windows" {
+		_, _, ok := wingetPackageFromOutput(res.Stdout, pkg)
+		return ok
+	}
+	return true
 }
 
 // CheckAvailable reports whether mc's package exists in the detected
@@ -248,7 +256,13 @@ func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
 	}
 	if res.WaitErr != nil {
+		if clan == "windows" {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: "WinGet inventory output incomplete"}, nil
+		}
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.WaitErr.Error()}, res.WaitErr
+	}
+	if clan == "windows" {
+		return observeWingetInventory(res, pkg, false), nil
 	}
 	if res.ExitCode != 0 {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
@@ -511,11 +525,16 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	if a.managerName != "winget" {
 		return true
 	}
-	version, _, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	version, source, ok := wingetPackageFromOutput(res.Stdout, pkg)
 	if !ok {
 		return false
 	}
 	if want, _ := mc.Config["version"].(string); want != "" && version != want {
+		return false
+	}
+	// A query's --source flag is a filter request, not proof that the
+	// observed installation came from that source.
+	if want, _ := mc.Config["source"].(string); want != "" && source != want {
 		return false
 	}
 	return true
@@ -650,6 +669,9 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	if res.WaitErr != nil {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "native manager inventory output incomplete"}, nil
 	}
+	if a.managerName == "winget" {
+		return observeWingetInventory(res, pkg, true), nil
+	}
 	if res.ExitCode != 0 {
 		if a.managerName == "port" {
 			return plan.Observation{Presence: plan.PresenceUnknown, Detail: fmt.Sprintf("MacPorts inventory query exited with code %d", res.ExitCode)}, nil
@@ -666,27 +688,11 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 		}
 		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 	}
-	if a.managerName != "winget" {
-		return plan.Observation{
-			Presence:    plan.PresencePresent,
-			Identity:    plan.ObservedIdentity{Package: pkg},
-			KnownFields: []plan.IdentityField{plan.FieldPackage},
-		}, nil
-	}
-	version, source, ok := wingetPackageFromOutput(res.Stdout, pkg)
-	if !ok {
-		return plan.Observation{Presence: plan.PresenceAbsent}, nil
-	}
-	observation := plan.Observation{
+	return plan.Observation{
 		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: pkg, Version: version},
-		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
-	}
-	if source != "" {
-		observation.Identity.Source = source
-		observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
-	}
-	return observation, nil
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}, nil
 }
 
 // InstallResolved executes the resolved plan. The operation shape is
@@ -815,9 +821,12 @@ func (a *NativeByManagerAdapter) InstalledVersion(ctx context.Context, rn run.Ru
 	if err := run.CheckResultCompleteOutput(res, "winget: version check"); err != nil {
 		return "", err
 	}
-	version, _, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	version, source, ok := wingetPackageFromOutput(res.Stdout, pkg)
 	if !ok {
-		return "", fmt.Errorf("winget: package %q not present in list output", pkg)
+		return "", fmt.Errorf("winget: inventory did not establish exactly one complete row for package %q", pkg)
+	}
+	if want, _ := mc.Config["source"].(string); want != "" && source != want {
+		return "", fmt.Errorf("winget: source for package %q not verified as %q", pkg, want)
 	}
 	return version, nil
 }
@@ -842,21 +851,134 @@ func wingetSelectionArgs(mc *config.MethodCandidate, includeInstaller bool) []st
 	return args
 }
 
-func wingetPackageFromOutput(stdout []byte, pkg string) (version, source string, ok bool) {
-	for _, line := range strings.Split(string(stdout), "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		for i, field := range fields {
-			if field != pkg || i+1 >= len(fields) {
-				continue
-			}
-			version = fields[i+1]
-			if len(fields) > i+3 {
-				source = fields[len(fields)-1]
-			}
-			return version, source, version != ""
+// APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND is distinct from command,
+// source, and inventory failures. Compare as uint32 because WinGet HRESULTs
+// may reach Go as a signed Windows exit status.
+// https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md
+const wingetNoApplicationsFound uint32 = 0x8A150014
+
+func observeWingetInventory(res run.Result, pkg string, includeVersion bool) plan.Observation {
+	if res.ExitCode != 0 {
+		if uint32(res.ExitCode) == wingetNoApplicationsFound {
+			return plan.Observation{Presence: plan.PresenceAbsent}
+		}
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: fmt.Sprintf("WinGet inventory query exited with code %d", res.ExitCode)}
+	}
+	version, source, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	if !ok {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "WinGet inventory output did not prove package presence"}
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	if includeVersion {
+		observation.Identity.Version = version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+		if source != "" {
+			observation.Identity.Source = source
+			observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 		}
 	}
-	return "", "", false
+	return observation
+}
+
+// wingetPackageFromOutput accepts only an unambiguous fixed-column inventory
+// table. WinGet writes warnings and progress messages to stdout, so finding an
+// ID-shaped word in arbitrary output does not establish an installed package.
+// Unrecognized/localized table layouts are deliberately inconclusive.
+func wingetPackageFromOutput(stdout []byte, pkg string) (version, source string, ok bool) {
+	lines := strings.Split(strings.ReplaceAll(string(stdout), "\r\n", "\n"), "\n")
+	idStart, versionStart, versionEnd, sourceStart := -1, -1, -1, -1
+	tableStart := -1
+	for i, line := range lines {
+		headers := strings.Fields(line)
+		if len(headers) < 3 || len(headers) > 5 || headers[0] != "Name" || headers[1] != "Id" || headers[2] != "Version" {
+			continue
+		}
+		if len(headers) >= 4 && headers[3] != "Available" && headers[3] != "Source" {
+			continue
+		}
+		if len(headers) == 5 && (headers[3] != "Available" || headers[4] != "Source") {
+			continue
+		}
+		idColumn := strings.Index(line, "Id")
+		versionColumn := strings.Index(line, "Version")
+		if idColumn <= 0 || versionColumn <= idColumn+len("Id") {
+			continue
+		}
+		versionBoundary := -1
+		sourceColumn := -1
+		if strings.Contains(line, "Available") {
+			versionBoundary = strings.Index(line, "Available")
+		}
+		if strings.Contains(line, "Source") {
+			sourceColumn = strings.Index(line, "Source")
+			if versionBoundary < 0 {
+				versionBoundary = sourceColumn
+			}
+		}
+		if versionBoundary > 0 && versionBoundary <= versionColumn+len("Version") {
+			continue
+		}
+		if i+1 >= len(lines) || !wingetTableRule(lines[i+1], versionColumn+len("Version")) {
+			continue
+		}
+		if tableStart >= 0 {
+			return "", "", false
+		} // Multiple tables are ambiguous.
+		idStart, versionStart, versionEnd, sourceStart = idColumn, versionColumn, versionBoundary, sourceColumn
+		tableStart = i + 2
+	}
+	if tableStart < 0 {
+		return "", "", false
+	}
+	found := false
+	for _, line := range lines[tableStart:] {
+		if len(line) < versionStart {
+			if strings.Contains(line, pkg) {
+				return "", "", false
+			}
+			continue
+		}
+		id := strings.TrimSpace(line[idStart:versionStart])
+		if id != pkg {
+			continue
+		}
+		if found {
+			return "", "", false
+		}
+		found = true
+		end := len(line)
+		if versionEnd >= 0 && versionEnd < end {
+			end = versionEnd
+		}
+		version = strings.TrimSpace(line[versionStart:end])
+		if version == "" || strings.ContainsAny(version, " \t…") {
+			return "", "", false
+		}
+		if sourceStart >= 0 && sourceStart < len(line) {
+			source = strings.TrimSpace(line[sourceStart:])
+			if strings.ContainsAny(source, " \t…") {
+				return "", "", false
+			}
+		}
+	}
+	return version, source, found
+}
+
+func wingetTableRule(line string, minWidth int) bool {
+	line = strings.TrimSpace(line)
+	if len(line) < minWidth {
+		return false
+	}
+	for _, char := range line {
+		if char != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *NativeByManagerAdapter) CanRemove() bool { return true }

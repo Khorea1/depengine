@@ -104,6 +104,12 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
 func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeJSON *bool, executor *exec.Executor, facts *platform.Facts) error {
+	unlockMutations, err := holdHostMutations(ctx, *removeDryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err

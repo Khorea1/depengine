@@ -107,7 +107,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 		"depengine validate":      {"catalog", "check-env", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
 		"depengine status":        {"catalog", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "orphans", "quiet", "schema"},
 		"depengine upgrade":       {"allow-arbitrary-code", "catalog", "dry-run", "force", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "only", "quiet", "schema", "skip"},
-		"depengine update":        {"catalog", "dry-run", "format", "frozen-lockfile", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "profile", "quiet", "schema", "verbose"},
+		"depengine update":        {"catalog", "dry-run", "format", "frozen-lockfile", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "profile", "prune", "quiet", "schema", "verbose"},
 		"depengine undo":          {"format", "help", "json", "list", "snapshot"},
 		"depengine forget":        {"format", "help", "json"},
 		"depengine bundle export": {"format", "help", "json", "lock", "output"},

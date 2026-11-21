@@ -232,6 +232,7 @@ Examples:
   depengine update                    # resolve mutable references; write depengine.lock
   depengine update \-\-dry\-run \-v       # show the pins without writing
   depengine update \-\-profile desktop  # re\-resolve only tagged tools; keep other pins
+  depengine update \-\-prune             # remove metadata for deleted tools
 .fi
 .TP
 .B "depengine upgrade [flags]"
@@ -775,6 +776,9 @@ disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-profile <string>"
 only re\-resolve tools with matching tag; other pins from a readable lock are preserved Scope: local. Default: .
+.TP
+.B "\-\-prune"
+remove obsolete lock metadata for tools absent from the full effective schema Scope: local. Default: false.
 .TP
 .B "\-\-quiet"
 suppress progress and the Next hint Scope: local. Default: false.

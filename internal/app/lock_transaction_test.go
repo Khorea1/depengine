@@ -29,7 +29,7 @@ func TestUpdateWaitsForLockTransactionBeforeReadingAndWriting(t *testing.T) {
 	defer cancel()
 	noManifest, frozen, dryRun, verbose, quiet, jsonMode := true, false, false, false, true, false
 	manifest, override, profile := "", "", ""
-	err = runUpdate(ctx, &schema, &manifest, &noManifest, &override, &profile, &frozen, &dryRun, &verbose, &quiet, &jsonMode, nil)
+	err = runUpdate(ctx, &schema, &manifest, &noManifest, &override, &profile, &frozen, &dryRun, &verbose, &quiet, &jsonMode, new(bool), nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("update with held lock = %v, want context deadline exceeded", err)
 	}
@@ -39,7 +39,7 @@ func TestUpdateWaitsForLockTransactionBeforeReadingAndWriting(t *testing.T) {
 	if err := guard.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := runUpdate(context.Background(), &schema, &manifest, &noManifest, &override, &profile, &frozen, &dryRun, &verbose, &quiet, &jsonMode, nil); err != nil {
+	if err := runUpdate(context.Background(), &schema, &manifest, &noManifest, &override, &profile, &frozen, &dryRun, &verbose, &quiet, &jsonMode, new(bool), nil); err != nil {
 		t.Fatalf("update after lock released: %v", err)
 	}
 	if _, err := lock.Load(lockPath); err != nil {

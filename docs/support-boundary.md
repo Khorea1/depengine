@@ -92,6 +92,16 @@ and identify update drift; they do not supply concrete resolved identity.
 Lock v1 continues to use its method pins through the bounded legacy
 resolver/application path and remains readable.
 
+`depengine update --prune` explicitly removes stale legacy pins, method/source
+identity hashes, and recipe digests for tool names no longer present in the
+**full effective schema**, including tools from the manifest and catalog.
+It does not treat tools omitted by `--profile` as deleted. This only cleans
+lockfile metadata; it does not uninstall software, change the global host
+state, assign physical ownership, or modify the authoritative v2 projection.
+Without `--prune`, existing lockfile compatibility retention is unchanged.
+Combine `--prune --dry-run` to preview without writing; JSON output includes
+`pruned_tools` only when obsolete tool names were identified.
+
 A Git revision in a v2 lock is exactly comparable only when the installation
 retains its checkout: `extract_to` points at the clone root (the default or
 root artifact) and `managed_paths` is not active. Non-root artifacts,

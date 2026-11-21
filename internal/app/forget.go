@@ -38,6 +38,12 @@ func newForgetCmd() *cobra.Command {
 }
 
 func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error {
+	unlockMutations, err := holdHostMutations(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)

@@ -29,6 +29,7 @@ func newUpdateCmd() *cobra.Command {
 	updateVerbose := new(bool)
 	updateQuiet := new(bool)
 	updateJSON := new(bool)
+	updatePrune := new(bool)
 	updateFormat := new(string)
 	updateCatalog := new([]string)
 	updateNoCatalog := new(bool)
@@ -39,7 +40,8 @@ func newUpdateCmd() *cobra.Command {
 		Short:   ifPT("Resolver referências mutáveis e gravar v2 quando toda ferramenta tem identidade imutável; manter v1 para schemas só nativos", "Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas"),
 		Example: `  depengine update                    # resolve mutable references; write depengine.lock
   depengine update --dry-run -v       # show the pins without writing
-  depengine update --profile desktop  # re-resolve only tagged tools; keep other pins`,
+  depengine update --profile desktop  # re-resolve only tagged tools; keep other pins
+  depengine update --prune             # remove metadata for deleted tools`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,7 +54,7 @@ func newUpdateCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return exitWithCode(2)
 			}
-			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON, catalog)
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON, updatePrune, catalog)
 		},
 	}
 	f := cmd.Flags()
@@ -64,6 +66,7 @@ func newUpdateCmd() *cobra.Command {
 	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
 	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
+	f.BoolVar(updatePrune, "prune", false, "remove obsolete lock metadata for tools absent from the full effective schema")
 	f.BoolVarP(updateVerbose, "verbose", "v", false, "include the resolved lock projection in the output")
 	f.BoolVar(updateQuiet, "quiet", false, "suppress progress and the Next hint")
 	f.BoolVar(updateJSON, "json", false, "shorthand for --format=json")
@@ -71,7 +74,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON *bool, catalog *config.Catalog) error {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose, updateQuiet, updateJSON, updatePrune *bool, catalog *config.Catalog) error {
 	lg := log.Default
 	quiet := *updateQuiet
 
@@ -134,6 +137,16 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			return exitWithCode(2)
 		}
 	}
+	// Keep a lock refresh from changing the desired target while a concurrent
+	// install/upgrade is reconciling that target against the physical host.
+	// All CLI writers acquire the host mutation guard before lockfile/state
+	// transactions. Read-only previews do not need it.
+	unlockMutations, err := holdHostMutations(ctx, *updateDryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	// Hold the per-file OS lock across Load -> resolution -> Save. Locking
 	// only Save would still lose concurrent profile updates.
 	if !*updateDryRun {
@@ -242,6 +255,11 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		lock.ApplyLegacyV1(s, newLock)
 	}
 
+	var prunedTools []string
+	if *updatePrune {
+		prunedTools = pruneRemovedLockEntries(newLock, fullSchema.Tools)
+	}
+
 	pinned := len(newLock.Tools)
 	var projection *plan.LockDocument
 	if newLock.Version == lock.CurrentVersion {
@@ -267,6 +285,13 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			return exitWithCode(1)
 		}
 		done(fmt.Sprintf("(%d pinned)", pinned))
+	}
+	if len(prunedTools) > 0 && !quiet {
+		verb := "pruned"
+		if *updateDryRun {
+			verb = "would prune"
+		}
+		fmt.Fprintf(os.Stderr, "  %s obsolete lock metadata for: %s\n", verb, strings.Join(prunedTools, ", "))
 	}
 	if len(nativeFallback) > 0 {
 		lg.Warn(
@@ -318,12 +343,63 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		printNextStep(c, quiet, false, hint)
 	}
 	if *updateJSON {
-		report := buildUpdateMachineReport(lockPath, newLock, projection, *updateDryRun, nativeFallback)
+		report := buildUpdateMachineReport(lockPath, newLock, projection, *updateDryRun, nativeFallback, prunedTools)
 		if err := writeMachineOutput(os.Stdout, "update", report); err != nil {
 			return exitWithCode(3)
 		}
 	}
 	return nil
+}
+
+// pruneRemovedLockEntries removes compatibility metadata for tools absent
+// from the COMPLETE effective schema, not the selected --profile subset.
+// Legacy pins/hashes for current tools are retained because their resolution
+// is not necessarily part of this update. A v2 projection is authoritative
+// and is never modified by this metadata-only cleanup.
+func pruneRemovedLockEntries(updated *lock.Lock, fullTools map[string]*config.Tool) []string {
+	if updated == nil {
+		return nil
+	}
+	removed := make(map[string]struct{})
+	obsolete := func(name string) bool {
+		if name == "" {
+			return false
+		}
+		if _, exists := fullTools[name]; exists {
+			return false
+		}
+		removed[name] = struct{}{}
+		return true
+	}
+	for key := range updated.Tools {
+		if obsolete(lockCandidateToolName(key)) {
+			delete(updated.Tools, key)
+		}
+	}
+	for key := range updated.SourceHash {
+		if obsolete(lockCandidateToolName(key)) {
+			delete(updated.SourceHash, key)
+		}
+	}
+	for name := range updated.MethodsHash {
+		if obsolete(name) {
+			delete(updated.MethodsHash, name)
+		}
+	}
+	for name := range updated.RecipeDigest {
+		if obsolete(name) {
+			delete(updated.RecipeDigest, name)
+		}
+	}
+	if len(removed) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(removed))
+	for name := range removed {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // updateMachineReport is the `update --format json` payload: every pin the
@@ -335,6 +411,7 @@ type updateMachineReport struct {
 	Pinned         int                `json:"pinned"`
 	Tools          []updateMachinePin `json:"tools"`
 	NativeFallback []string           `json:"native_fallback,omitempty"`
+	PrunedTools    []string           `json:"pruned_tools,omitempty"`
 }
 
 type updateMachinePin struct {
@@ -345,13 +422,14 @@ type updateMachinePin struct {
 // buildUpdateMachineReport projects either lock representation into the same
 // machine payload. Universal locks expose their projection entries; legacy v1
 // locks expose sorted pin keys.
-func buildUpdateMachineReport(lockPath string, newLock *lock.Lock, projection *plan.LockDocument, dryRun bool, nativeFallback []string) updateMachineReport {
+func buildUpdateMachineReport(lockPath string, newLock *lock.Lock, projection *plan.LockDocument, dryRun bool, nativeFallback, prunedTools []string) updateMachineReport {
 	report := updateMachineReport{
 		LockPath:       lockPath,
 		LockVersion:    newLock.Version,
 		DryRun:         dryRun,
 		Tools:          []updateMachinePin{},
 		NativeFallback: nativeFallback,
+		PrunedTools:    prunedTools,
 	}
 	if projection != nil {
 		for _, entry := range projection.Entries {

@@ -108,7 +108,7 @@ func TestRunUpdateProfileRefreshesRetainedEntryOnRecipeChange(t *testing.T) {
 	noManifest, frozen, dryRun, verbose := true, false, false, false
 	quiet := false
 	manifest, lockFlag := "", ""
-	if err := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, new(bool), catalog); err != nil {
+	if err := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, &quiet, new(bool), new(bool), catalog); err != nil {
 		t.Fatalf("runUpdate: %v", err)
 	}
 
