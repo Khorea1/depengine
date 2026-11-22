@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.golangci-lint]
+method_only = ["native", "aur", "go"]
+
+[packages.golangci-lint.native]
+pkg = "golangci-lint"
+pkg_overrides = { emerge = "dev-util/golangci-lint", winget = "GolangCI.golangci-lint" }
+
+[packages.golangci-lint.aur]
+pkg = "golangci-lint"
+
+[packages.golangci-lint.go]
+pkg = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"

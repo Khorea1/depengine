@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.just]
+method_only = ["native", "aur", "cargo"]
+
+[packages.just.native]
+pkg = "just"
+pkg_overrides = { emerge = "dev-build/just", winget = "Casey.Just" }
+
+[packages.just.aur]
+pkg = "just"
+
+[packages.just.cargo]
+pkg = "just"

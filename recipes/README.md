@@ -10,21 +10,32 @@ one `[packages.<name>]` entry and its filename matches that name.
 | [`golang.toml`](golang.toml) | Native managers, AUR and checksum-pinned Linux amd64 HTTP | Also bundled |
 | [`nvim.toml`](nvim.toml) | Native managers, AUR, Flatpak, Snap, checksum-pinned AppImage/GitHub archives | Opt-in only |
 | [`bat.toml`](bat.toml) | Native managers, AUR, Cargo | Opt-in only |
+| [`black.toml`](black.toml) | pipx, uv | Opt-in only |
+| [`bottom.toml`](bottom.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`delta.toml`](delta.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`fd.toml`](fd.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`fzf.toml`](fzf.toml) | Native managers, AUR, Go | Opt-in only |
 | [`gh.toml`](gh.toml) | Native managers, AUR, Go | Opt-in only |
+| [`golangci-lint.toml`](golangci-lint.toml) | Native managers, AUR, Go | Opt-in only |
 | [`helm.toml`](helm.toml) | Native managers, AUR, Go | Opt-in only |
 | [`httpie.toml`](httpie.toml) | Native managers, pipx, uv | Opt-in only |
+| [`hyperfine.toml`](hyperfine.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`jq.toml`](jq.toml) | Native managers, AUR | Opt-in only |
+| [`just.toml`](just.toml) | Native managers, AUR, Cargo | Opt-in only |
+| [`k9s.toml`](k9s.toml) | Native managers, AUR, Go | Opt-in only |
+| [`kubectl.toml`](kubectl.toml) | Native managers, checksum-pinned Linux/macOS raw binaries | Opt-in only |
+| [`lazydocker.toml`](lazydocker.toml) | Native managers, AUR, Go | Opt-in only |
 | [`lazygit.toml`](lazygit.toml) | Native managers, AUR, Go | Opt-in only |
 | [`php-cs-fixer.toml`](php-cs-fixer.toml) | Composer | Opt-in only |
+| [`pre-commit.toml`](pre-commit.toml) | pipx, uv | Opt-in only |
 | [`prettier.toml`](prettier.toml) | npm, pnpm, Bun | Opt-in only |
 | [`ripgrep.toml`](ripgrep.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`rubocop.toml`](rubocop.toml) | RubyGems | Opt-in only |
 | [`ruff.toml`](ruff.toml) | pipx, uv | Opt-in only |
+| [`shfmt.toml`](shfmt.toml) | Native managers, AUR, Go | Opt-in only |
 | [`starship.toml`](starship.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`yq.toml`](yq.toml) | Native managers, AUR, Go | Opt-in only |
+| [`zellij.toml`](zellij.toml) | Native managers, AUR, Cargo | Opt-in only |
 | [`zoxide.toml`](zoxide.toml) | Native managers, AUR, Cargo | Opt-in only |
 
 Together the library exercises every portable method family that can be

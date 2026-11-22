@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.k9s]
+method_only = ["native", "aur", "go"]
+
+[packages.k9s.native]
+pkg = "k9s"
+pkg_overrides = { emerge = "app-admin/k9s", winget = "Derailed.k9s" }
+
+[packages.k9s.aur]
+pkg = "k9s"
+
+[packages.k9s.go]
+pkg = "github.com/derailed/k9s"

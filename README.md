@@ -155,7 +155,9 @@ every supported method, see the [`schema.toml` reference](docs/schema-reference.
 depengine merges project, personal manifest and catalog layers. The binary
 ships a small read-only fallback for `golang` only. Community recipes, including
 Neovim, live in the Git-versioned [`recipes/`](recipes/) directory and require
-explicit import or `--catalog` selection. The library covers the portable method
+explicit import or `--catalog` selection. The complete collection is in
+[`recipes/`](recipes/): one importable TOML per tool, indexed in
+[`recipes/README.md`](recipes/README.md). The library covers the portable method
 families (`native`, `aur`, `cargo`, `go`, `npm`/`pnpm`/`bun`, `pipx`/`uv`,
 `gem`, `composer`, `flatpak`, `snap`, `appimage`, `github` and `http`), and every
 recipe avoids duplicate method entries.

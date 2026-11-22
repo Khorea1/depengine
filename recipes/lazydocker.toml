@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.lazydocker]
+method_only = ["native", "aur", "go"]
+
+[packages.lazydocker.native]
+pkg = "lazydocker"
+pkg_overrides = { emerge = "app-containers/lazydocker", winget = "jesseduffield.lazydocker" }
+
+[packages.lazydocker.aur]
+pkg = "lazydocker"
+
+[packages.lazydocker.go]
+pkg = "github.com/jesseduffield/lazydocker"
