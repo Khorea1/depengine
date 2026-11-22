@@ -76,18 +76,7 @@ func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) R
 // OpenStdoutPipe preserves stdout streaming through the logging wrapper while
 // logging command lifecycle and the final normalized result.
 func (lr *LoggingRunner) OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error) {
-	loggedArgs := formatArgsForLog(args)
-	baseAttrs := []any{
-		"cmd", name,
-		"args", loggedArgs,
-	}
-	if lr.ctx.Tool != "" {
-		baseAttrs = append(baseAttrs, "tool", lr.ctx.Tool)
-	}
-	if lr.ctx.Method != "" {
-		baseAttrs = append(baseAttrs, "method", lr.ctx.Method)
-	}
-
+	baseAttrs := lr.commandAttrs(name, args, "")
 	lr.logger.Debug("run stream", baseAttrs...)
 	start := time.Now()
 	pipe, err := OpenStdoutPipe(ctx, lr.inner, name, args...)
@@ -107,12 +96,7 @@ func (lr *LoggingRunner) OpenStdoutPipe(ctx context.Context, name string, args .
 		abort:  pipe.Abort,
 		wait: func() Result {
 			result := pipe.Wait()
-			attrs := append([]any{
-				"cmd", name,
-				"args", loggedArgs,
-				"exit", result.ExitCode,
-				"duration", time.Since(start).String(),
-			}, baseAttrs[4:]...)
+			attrs := completionAttrs(baseAttrs, result.ExitCode, time.Since(start))
 
 			failLevel := slog.LevelWarn
 			if lr.ctx.Probe {
@@ -182,22 +166,13 @@ func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
 	return found
 }
 
-func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]string, sensitive []string, name string, args ...string) Result {
-	loggedArgs := formatArgsForLog(args)
-	baseAttrs := []any{
-		"cmd", name,
-		"args", loggedArgs,
-	}
-	if dir != "" {
-		baseAttrs = append(baseAttrs, "dir", dir)
-	}
-	if lr.ctx.Tool != "" {
-		baseAttrs = append(baseAttrs, "tool", lr.ctx.Tool)
-	}
-	if lr.ctx.Method != "" {
-		baseAttrs = append(baseAttrs, "method", lr.ctx.Method)
-	}
+// ResolvePath preserves path resolution through the wrapped runner.
+func (lr *LoggingRunner) ResolvePath(ctx context.Context, name string) (string, bool) {
+	return ResolvePath(ctx, lr.inner, name)
+}
 
+func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]string, sensitive []string, name string, args ...string) Result {
+	baseAttrs := lr.commandAttrs(name, args, dir)
 	lr.logger.Debug("run", baseAttrs...)
 
 	start := time.Now()
@@ -211,13 +186,7 @@ func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]str
 	}
 	elapsed := time.Since(start)
 
-	// Build structured log with duration, exit code.
-	attrs := append([]any{
-		"cmd", name,
-		"args", loggedArgs,
-		"exit", result.ExitCode,
-		"duration", elapsed.String(),
-	}, baseAttrs[4:]...) // skip cmd and args from baseAttrs (already included)
+	attrs := completionAttrs(baseAttrs, result.ExitCode, elapsed)
 
 	// Probes (availability/already-installed checks) failing is routine
 	// control flow, not something worth a WARN — demote to DEBUG so it
@@ -250,6 +219,28 @@ func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]str
 	}
 
 	return result
+}
+
+func (lr *LoggingRunner) commandAttrs(name string, args []string, dir string) []any {
+	attrs := []any{"cmd", name, "args", formatArgsForLog(args)}
+	if dir != "" {
+		attrs = append(attrs, "dir", dir)
+	}
+	if lr.ctx.Tool != "" {
+		attrs = append(attrs, "tool", lr.ctx.Tool)
+	}
+	if lr.ctx.Method != "" {
+		attrs = append(attrs, "method", lr.ctx.Method)
+	}
+	return attrs
+}
+
+// completionAttrs places result fields before optional command context fields.
+func completionAttrs(command []any, exitCode int, elapsed time.Duration) []any {
+	attrs := make([]any, 0, len(command)+4)
+	attrs = append(attrs, command[:4]...)
+	attrs = append(attrs, "exit", exitCode, "duration", elapsed.String())
+	return append(attrs, command[4:]...)
 }
 
 // StartElevationSession preserves the optional elevation capability of the

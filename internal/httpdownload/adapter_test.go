@@ -15,6 +15,7 @@ import (
 )
 
 func TestHTTPAdapterInstallDirectDownloadUsesBinaryName(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("binary-content"))
 	}))
@@ -989,5 +990,23 @@ func TestResolvePlanPreservesAdditionalArtifactsAndDoesNotAliasIntent(t *testing
 	got.Entrypoints["demo"] = "mutated"
 	if intent.Artifacts[1].URL == "mutated" || intent.Entrypoints["demo"] == "mutated" {
 		t.Fatal("resolved plan aliases input intent")
+	}
+}
+func TestHTTPAdapterOfflineBundleMissingPayloadDoesNotDownload(t *testing.T) {
+	const url = "https://example.test/tool.tar.gz"
+	runner := &run.FakeRunner{}
+	tool := &config.Tool{Name: "tool"}
+	method := &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": url}}
+	resolved := &plan.ResolvedInstallPlan{Artifacts: []plan.Artifact{{
+		URL:      url,
+		Checksum: "sha256:" + strings.Repeat("a", 64),
+	}}}
+	ctx := WithBundlePayloads(context.Background(), map[string]string{})
+	err := NewHTTPAdapter().InstallResolved(ctx, runner, tool, method, resolved)
+	if err == nil || !strings.Contains(err.Error(), "offline bundle has no payload") {
+		t.Fatalf("expected missing offline payload error, got %v", err)
+	}
+	if len(runner.Calls) != 0 {
+		t.Fatalf("offline bundle miss attempted a command: %#v", runner.Calls)
 	}
 }

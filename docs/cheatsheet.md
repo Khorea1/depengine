@@ -16,6 +16,8 @@ depengine install --json --skip "bat,lsd"  # JSON output, skip tools
 depengine install --jobs 4                 # concurrent workers
 depengine install --profile=desktop        # only tools tagged "desktop"
 
+depengine import ./fd.toml --dry-run      # validate a catalog recipe
+
 depengine validate --check-env --format json
 depengine validate --strict                # warnings → exit code 1
 
@@ -25,6 +27,7 @@ depengine remove bat
 depengine remove --all --dry-run
 
 depengine why nvim --fields                # explain + provenance
+depengine why --all                        # one line per tool in the schema
 depengine graph --format=mermaid --profile=desktop
 depengine graph --format=graph --width=100  # terminal diagram; 0 = auto-detect
 depengine undo --list                       # show snapshots
@@ -34,9 +37,10 @@ depengine diff state1.json state2.json
 depengine completion bash | zsh | fish
 ```
 
-> **Warning:** concurrent native package manager installs (`apt-get`,
-> `pacman -S`) can cause lock contention. Prefer `--jobs=1` for many native
-> tools.
+> **Note:** installs that target the same package manager (`apt-get`,
+> `pacman -S`, `flatpak`, `scoop`, ...) are serialized automatically, even when
+> `--jobs` is greater than 1, because those managers cannot run two mutations at
+> once. `--jobs` parallelizes across managers and independent methods.
 
 Full flag list: [cli-reference.md](cli-reference.md).
 

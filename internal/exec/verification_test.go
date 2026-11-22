@@ -352,3 +352,28 @@ func TestResolveEffectiveCandidatePlanIsDeterministic(t *testing.T) {
 		t.Fatalf("declared config mutated: %v", method.Config)
 	}
 }
+
+func TestVerifyResolvedCandidateReportsSnapChannelDrift(t *testing.T) {
+	adapter := &verificationAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "snap"}},
+		observation: plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: "demo", Channel: "latest/edge"},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldChannel},
+		},
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	method := &config.MethodCandidate{Kind: "snap", Config: map[string]any{"pkg": "demo", "channel": "stable"}}
+	desired := plan.New("demo", "snap", true)
+	desired.Identity.Package = "demo"
+	desired.Identity.Channel = "latest/stable"
+	result, err := ex.VerifyResolvedCandidate(context.Background(), &config.Tool{Name: "demo"}, method, &desired)
+	if err != nil || result.State != plan.StateDrifted || !reflect.DeepEqual(result.Drift, []plan.IdentityDrift{{Field: plan.FieldChannel, Desired: "latest/stable", Observed: "latest/edge"}}) {
+		t.Fatalf("snap channel verification = %+v err=%v", result, err)
+	}
+	decision, err := plan.TransitionForVerification(result)
+	if err != nil || decision.Transition != plan.TransitionUpgrade || !decision.Required {
+		t.Fatalf("channel drift did not select upgrade: %+v err=%v", decision, err)
+	}
+}

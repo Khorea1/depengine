@@ -29,6 +29,7 @@ type cliCommandDoc struct {
 	Aliases     []string
 	Hidden      bool
 	Deprecated  string
+	Examples    string
 	Flags       []cliFlagDoc
 }
 
@@ -90,6 +91,7 @@ func normalizeCLI(root *cobra.Command) []cliCommandDoc {
 			Aliases:     append([]string(nil), cmd.Aliases...),
 			Hidden:      cmd.Hidden,
 			Deprecated:  cmd.Deprecated,
+			Examples:    strings.Trim(cmd.Example, "\n"),
 			Flags:       commandFlags(cmd),
 		})
 	}
@@ -142,6 +144,10 @@ func renderCLIReferenceDocs(docs []cliCommandDoc) ([]byte, error) {
 		if cmd.Deprecated != "" {
 			fmt.Fprintf(&generated, "Deprecated: %s\n\n", markdownEscape(cmd.Deprecated))
 		}
+		if cmd.Examples != "" {
+			generated.WriteString("Examples:\n\n```sh\n")
+			generated.WriteString(cmd.Examples + "\n```\n\n")
+		}
 		flags := visibleFlags(cmd.Flags)
 		if len(flags) == 0 {
 			continue
@@ -172,6 +178,16 @@ func renderManPageDocs(docs []cliCommandDoc) ([]byte, error) {
 		}
 		if cmd.Deprecated != "" {
 			generated.WriteString("Deprecated: " + roffText(cmd.Deprecated) + "\n")
+		}
+		if cmd.Examples != "" {
+			generated.WriteString(".PP\nExamples:\n.nf\n")
+			for _, line := range strings.Split(cmd.Examples, "\n") {
+				if strings.TrimSpace(line) == "" {
+					continue
+				}
+				generated.WriteString(roffEscape(line) + "\n")
+			}
+			generated.WriteString(".fi\n")
 		}
 	}
 	generated.WriteString(".SH OPTIONS\n")

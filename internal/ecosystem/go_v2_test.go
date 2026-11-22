@@ -3,6 +3,8 @@ package ecosystem
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -167,6 +169,109 @@ func TestGoAdapterV2ObserveFailsClosedOnBuildInfoPackageMismatch(t *testing.T) {
 	}
 	if len(observation.KnownFields) != 0 {
 		t.Fatalf("Observe() known fields = %#v, want none for broken verification", observation.KnownFields)
+	}
+}
+
+// A PATH name or a file in GOBIN is not proof of the package that produced it.
+// The Go build-info path is the evidence used for V2 package identity.
+func TestGoAdapterV2ObserveRequiresBuildInfoIdentity(t *testing.T) {
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
+	if err := os.WriteFile(goFixturePath(binDir, "realbin"), []byte("not a trusted Go binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewGoAdapter()
+	tool, method := goV2Tool()
+	tests := []struct {
+		name     string
+		runner   *run.FakeRunner
+		presence plan.PresenceState
+	}{
+		{
+			name: "go metadata query fails",
+			runner: &run.FakeRunner{
+				LookPaths: map[string]bool{"realbin": true}, ExitCode: 1,
+			},
+			presence: plan.PresenceUnknown,
+		},
+		{
+			name: "non Go binary has no build info",
+			runner: &run.FakeRunner{
+				LookPaths: map[string]bool{"realbin": true}, Stdout: "not Go build info\n",
+			},
+			presence: plan.PresenceBroken,
+		},
+		{
+			name: "unrelated binary metadata",
+			runner: &run.FakeRunner{
+				LookPaths: map[string]bool{"realbin": true},
+				Stdout:    "\tpath\texample.com/other/cmd/realbin\n\tmod\texample.com/other\tv1.0.0\n",
+			},
+			presence: plan.PresenceBroken,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			observation, err := adapter.Observe(context.Background(), tc.runner, tool, method)
+			if err == nil || observation.Presence != tc.presence || len(observation.KnownFields) != 0 {
+				t.Fatalf("Observe() = %#v, %v; want %s with error and no known identity", observation, err, tc.presence)
+			}
+			if adapter.Check(context.Background(), tc.runner, tool, method) {
+				t.Fatal("Check() accepted package identity without matching build info")
+			}
+		})
+	}
+}
+
+func TestGoAdapterV2ObserveAllowsMatchingUnversionedBuildInfo(t *testing.T) {
+	t.Setenv("GOBIN", t.TempDir())
+	adapter := NewGoAdapter()
+	tool, method := goV2Tool()
+	delete(method.Config, "version")
+	runner := &run.FakeRunner{
+		LookPaths: map[string]bool{"realbin": true},
+		Stdout:    "\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\t(devel)\n",
+	}
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil || observation.Presence != plan.PresencePresent || observation.Identity.Package != "example.com/project/cmd/realbin" || observation.Identity.Version != "" {
+		t.Fatalf("Observe() = %#v, %v; want verified package without version", observation, err)
+	}
+	if !adapter.Check(context.Background(), runner, tool, method) {
+		t.Fatal("Check() rejected Go build info with matching package")
+	}
+}
+func resolveTempPath(t *testing.T, dir string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", dir, err)
+	}
+	return resolved
+}
+
+func TestGoAdapterV2InspectsGOBINTargetBeforePATH(t *testing.T) {
+	pathDir := resolveTempPath(t, t.TempDir())
+	gobin := resolveTempPath(t, t.TempDir())
+	t.Setenv("PATH", pathDir)
+	t.Setenv("GOBIN", gobin)
+	pathBinary := goFixturePath(pathDir, "realbin")
+	gobinBinary := goFixturePath(gobin, "realbin")
+	for _, binary := range []string{pathBinary, gobinBinary} {
+		if err := os.WriteFile(binary, []byte("fixture"), 0o700); err != nil { // #nosec G306 -- the fixture must be executable to test PATH lookup.
+			t.Fatal(err)
+		}
+	}
+	adapter := NewGoAdapter()
+	tool, method := goV2Tool()
+	runner := goV2Runner("\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\tv1.2.3\th1:fixture\n")
+	runner.ResolvedPaths = map[string]string{gobinBinary: gobinBinary}
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil || observation.Presence != plan.PresencePresent {
+		t.Fatalf("Observe() = %#v, %v; want present", observation, err)
+	}
+	calls := runner.Calls
+	if len(calls) == 0 || !reflect.DeepEqual(calls[len(calls)-1].Args, []string{"version", "-m", gobinBinary}) {
+		t.Fatalf("go version call = %#v, want GOBIN target %q", calls, gobinBinary)
 	}
 }
 

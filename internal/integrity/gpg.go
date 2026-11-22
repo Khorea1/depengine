@@ -83,7 +83,6 @@ func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, 
 // isolated temporary keyring and enforces that the signer's fingerprint
 // matches the provided signingKey.
 func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, msys bool, checksumFile, signatureFile, signingKey string, downloadKey DownloadKeyFunc) error {
-	// Create isolated temporary homedir.
 	homedir, err := os.MkdirTemp("", "depengine-gpg-verify-*")
 	if err != nil {
 		return fmt.Errorf("gpg: temp homedir: %w", err)

@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/i18n"
@@ -22,9 +21,9 @@ const (
 
 var Version = "dev"
 
-// ifPT picks the PT-BR or EN variant of a short UI label — used for command
-// Short/Long text so `depengine help` reads in the user's language exactly
-// as it did before, without a parallel PT/EN table to maintain.
+// ifPT picks the PT-BR or EN variant of a short UI label — used only for
+// command Short/Long text. Localization is opt-in via DEPENGINE_LANG (see
+// docs/compatibility.md); locale variables are not consulted.
 func ifPT(pt, en string) string {
 	if i18n.GetLocale() == "en" {
 		return en
@@ -75,6 +74,7 @@ func newRootCmd() *cobra.Command {
 
 	root.AddCommand(
 		newInitCmd(),
+		newImportCmd(),
 		newInstallCmd(),
 		newUpgradeCmd(),
 		newRemoveCmd(),
@@ -84,11 +84,18 @@ func newRootCmd() *cobra.Command {
 		newCheckCmd(),
 		newValidateCmd(),
 		newWhyCmd(),
+		newDoctorCmd(),
+		newAuditCmd(),
+		newExplainCmd(),
+		newJournalCmd(),
+		newTutorialCmd(),
 		newGraphCmd(),
 		newDiffCmd(),
 		newUpdateCmd(),
+		newSelfCmd(),
 		newSBOMCmd(),
 		newVersionCmd(),
+		newBundleCmd(),
 	)
 	root.SetHelpCommand(newHelpCmd(root))
 
@@ -167,11 +174,14 @@ func newHelpCmd(root *cobra.Command) *cobra.Command {
 				printManPage(cmd.Context())
 				return nil
 			}
-			target, _, err := root.Find(args)
-			if err != nil || target == nil {
-				fmt.Fprintf(os.Stderr, "Unknown help topic %q\n", args)
-				_ = root.Usage()
-				return exitWithCode(1)
+			target, remaining, err := root.Find(args)
+			if err != nil || target == nil || len(remaining) > 0 {
+				nearest := root
+				if target != nil {
+					nearest = target
+				}
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: unknown help topic %q\nNext: %s --help\n", strings.Join(args, " "), nearest.CommandPath())
+				return exitWithCode(2)
 			}
 			target.InitDefaultHelpFlag()
 			return target.Help()

@@ -33,7 +33,7 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
-	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]), asdfVersion(mc))
 	if err != nil || !foundBackend || len(installed.Versions) == 0 {
 		return false
 	}
@@ -156,35 +156,63 @@ func asdfVersion(mc *config.MethodCandidate) string {
 	return "latest"
 }
 
-func asdfInstalledVersions(output string) []string {
+// asdf list <plugin> prints one installed version per line, with an optional
+// asterisk marking the active version. A diagnostic or truncated line cannot
+// establish either presence or absence.
+func asdfInstalledVersions(output string) ([]string, error) {
 	versions := make([]string, 0)
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.TrimLeft(line, "* ")
+	seen := make(map[string]bool)
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
+		if strings.HasPrefix(line, "*") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
 		}
-		versions = append(versions, fields[0])
+		fields := strings.Fields(line)
+		if len(fields) != 1 || fields[0] != line {
+			return nil, fmt.Errorf("asdf: malformed installed version line %q", raw)
+		}
+		if seen[line] {
+			return nil, fmt.Errorf("asdf: duplicate installed version %q", line)
+		}
+		seen[line] = true
+		versions = append(versions, line)
 	}
-	return versions
+	return versions, nil
 }
 
 func miseInstalledVersions(output []byte) ([]string, error) {
-	var rows []struct {
-		Version   string `json:"version"`
-		Installed bool   `json:"installed"`
-	}
+	var rows []json.RawMessage
 	if err := json.Unmarshal(output, &rows); err != nil {
 		return nil, fmt.Errorf("mise: parse installed versions: %w", err)
 	}
+	if rows == nil {
+		return nil, errors.New("mise: installed versions must be a JSON array")
+	}
 	versions := make([]string, 0, len(rows))
-	for _, row := range rows {
+	seen := make(map[string]bool)
+	for i, raw := range rows {
+		if string(raw) == "null" {
+			return nil, fmt.Errorf("mise: installed version row %d is null", i)
+		}
+		var row struct {
+			Version   string `json:"version"`
+			Installed *bool  `json:"installed"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return nil, fmt.Errorf("mise: installed version row %d: %w", i, err)
+		}
 		version := strings.TrimSpace(row.Version)
-		if version != "" && row.Installed {
+		if version == "" || version != row.Version || len(strings.Fields(version)) != 1 || row.Installed == nil {
+			return nil, fmt.Errorf("mise: incomplete installed version row %d", i)
+		}
+		if seen[version] {
+			return nil, fmt.Errorf("mise: duplicate version %q", version)
+		}
+		seen[version] = true
+		if *row.Installed {
 			versions = append(versions, version)
 		}
 	}
@@ -196,27 +224,30 @@ type asdfBackendObservation struct {
 	Versions []string
 }
 
-func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string) (asdfBackendObservation, bool, error) {
-	foundBackend := false
-	succeeded := false
-	var lastErr error
+// collectAsdfMiseInventories queries every available backend. Removal needs the
+// entire result to establish a unique owner; an observation may still report
+// positively verified presence when another backend's query fails.
+func collectAsdfMiseInventories(ctx context.Context, rn run.Runner, pkg string) ([]asdfBackendObservation, bool, error) {
 	backends := []string{"asdf", "mise"}
 	if isMiseBackendPackage(pkg) {
 		backends = []string{"mise"}
 	}
+	found := false
+	var inventories []asdfBackendObservation
+	var queryErrors []error
 	for _, backend := range backends {
 		if !run.LookPath(ctx, rn, backend) {
 			continue
 		}
-		foundBackend = true
+		found = true
 		var res run.Result
 		if backend == "mise" {
 			res = rn.Run(ctx, backend, "ls", pkg, "--installed", "--json")
 		} else {
 			res = rn.Run(ctx, backend, "list", pkg)
 		}
-		if res.Err != nil || res.ExitCode != 0 {
-			lastErr = fmt.Errorf("%s list %s failed: %w", backend, pkg, run.CheckResult(res, "asdf: observe"))
+		if err := run.CheckResultCompleteOutput(res, backend+": observe installed versions"); err != nil {
+			queryErrors = append(queryErrors, fmt.Errorf("%s: observe %q: %w", backend, pkg, err))
 			continue
 		}
 		var versions []string
@@ -224,21 +255,45 @@ func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string)
 		if backend == "mise" {
 			versions, err = miseInstalledVersions(res.Stdout)
 		} else {
-			versions = asdfInstalledVersions(string(res.Stdout))
+			versions, err = asdfInstalledVersions(string(res.Stdout))
 		}
 		if err != nil {
-			lastErr = err
+			queryErrors = append(queryErrors, fmt.Errorf("%s: observe %q: %w", backend, pkg, err))
 			continue
 		}
-		succeeded = true
-		if len(versions) > 0 {
-			return asdfBackendObservation{Backend: backend, Versions: versions}, true, nil
+		inventories = append(inventories, asdfBackendObservation{Backend: backend, Versions: versions})
+	}
+	return inventories, found, errors.Join(queryErrors...)
+}
+
+func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg, desired string) (asdfBackendObservation, bool, error) {
+	inventories, found, err := collectAsdfMiseInventories(ctx, rn, pkg)
+	var firstInstalled *asdfBackendObservation
+	for i := range inventories {
+		inventory := &inventories[i]
+		if len(inventory.Versions) == 0 {
+			continue
+		}
+		if firstInstalled == nil {
+			firstInstalled = inventory
+		}
+		if desired != "latest" {
+			for _, version := range inventory.Versions {
+				if version == desired {
+					return *inventory, true, nil
+				}
+			}
 		}
 	}
-	if succeeded || !foundBackend {
-		return asdfBackendObservation{}, foundBackend, nil
+	// A failed backend may contain the requested version. Without a positive
+	// match, a partial inventory cannot prove drift or absence.
+	if err != nil && (desired != "latest" || firstInstalled == nil) {
+		return asdfBackendObservation{}, found, err
 	}
-	return asdfBackendObservation{}, true, lastErr
+	if firstInstalled != nil {
+		return *firstInstalled, true, nil
+	}
+	return asdfBackendObservation{}, found, nil
 }
 
 func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -273,7 +328,7 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "asdf: no package name"}, nil
 	}
-	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]), asdfVersion(mc))
 	if err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
 	}
@@ -359,43 +414,48 @@ func (a *AsdfAdapter) CanRemove() bool { return true }
 // asdf/mise uninstall are version-dependent: `asdf uninstall <plugin> <version>`
 // and `mise uninstall <plugin>@<version>` require an exact installed version.
 // The version is read from mc.Config["version"]; a missing or "latest" value
-// falls back to the observed installed version so a default-version install
-// can be removed. Multiple installed versions without a configured version are
-// ambiguous ownership and fail closed; absence fails closed too.
+// resolves to the single observed installation. Both backends are queried to
+// identify which actually owns the requested version. Ambiguous ownership,
+// missing versions, and incomplete inventories fail before any uninstall.
 func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
-		return fmt.Errorf("asdf: no package name")
+		return errors.New("asdf: no package name")
 	}
-	version := asdfVersion(mc)
-	if version == "latest" {
-		installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
-		if err != nil {
-			return fmt.Errorf("asdf: resolve installed version for removal: %w", err)
+	packageID := misePackage(miseBackend(mc), pkg[0])
+	inventories, found, err := collectAsdfMiseInventories(ctx, rn, packageID)
+	if err != nil {
+		return fmt.Errorf("asdf: observe installed versions before removal: %w", err)
+	}
+	if !found {
+		return errors.New("asdf: neither asdf nor mise found")
+	}
+
+	requested := asdfVersion(mc)
+	type versionOwner struct {
+		backend string
+		version string
+	}
+	var owners []versionOwner
+	var versions []string
+	for _, inventory := range inventories {
+		for _, version := range inventory.Versions {
+			if requested == "latest" || version == requested {
+				owners = append(owners, versionOwner{backend: inventory.Backend, version: version})
+				versions = append(versions, inventory.Backend+"@"+version)
+			}
 		}
-		if !foundBackend {
-			return errors.New("asdf: neither asdf nor mise found")
-		}
-		if len(installed.Versions) == 0 {
+	}
+	if len(owners) == 0 {
+		if requested == "latest" {
 			return fmt.Errorf("asdf: removal requires an installed version; none found for %q", pkg[0])
 		}
-		if len(installed.Versions) > 1 {
-			return fmt.Errorf("asdf: removal of %q without a configured version is ambiguous (installed: %s); set config version = \"<exact installed version>\" or uninstall manually",
-				pkg[0], strings.Join(installed.Versions, ", "))
-		}
-		version = installed.Versions[0]
-		return removeAsdfVersion(ctx, rn, installed.Backend, misePackage(miseBackend(mc), pkg[0]), version)
+		return fmt.Errorf("asdf: version %q is not installed for %q", requested, pkg[0])
 	}
-	backends := []string{"asdf", "mise"}
-	if isMiseBackendPackage(misePackage(miseBackend(mc), pkg[0])) {
-		backends = []string{"mise"}
+	if len(owners) > 1 {
+		return fmt.Errorf("asdf: removal of %q is ambiguous (installed: %s); select a uniquely owned version or uninstall manually", pkg[0], strings.Join(versions, ", "))
 	}
-	for _, backend := range backends {
-		if run.LookPath(ctx, rn, backend) {
-			return removeAsdfVersion(ctx, rn, backend, misePackage(miseBackend(mc), pkg[0]), version)
-		}
-	}
-	return fmt.Errorf("asdf: neither asdf nor mise found")
+	return removeAsdfVersion(ctx, rn, owners[0].backend, packageID, owners[0].version)
 }
 
 func removeAsdfVersion(ctx context.Context, rn run.Runner, backend, pkg, version string) error {

@@ -33,6 +33,10 @@ const (
 	// ValidateSchema runs, so it surfaces via schema parse error handling
 	// rather than as a ValidationError.
 	ErrDupeTool ErrorCode = "E_DUPE_TOOL"
+	// ErrSchemaNotFound is emitted by the CLI when a schema-consuming command
+	// cannot find the declared schema file. It is not a schema finding, but it
+	// shares the error envelope so every --json consumer parses one shape.
+	ErrSchemaNotFound ErrorCode = "E_SCHEMA_NOT_FOUND"
 
 	// Warnings (soft — schema may still work).
 	WarnUnknownPlaceholder  ErrorCode = "W_UNKNOWN_PLACEHOLDER"
@@ -40,6 +44,8 @@ const (
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
 	WarnAutoChecksum        ErrorCode = "W_AUTO_CHECKSUM"
 	WarnEnvMissing          ErrorCode = "W_ENV_MISSING"
+	WarnInertTool           ErrorCode = "W_INERT_TOOL"
+	WarnAmbiguousCondition  ErrorCode = "W_AMBIGUOUS_CONDITION"
 )
 
 // ValidationError represents a single validation finding.

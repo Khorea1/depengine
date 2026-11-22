@@ -89,6 +89,7 @@ type ResolvedIdentity struct {
 	Package          string             `json:"package,omitempty"`
 	RequestedVersion *VersionIntent     `json:"requested_version,omitempty"`
 	Version          string             `json:"version,omitempty"`
+	Channel          string             `json:"channel,omitempty"`
 	Revision         string             `json:"revision,omitempty"`
 	Digest           string             `json:"digest,omitempty"`
 	Source           string             `json:"source,omitempty"`
@@ -111,7 +112,7 @@ func (i ResolvedIdentity) Validate() error {
 		return errors.New("package contains NUL")
 	}
 	for label, value := range map[string]string{
-		"version": i.Version, "revision": i.Revision,
+		"version": i.Version, "revision": i.Revision, "channel": i.Channel,
 		"architecture": i.Architecture, "platform": i.Platform,
 	} {
 		if strings.TrimSpace(value) != value {
@@ -212,13 +213,48 @@ type SecretReference struct {
 	Name     string `json:"name"`
 }
 
+// ElevationDecision states whether executing an operation needs elevated
+// privileges. It is a preview-only decision: adapters that cannot know it
+// before execution must leave it empty, which serializes as "unknown".
+type ElevationDecision string
+
+const (
+	ElevationNone     ElevationDecision = "none"
+	ElevationRequired ElevationDecision = "required"
+	ElevationUnknown  ElevationDecision = "unknown"
+)
+
+// Effective returns the decision with the explicit unknown default.
+func (e ElevationDecision) Effective() ElevationDecision {
+	if e == "" {
+		return ElevationUnknown
+	}
+	return e
+}
+
+func (e ElevationDecision) Valid() bool {
+	switch e {
+	case "", ElevationNone, ElevationRequired, ElevationUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Operation is one ordered action in resolution/execution/removal.
+//
+// Preview is a non-executable, adapter-known argv shown by dry-run. It must
+// never be consumed as execution input: executable argv belongs in Command and
+// stays gated by ArbitraryCode. Elevation is the adapter's preview decision for
+// this step; empty means unknown.
 type Operation struct {
-	Kind          string          `json:"kind"`
-	Description   string          `json:"description,omitempty"`
-	Effect        OperationEffect `json:"effect"`
-	Command       []string        `json:"command,omitempty"`
-	ArbitraryCode bool            `json:"arbitrary_code,omitempty"`
+	Kind          string            `json:"kind"`
+	Description   string            `json:"description,omitempty"`
+	Effect        OperationEffect   `json:"effect"`
+	Command       []string          `json:"command,omitempty"`
+	ArbitraryCode bool              `json:"arbitrary_code,omitempty"`
+	Preview       []string          `json:"preview,omitempty"`
+	Elevation     ElevationDecision `json:"elevation,omitempty"`
 }
 
 // Validate enforces operation-level safety invariants independently of the
@@ -244,6 +280,19 @@ func (o Operation) Validate() error {
 		for i, arg := range o.Command {
 			if strings.ContainsRune(arg, '\x00') {
 				return fmt.Errorf("operation %q command argument %d contains NUL", o.Kind, i)
+			}
+		}
+	}
+	if !o.Elevation.Valid() {
+		return fmt.Errorf("operation %q has invalid elevation decision %q", o.Kind, o.Elevation)
+	}
+	if len(o.Preview) > 0 {
+		if strings.TrimSpace(o.Preview[0]) == "" {
+			return fmt.Errorf("operation %q preview executable is empty", o.Kind)
+		}
+		for i, arg := range o.Preview {
+			if strings.ContainsRune(arg, '\x00') {
+				return fmt.Errorf("operation %q preview argument %d contains NUL", o.Kind, i)
 			}
 		}
 	}
@@ -461,6 +510,47 @@ func ownershipPathKey(value string) (string, error) {
 	return "", errors.New("path must be an absolute canonical Unix or Windows path")
 }
 
+// NormalizePreviewElevation makes the elevation decision explicit for every
+// mutating step in a resolved plan: adapters that cannot know the answer before
+// execution report "unknown" instead of omitting the field. This runs on the
+// resolution boundary, never on persisted state, so state round-trips keep
+// exactly the bytes they were given.
+func (p *ResolvedInstallPlan) NormalizePreviewElevation() {
+	normalizeOperations(p.Operations)
+	normalizeOperations(p.SourceMutations)
+	for i := range p.Hooks {
+		normalizeOperationElevation(&p.Hooks[i].Operation)
+	}
+	for i := range p.Ensures {
+		normalizeOperationElevation(&p.Ensures[i].Check)
+		normalizeOperationElevation(&p.Ensures[i].Apply)
+	}
+	if p.Preparation == nil {
+		return
+	}
+	normalizeOperations(p.Preparation.Probe)
+	normalizeOperations(p.Preparation.Commit)
+	for i := range p.Preparation.Prepare {
+		mutation := &p.Preparation.Prepare[i]
+		normalizeOperationElevation(&mutation.Apply)
+		if mutation.Rollback != nil {
+			normalizeOperationElevation(mutation.Rollback)
+		}
+	}
+}
+
+func normalizeOperations(operations []Operation) {
+	for i := range operations {
+		normalizeOperationElevation(&operations[i])
+	}
+}
+
+func normalizeOperationElevation(operation *Operation) {
+	if operation.Effect == EffectMutation && operation.Elevation == "" {
+		operation.Elevation = ElevationUnknown
+	}
+}
+
 // HasMutations reports whether execution of the plan can alter host state.
 func (p ResolvedInstallPlan) HasMutations() bool {
 	if p.Preparation != nil && (len(p.Preparation.Prepare) > 0 || len(p.Preparation.Commit) > 0) {
@@ -602,6 +692,7 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 
 func cloneOperation(op Operation) Operation {
 	op.Command = append([]string(nil), op.Command...)
+	op.Preview = append([]string(nil), op.Preview...)
 	return op
 }
 
@@ -696,6 +787,9 @@ func redactOperations(in []Operation) []Operation {
 		out[i].Description = run.RedactSensitiveText(out[i].Description)
 		if len(out[i].Command) > 0 {
 			out[i].Command = redactCommand(out[i].Command)
+		}
+		if len(out[i].Preview) > 0 {
+			out[i].Preview = redactCommand(out[i].Preview)
 		}
 	}
 	return out

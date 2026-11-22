@@ -154,7 +154,7 @@ func TestValidate_AllValidEdgeCases(t *testing.T) {
 // ============ Invalid schemas ============
 
 func TestValidate_InvalidDanglingRef(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dangling_ref.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_dangling_ref.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -174,7 +174,7 @@ func TestValidate_Cycle(t *testing.T) {
 }
 
 func TestValidate_MultipleErrors(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_multiple_errors.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -225,6 +225,24 @@ func TestValidate_DupeTool(t *testing.T) {
 	}
 }
 
+// validateMachineData unwraps the versioned machine-output envelope so these
+// tests assert the validate payload, not the wrapper.
+func validateMachineData(t *testing.T, output string) json.RawMessage {
+	t.Helper()
+	var envelope struct {
+		Version int             `json:"version"`
+		Command string          `json:"command"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil {
+		t.Fatalf("invalid JSON envelope: %v\n%s", err, output)
+	}
+	if envelope.Version != 1 || envelope.Command != "validate" {
+		t.Fatalf("envelope = v%d %q, want v1 validate", envelope.Version, envelope.Command)
+	}
+	return envelope.Data
+}
+
 func TestValidate_DupeToolJSON(t *testing.T) {
 	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dupe_tool.toml"), "--format=json")
 	if code != 2 {
@@ -234,7 +252,7 @@ func TestValidate_DupeToolJSON(t *testing.T) {
 		Errors   []json.RawMessage `json:"errors"`
 		Warnings []json.RawMessage `json:"warnings"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal(validateMachineData(t, output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
 	if len(result.Errors) != 1 {
@@ -274,7 +292,7 @@ func TestValidate_DupeToolSimpleListJSON(t *testing.T) {
 		Errors   []json.RawMessage `json:"errors"`
 		Warnings []json.RawMessage `json:"warnings"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal(validateMachineData(t, output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
 	if len(result.Errors) != 1 {
@@ -306,7 +324,7 @@ func TestValidate_StrictFlag(t *testing.T) {
 }
 
 func TestValidate_JSONFormat(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -314,7 +332,7 @@ func TestValidate_JSONFormat(t *testing.T) {
 		Errors   []json.RawMessage `json:"errors"`
 		Warnings []json.RawMessage `json:"warnings"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal(validateMachineData(t, output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
 	if len(result.Errors) == 0 {
@@ -331,7 +349,7 @@ func TestValidate_JSONFormatSuccess(t *testing.T) {
 		Errors   []json.RawMessage `json:"errors"`
 		Warnings []json.RawMessage `json:"warnings"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal(validateMachineData(t, output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
 	if len(result.Errors) != 0 {
@@ -358,7 +376,7 @@ func TestValidate_CheckEnvJSON(t *testing.T) {
 		Errors   []json.RawMessage `json:"errors"`
 		Warnings []json.RawMessage `json:"warnings"`
 	}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal(validateMachineData(t, output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
 	t.Logf("env warnings: %d", len(result.Warnings))

@@ -83,7 +83,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 	orderedMethods := ex.SelectedMethods(tool, clan)
 	methods := orderedMethods
 	if len(tool.Methods) == 0 {
-		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
+		return []MethodAttempt{{Kind: "", Status: "virtual", ReasonCode: ReasonVirtual, Error: "dependency group (no methods declared)"}}
 	}
 	attempts := make([]MethodAttempt, 0, len(tool.Methods))
 	appendAttempt := func(attempt MethodAttempt, method *config.MethodCandidate) {
@@ -122,6 +122,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		attempt.PlanIntent = selection.intent
 		if selection.err != nil {
 			attempt.Status = selection.status
+			attempt.ReasonCode = selection.reason
 			attempt.Error = selection.err.Error()
 			if blockedByTerminal == "" && IsTerminalMethodError(selection.err) {
 				blockedByTerminal = fmt.Sprintf("%s: %s", displayKind, selection.err.Error())
@@ -140,6 +141,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		verification, verifyErr := ex.VerifyResolvedCandidate(ctx, tool, method, resolvedPlan)
 		if verifyErr != nil {
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonVerifyFailed
 			attempt.Error = fmt.Sprintf("%s: verify desired state: %s", displayKind, run.RedactSensitiveText(verifyErr.Error()))
 			appendAttempt(attempt, method)
 			continue
@@ -159,11 +161,13 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 				detail = string(verification.State)
 			}
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonStateUnresolved
 			attempt.Error = fmt.Sprintf("%s: desired state %s: %s", displayKind, verification.State, run.RedactSensitiveText(detail))
 			appendAttempt(attempt, method)
 			continue
 		default:
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonStateUnresolved
 			attempt.Error = fmt.Sprintf("%s: invalid verification state %q", displayKind, verification.State)
 			appendAttempt(attempt, method)
 			continue
@@ -176,6 +180,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		sources, sourceErr := sourcesForResolvedPlan(method.Sources, resolvedPlan)
 		if sourceErr != nil {
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonSourceFailed
 			attempt.Error = sourceErr.Error()
 			appendAttempt(attempt, method)
 			continue
@@ -183,6 +188,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		sourceProbe, probeErr := probeCandidateSources(ctx, manager, sources)
 		if probeErr != nil {
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonSourceProbeFailed
 			attempt.Error = probeErr.Error()
 			appendAttempt(attempt, method)
 			continue
@@ -195,6 +201,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 			// candidate ready even though Execute will deterministically reject it.
 			if !checkAvailable(ctx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
 				attempt.Status = "skip_unavailable"
+				attempt.ReasonCode = ReasonPackageNotFound
 				attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
 				appendAttempt(attempt, method)
 				continue
@@ -213,6 +220,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 			// before ever reaching this candidate: report it as blocked,
 			// never as runnable.
 			attempt.Status = "failed"
+			attempt.ReasonCode = ReasonBlockedByTerminal
 			attempt.Error = fmt.Sprintf("blocked by terminal error in earlier method: %s", blockedByTerminal)
 			appendAttempt(attempt, method)
 			continue
@@ -245,6 +253,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 				Kind:           method.Kind,
 				Label:          method.Label,
 				Status:         "skip_policy",
+				ReasonCode:     ReasonMethodOnly,
 				Error:          "excluded by method_only",
 				Candidate:      candidate,
 				CandidateKnown: candidateKnown,

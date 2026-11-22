@@ -3,10 +3,13 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
@@ -45,6 +48,40 @@ func TestNativeAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 				t.Fatalf("ValidateResolution() error = %v; resolved = %#v", err, resolved)
 			}
 		})
+	}
+}
+
+// ResolvePlan must expose the exact native argv as a non-executable preview and
+// report its elevation decision, without turning the operation into arbitrary
+// code.
+func TestNativeAdapterV2ResolvePreviewsInstallCommand(t *testing.T) {
+	tool := &config.Tool{Name: "jq"}
+	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "jq"}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := NewNativeAdapter("debian").ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if len(resolved.Operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(resolved.Operations))
+	}
+	op := resolved.Operations[0]
+	want := native.BuildInstallCmd("debian", "jq")
+	if !reflect.DeepEqual(op.Preview, want) {
+		t.Fatalf("preview = %v, want %v", op.Preview, want)
+	}
+	if op.Command != nil || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	if op.Elevation != plan.ElevationRequired {
+		t.Fatalf("elevation = %q, want required for apt", op.Elevation)
+	}
+	lines := operationPreviewLines(resolved)
+	if len(lines) != 1 || !strings.Contains(lines[0], "elevation: required") {
+		t.Fatalf("preview lines = %v, want one line with elevation", lines)
 	}
 }
 
@@ -350,7 +387,7 @@ func TestNativeByManagerWingetV2ObserveReportsVersionIdentity(t *testing.T) {
 	tool, mc := wingetV2TestMethod()
 	adapter := &NativeByManagerAdapter{managerName: "winget"}
 
-	observation, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 x64 winget\n"}, tool, mc)
+	observation, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.53.0 x64 winget\n")}, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
@@ -365,16 +402,108 @@ func TestNativeByManagerWingetV2ObserveReportsVersionIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if absent.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want absent on non-zero exit", absent.Presence)
+	if absent.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() presence = %q, want unknown on generic non-zero exit", absent.Presence)
 	}
 
 	unparseable, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: "no matching packages\n"}, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if unparseable.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want absent when output has no package row", unparseable.Presence)
+	if unparseable.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() presence = %q, want unknown when output has no package row", unparseable.Presence)
+	}
+}
+
+// WinGet distinguishes a verified no-results HRESULT from inventory failures.
+// A query failure must not be mistaken for evidence permitting installation.
+func TestWingetObserveRequiresValidatedInventory(t *testing.T) {
+	tool, mc := wingetV2TestMethod()
+	type wingetObserver interface {
+		Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error)
+		Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool
+	}
+	for _, adapter := range []struct {
+		name string
+		impl wingetObserver
+	}{
+		{"native clan", NewNativeAdapter("windows")},
+		{"explicit winget", &NativeByManagerAdapter{managerName: "winget"}},
+	} {
+		t.Run(adapter.name, func(t *testing.T) {
+			for _, tt := range []struct {
+				name   string
+				exit   int
+				stdout string
+				want   plan.PresenceState
+			}{
+				{"installed", 0, wingetTestTable("Git Git.Git 2.53.0 x64 winget\n"), plan.PresencePresent},
+				{"verified no packages", -1978335212, "No package found matching input criteria.\n", plan.PresenceAbsent},
+				{"generic query failure", 1, "", plan.PresenceUnknown},
+				{"winget command failed", -1978335229, "", plan.PresenceUnknown},
+				{"success without inventory", 0, "", plan.PresenceUnknown},
+				{"unrecognized response", 0, "No package found matching input criteria.\n", plan.PresenceUnknown},
+				{"wrong package row", 0, wingetTestTable("Git Other.Git 2.53.0 x64 winget\n"), plan.PresenceUnknown},
+				{"conflicting duplicate rows", 0, wingetTestTable("Git Git.Git 2.53.0 x64 winget\nGit Git.Git 2.52.0 x86 winget\n"), plan.PresenceUnknown},
+				{"repeated identical rows", 0, wingetTestTable("Git Git.Git 2.53.0 x64 winget\nGit Git.Git 2.53.0 x64 winget\n"), plan.PresenceUnknown},
+				{"incomplete row followed by present row", 0, wingetTestTable("Git Git.Git\nGit Git.Git 2.53.0 x64 winget\n"), plan.PresenceUnknown},
+				{"unrelated row before matching row", 0, wingetTestTable("Other Other.App 1.2.0 winget\nGit Git.Git 2.53.0 x64 winget\n"), plan.PresencePresent},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					rn := &run.FakeRunner{ExitCode: tt.exit, Stdout: tt.stdout}
+					got, err := adapter.impl.Observe(context.Background(), rn, tool, mc)
+					if err != nil {
+						t.Fatalf("Observe() error = %v", err)
+					}
+					if got.Presence != tt.want {
+						t.Fatalf("Observe() = %+v, want %s", got, tt.want)
+					}
+					if tt.want != plan.PresencePresent && (len(got.KnownFields) != 0 || len(got.Resources) != 0 || got.Identity != (plan.ObservedIdentity{})) {
+						t.Fatalf("inconclusive inventory supplied identity: %+v", got)
+					}
+					if checked := adapter.impl.Check(context.Background(), &run.FakeRunner{ExitCode: tt.exit, Stdout: tt.stdout}, tool, mc); checked != (tt.want == plan.PresencePresent) {
+						t.Fatalf("Check() = %t, want %t", checked, tt.want == plan.PresencePresent)
+					}
+				})
+			}
+			t.Run("incomplete captured output", func(t *testing.T) {
+				rn := &run.FakeRunner{
+					Stdout:  wingetTestTable("Git Git.Git 2.53.0 x64 winget\n"),
+					WaitErr: errors.New("output capture incomplete"),
+				}
+				got, err := adapter.impl.Observe(context.Background(), rn, tool, mc)
+				if err != nil || got.Presence != plan.PresenceUnknown || len(got.KnownFields) != 0 {
+					t.Fatalf("Observe() = %+v, %v, want unknown with no evidence", got, err)
+				}
+				if adapter.impl.Check(context.Background(), rn, tool, mc) {
+					t.Fatal("Check() accepted incomplete inventory")
+				}
+			})
+		})
+	}
+}
+
+func TestNativeByManagerWingetInstalledVersionRejectsAmbiguousInventory(t *testing.T) {
+	tool, mc := wingetV2TestMethod()
+	adapter := &NativeByManagerAdapter{managerName: "winget"}
+	for _, tt := range []struct {
+		name   string
+		stdout string
+		valid  bool
+	}{
+		{"one row", wingetTestTable("Git Git.Git 2.53.0 winget\n"), true},
+		{"conflicting versions", wingetTestTable("Git Git.Git 2.53.0 winget\nGit Git.Git 2.52.0 winget\n"), false},
+		{"duplicate rows", wingetTestTable("Git Git.Git 2.53.0 winget\nGit Git.Git 2.53.0 winget\n"), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := adapter.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: tt.stdout}, tool, mc)
+			if tt.valid && (err != nil || got != "2.53.0") {
+				t.Fatalf("InstalledVersion() = %q, %v, want 2.53.0", got, err)
+			}
+			if !tt.valid && err == nil {
+				t.Fatalf("InstalledVersion() = %q, want ambiguity error", got)
+			}
+		})
 	}
 }
 
@@ -386,7 +515,7 @@ func TestNativeByManagerWingetV2ObserveReconcilesDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	drifted, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: "Git Git.Git 2.52.0 winget\n"}, tool, mc)
+	drifted, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.52.0 winget\n")}, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
@@ -409,7 +538,7 @@ func TestNativeByManagerWingetV2ObserveReconcilesDrift(t *testing.T) {
 		t.Fatalf("Reconcile() drift = %#v, want version 2.53.0 -> 2.52.0", result.Drift)
 	}
 
-	matched, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 winget\n"}, tool, mc)
+	matched, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.53.0 winget\n")}, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
@@ -529,9 +658,9 @@ func TestNativeByManagerWingetV2VerifyFieldsChangeObservation(t *testing.T) {
 			toolB, methodB := wingetV2TestMethod()
 			methodB.Config[field.name] = field.value
 			adapter := &NativeByManagerAdapter{managerName: "winget"}
-			outputA, outputB := "Git Git.Git 2.53.0 x64 winget\n", "Git Git.Git 2.53.0 x64 winget\n"
+			outputA, outputB := wingetTestTable("Git Git.Git 2.53.0 x64 winget\n"), wingetTestTable("Git Git.Git 2.53.0 x64 winget\n")
 			if field.name == "pkg" {
-				outputB = "Other Other.Package 2.53.0 x64 winget\n"
+				outputB = wingetTestTable("Other Other.Package 2.53.0 x64 winget\n")
 			}
 			runnerA := &run.FakeRunner{Stdout: outputA}
 			runnerB := &run.FakeRunner{Stdout: outputB}
@@ -826,5 +955,136 @@ func TestMacPortsAdapterObservesInventoryFailClosed(t *testing.T) {
 	broken, err := adapter.Observe(context.Background(), &run.FakeRunner{Err: spawnErr}, tool, mc)
 	if !errors.Is(err, spawnErr) || broken.Presence != plan.PresenceBroken {
 		t.Fatalf("Observe() spawn failure = (%#v, %v), want broken and original error", broken, err)
+	}
+}
+
+// wingetTestTable emits a realistic fixed-column WinGet list rather than
+// unstructured rows, which must never count as proof of installed identity.
+func wingetTestTable(rows string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-20s %-28s %-16s %-12s %s\n", "Name", "Id", "Version", "Available", "Source")
+	b.WriteString(strings.Repeat("-", 90) + "\n")
+	for _, row := range strings.Split(strings.TrimSpace(rows), "\n") {
+		fields := strings.Fields(row)
+		if len(fields) < 2 {
+			continue
+		}
+		name, id, version, available, source := fields[0], fields[1], "", "", ""
+		if len(fields) > 2 {
+			version = fields[2]
+		}
+		if len(fields) == 4 {
+			source = fields[3]
+		}
+		if len(fields) >= 5 {
+			available, source = fields[3], fields[4]
+		}
+		fmt.Fprintf(&b, "%-20s %-28s %-16s %-12s %s\n", name, id, version, available, source)
+	}
+	return b.String()
+}
+
+func TestWingetInventoryStructuredTableBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name, stdout    string
+		version, source string
+		ok              bool
+	}{
+		{
+			name: "padded name and crlf",
+			stdout: "Warning: checking inventory\r\n" + strings.ReplaceAll(
+				fmt.Sprintf("%-20s %-28s %-16s %-12s %s\n", "Name", "Id", "Version", "Available", "Source")+
+					strings.Repeat("-", 90)+"\n"+
+					fmt.Sprintf("%-20s %-28s %-16s %-12s %s\n", "Git for Windows", "Git.Git", "2.53.0", "", "winget"), "\n", "\r\n"),
+			version: "2.53.0", source: "winget", ok: true,
+		},
+		{name: "two tables", stdout: wingetTestTable("Git Git.Git 2.53.0 winget") + wingetTestTable("Git Git.Git 2.52.0 winget")},
+		{name: "truncated id", stdout: wingetTestTable("Git Git.Gi… 2.53.0 winget")},
+		{name: "missing version", stdout: wingetTestTable("Git Git.Git")},
+		{name: "nonstandard headings", stdout: strings.Replace(wingetTestTable("Git Git.Git 2.53.0 winget"), "Version", "Versão ", 1)},
+		{name: "misleading footer header", stdout: wingetTestTable("Git Git.Git 2.53.0 winget") +
+			"Name Id Version Source\n" + strings.Repeat("-", 90) + "\nGit Git.Git 2.53.0 winget\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version, source, ok := wingetPackageFromOutput([]byte(tc.stdout), "Git.Git")
+			if version != tc.version || source != tc.source || ok != tc.ok {
+				t.Fatalf("wingetPackageFromOutput() = (%q, %q, %t), want (%q, %q, %t)", version, source, ok, tc.version, tc.source, tc.ok)
+			}
+		})
+	}
+}
+
+func TestWingetInventoryRejectsUnstructuredOrMisalignedLines(t *testing.T) {
+	tool, mc := wingetV2TestMethod()
+	cases := []struct{ name, stdout string }{
+		{"unstructured exact row", "Git Git.Git 2.53.0 winget\n"},
+		{"diagnostic claims identity", "Warning: Git.Git 2.53.0 was not checked\n"},
+		{"missing table separator", "Name                 Id                           Version          Available    Source\nGit                  Git.Git                      2.53.0                       winget\n"},
+		{"package name not package id", wingetTestTable("Git.Git Other.Package 2.53.0 winget\n")},
+	}
+	for _, adapter := range []struct {
+		name string
+		impl interface {
+			Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error)
+			Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool
+		}
+	}{
+		{"native clan", NewNativeAdapter("windows")},
+		{"explicit winget", &NativeByManagerAdapter{managerName: "winget"}},
+	} {
+		for _, tc := range cases {
+			t.Run(adapter.name+"/"+tc.name, func(t *testing.T) {
+				observation, err := adapter.impl.Observe(context.Background(), &run.FakeRunner{Stdout: tc.stdout}, tool, mc)
+				if err != nil || observation.Presence != plan.PresenceUnknown || len(observation.KnownFields) != 0 {
+					t.Fatalf("Observe() = (%+v, %v), want unknown with no identity", observation, err)
+				}
+				if adapter.impl.Check(context.Background(), &run.FakeRunner{Stdout: tc.stdout}, tool, mc) {
+					t.Fatal("Check() accepted unstructured identity")
+				}
+			})
+		}
+	}
+	for _, tc := range cases {
+		t.Run("InstalledVersion/"+tc.name, func(t *testing.T) {
+			adapter := &NativeByManagerAdapter{managerName: "winget"}
+			if version, err := adapter.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: tc.stdout}, tool, mc); err == nil {
+				t.Fatalf("InstalledVersion() = %q without error on unproven identity", version)
+			}
+		})
+	}
+}
+
+func TestWingetSourceConstrainedChecksRequireObservedSource(t *testing.T) {
+	tool, mc := wingetV2TestMethod()
+	adapter := &NativeByManagerAdapter{managerName: "winget"}
+	for _, tc := range []struct {
+		name, stdout string
+		want         bool
+	}{
+		{"matching source", wingetTestTable("Git Git.Git 2.53.0 winget"), true},
+		{"different source", wingetTestTable("Git Git.Git 2.53.0 private"), false},
+		{"missing source", wingetTestTable("Git Git.Git 2.53.0"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checked := adapter.Check(context.Background(), &run.FakeRunner{Stdout: tc.stdout}, tool, mc)
+			if checked != tc.want {
+				t.Fatalf("Check() = %t, want %t", checked, tc.want)
+			}
+			version, err := adapter.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: tc.stdout}, tool, mc)
+			if tc.want && (err != nil || version != "2.53.0") {
+				t.Fatalf("InstalledVersion() = (%q, %v), want 2.53.0", version, err)
+			}
+			if !tc.want && err == nil {
+				t.Fatalf("InstalledVersion() = %q without source mismatch error", version)
+			}
+		})
+	}
+	// When the recipe does not constrain a source, Check is allowed to
+	// accept an otherwise verified package regardless of source.
+	withoutSource := &config.MethodCandidate{Kind: mc.Kind, Config: map[string]any{
+		"pkg": "Git.Git", "version": "2.53.0",
+	}}
+	if !adapter.Check(context.Background(), &run.FakeRunner{Stdout: wingetTestTable("Git Git.Git 2.53.0 private")}, tool, withoutSource) {
+		t.Fatal("Check() rejected verified package without a source constraint")
 	}
 }

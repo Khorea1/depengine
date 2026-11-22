@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -238,7 +239,10 @@ func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
 	version, bins, err := a.installedEntry(ctx, rn, tool, mc)
-	if err != nil || version == "" || !cargoBinsSatisfy(bins, mc) {
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
+	}
+	if version == "" || !cargoBinsSatisfy(bins, mc) {
 		return absent, nil
 	}
 	if requested, _ := mc.Config["version"].(string); requested != "" && sameCargoVersion(version, requested) {
@@ -512,30 +516,110 @@ func (a *CargoAdapter) installedEntry(ctx context.Context, rn run.Runner, tool *
 		args = append(args, "--root", config.ExpandHomeDir(root))
 	}
 	res := rn.Run(ctx, "cargo", args...)
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", nil, nil
+	if err := run.CheckResultCompleteOutput(res, "cargo: installed package inventory"); err != nil {
+		return "", nil, err
 	}
-	lines := strings.Split(string(res.Stdout), "\n")
-	for i, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] != pkg || !strings.HasSuffix(fields[1], ":") {
+	return cargoParseInstalledEntry(res.Stdout, pkg, mc)
+}
+
+// cargoInstallHeader matches the "<package> v<semver>:" lines emitted by
+// `cargo install --list`. Source descriptions follow the version in parentheses.
+// Binary names follow on lines indented by four spaces.
+var cargoInstallHeader = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9_-]*) v([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?: \(.+\))?:$`)
+
+// cargoParseInstalledEntry validates the inventory and selects one package
+// version using the requested version or binaries. Unresolved duplicates are
+// ambiguous and cannot establish presence.
+func cargoParseInstalledEntry(output []byte, pkg string, mc *config.MethodCandidate) (string, []string, error) {
+	if len(output) == 0 {
+		return "", nil, nil // Cargo emits nothing for a genuinely empty inventory.
+	}
+	if output[len(output)-1] != '\n' {
+		return "", nil, errors.New("cargo: installed package inventory is incomplete (missing final newline)")
+	}
+	entries := make(map[string][]string)
+	var current, currentVersion string
+	var currentBins []string
+	currentHasBin := false
+	lines := strings.Split(string(output), "\n")
+	for i, raw := range lines[:len(lines)-1] {
+		line := strings.TrimSuffix(raw, "\r")
+		if strings.HasPrefix(line, "    ") {
+			bin := strings.TrimPrefix(line, "    ")
+			if current == "" || bin == "" || len(strings.Fields(bin)) != 1 || strings.TrimSpace(bin) != bin {
+				return "", nil, fmt.Errorf("cargo: malformed installed package inventory at line %d", i+1)
+			}
+			currentHasBin = true
+			if current == pkg {
+				currentBins = append(currentBins, bin)
+			}
 			continue
 		}
-		version := strings.TrimPrefix(strings.TrimSuffix(fields[1], ":"), "v")
-		var bins []string
-		for j := i + 1; j < len(lines); j++ {
-			next := lines[j]
-			if strings.TrimSpace(next) == "" {
+		if current != "" && !currentHasBin {
+			return "", nil, fmt.Errorf("cargo: installed package inventory has no binaries for %q", current)
+		}
+		parts := cargoInstallHeader.FindStringSubmatch(line)
+		if parts == nil {
+			return "", nil, fmt.Errorf("cargo: malformed installed package inventory at line %d", i+1)
+		}
+		if current == pkg {
+			entries[currentVersion] = append(entries[currentVersion], currentBins...)
+		}
+		current, currentVersion, currentBins, currentHasBin = parts[1], parts[2], nil, false
+	}
+	if current != "" && !currentHasBin {
+		return "", nil, fmt.Errorf("cargo: installed package inventory has no binaries for %q", current)
+	}
+	if current == pkg {
+		entries[currentVersion] = append(entries[currentVersion], currentBins...)
+	}
+	if len(entries) == 0 {
+		return "", nil, nil
+	}
+	if requested, _ := mc.Config["version"].(string); requested != "" {
+		for version, bins := range entries {
+			if sameCargoVersion(version, requested) {
+				return version, bins, nil
+			}
+		}
+	}
+	if wanted := cargoStringList(mc, "bins"); len(wanted) > 0 {
+		selected := ""
+		for version, bins := range entries {
+			if !containsCargoBins(bins, wanted) {
 				continue
 			}
-			if len(next) == len(strings.TrimLeft(next, " \t")) {
+			if selected != "" {
+				return "", nil, errors.New("cargo: installed package inventory has ambiguous versions for requested binaries")
+			}
+			selected = version
+		}
+		if selected != "" {
+			return selected, entries[selected], nil
+		}
+	}
+	if len(entries) == 1 {
+		for version, bins := range entries {
+			return version, bins, nil
+		}
+	}
+	return "", nil, errors.New("cargo: installed package inventory has ambiguous versions")
+}
+
+func containsCargoBins(installed, wanted []string) bool {
+	for _, bin := range wanted {
+		found := false
+		for _, installedBin := range installed {
+			if installedBin == bin {
+				found = true
 				break
 			}
-			bins = append(bins, strings.TrimSpace(next))
 		}
-		return version, bins, nil
+		if !found {
+			return false
+		}
 	}
-	return "", nil, nil
+	return true
 }
 
 // InstalledVersion reports the installed crate version from the same cargo

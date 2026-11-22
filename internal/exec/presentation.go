@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+
+	"github.com/Khorea1/depengine/internal/plan"
 )
 
 // shouldUseColor reports whether ANSI color codes should be emitted for the
@@ -96,10 +99,55 @@ func (ex *Executor) recordToolResult(ctx context.Context, rc *runContext, result
 	}
 	if !ex.quiet {
 		ex.outputf("%s", ex.colorizeStatusSymbol(formatToolResult(result.Tool, result.Status, presentedMethod, result.Error)))
+		if ex.dryRun && result.Status == StatusWouldInstall {
+			for _, line := range operationPreviewLines(result.PlanIntent) {
+				ex.outputf("    %s\n", line)
+			}
+		}
 		if result.RebootRequired {
 			ex.outputf("    reboot required to complete %s\n", result.Tool)
 		}
 	}
+}
+
+// operationPreviewLines renders what the resolved plan says a dry-run would
+// execute. Only steps whose adapter declared a preview argv or an elevation
+// decision are shown; everything else stays an explicit unknown in JSON rather
+// than being invented here.
+func operationPreviewLines(p *plan.ResolvedInstallPlan) []string {
+	if p == nil {
+		return nil
+	}
+	var lines []string
+	for _, op := range p.Operations {
+		if len(op.Preview) == 0 && op.Elevation == "" {
+			continue
+		}
+		line := "step " + op.Kind
+		if len(op.Preview) > 0 {
+			line += ": " + formatPreviewArgv(op.Preview)
+		}
+		switch op.Elevation.Effective() {
+		case plan.ElevationRequired:
+			line += " (elevation: required)"
+		case plan.ElevationNone:
+			line += " (elevation: none)"
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func formatPreviewArgv(argv []string) string {
+	parts := make([]string, len(argv))
+	for i, arg := range argv {
+		if arg == "" || strings.ContainsAny(arg, " \t\"'") {
+			parts[i] = strconv.Quote(arg)
+			continue
+		}
+		parts[i] = arg
+	}
+	return strings.Join(parts, " ")
 }
 
 func (ex *Executor) recordBlockedTool(ctx context.Context, rc *runContext, toolName string) {

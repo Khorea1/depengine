@@ -151,3 +151,22 @@ func TestExecutorUsesResolvedEnvironmentForObservationAndStateProbe(t *testing.T
 		t.Fatalf("version = %q, version target = %q", got, adapter.versionTarget)
 	}
 }
+
+func TestMethodForResolvedTargetPinsHTTPObservationAndState(t *testing.T) {
+	for _, kind := range []string{"http", "github"} {
+		t.Run(kind, func(t *testing.T) {
+			method := &config.MethodCandidate{Kind: kind, Config: map[string]any{
+				"url": "https://example.invalid/old", "checksum": "sha256:old", "binary": "cli",
+			}}
+			resolved := plan.New("cli", kind, true)
+			resolved.Artifacts = []plan.Artifact{{URL: "https://example.invalid/pinned", Checksum: "sha256:pinned"}}
+			projected := methodForResolvedTarget(method, &resolved)
+			if projected == method || projected.Config["url"] != resolved.Artifacts[0].URL || projected.Config["checksum"] != resolved.Artifacts[0].Checksum {
+				t.Fatalf("projected method = %+v, want pinned artifact without in-place mutation", projected)
+			}
+			if method.Config["url"] != "https://example.invalid/old" || method.Config["checksum"] != "sha256:old" {
+				t.Fatalf("original method changed: %+v", method)
+			}
+		})
+	}
+}

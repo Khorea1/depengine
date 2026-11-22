@@ -158,6 +158,16 @@ func (a *CondaAdapter) queryPackage(ctx context.Context, rn run.Runner, tool *co
 	if err := json.Unmarshal(res.Stdout, &packages); err != nil {
 		return nil, fmt.Errorf("conda: parse list output: %w", err)
 	}
+	// A successful `conda list --json` returns an array. A JSON null or
+	// nameless record is not evidence that the requested package is absent.
+	if packages == nil {
+		return nil, errors.New("conda: list returned null package inventory")
+	}
+	for i := range packages {
+		if packages[i].Name == "" {
+			return nil, fmt.Errorf("conda: list entry %d has no package name", i)
+		}
+	}
 	for i := range packages {
 		if strings.EqualFold(packages[i].Name, pkg) {
 			return &packages[i], nil

@@ -23,6 +23,20 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+type bundlePayloadsKey struct{}
+
+// BundleArtifactKey identifies the locked transport identity used by offline
+// installation. It intentionally includes the tool and method as well as URL.
+func BundleArtifactKey(tool, method, url, checksum string) string {
+	return tool + "\x00" + method + "\x00" + url + "\x00" + strings.ToLower(checksum)
+}
+
+// WithBundlePayloads requires matching HTTP artifacts to come from payloads,
+// never from the download cache or network.
+func WithBundlePayloads(ctx context.Context, payloads map[string]string) context.Context {
+	return context.WithValue(ctx, bundlePayloadsKey{}, payloads)
+}
+
 // HTTPAdapter implements exec.AdapterV2 for HTTP(S) downloads.
 // Supports archive extraction, checksum verification, and {latest}
 // resolution via GitHub releases API.
@@ -56,7 +70,27 @@ func (a *HTTPAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *conf
 	if err := a.rejectUntrackedDebLifecycle(mc, resolved, ""); err != nil {
 		return resolved, err
 	}
+	annotateInstallElevation(resolved, a.RequiresElevation(tool, mc))
 	return resolved, nil
+}
+
+// annotateInstallElevation records the adapter's privilege decision on the
+// install step. The concrete install argv (temporary paths, extraction) is only
+// known during execution, so Preview stays absent and the step reports the
+// decision without pretending to know the command.
+func annotateInstallElevation(resolved *plan.ResolvedInstallPlan, required bool) {
+	if resolved == nil {
+		return
+	}
+	decision := plan.ElevationNone
+	if required {
+		decision = plan.ElevationRequired
+	}
+	for i := range resolved.Operations {
+		if resolved.Operations[i].Kind == "install" {
+			resolved.Operations[i].Elevation = decision
+		}
+	}
 }
 
 func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -206,15 +240,8 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 
 	if extractTo != "" {
-		target := binary
-		if target == "" {
-			if tool == nil {
-				return false
-			}
-			target = tool.Name
-		}
-		info, err := os.Stat(filepath.Join(extractTo, target))
-		return err == nil && info.Mode().IsRegular()
+		observation, _ := observeExplicitHTTPFile(tool, mc)
+		return observation.Presence == plan.PresencePresent
 	}
 
 	if binary != "" {
@@ -237,13 +264,36 @@ func (a *HTTPAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if err := a.rejectUntrackedDebLifecycle(mc, nil, ""); err != nil {
 		return plan.Observation{}, err
 	}
-	if !a.Check(ctx, rn, tool, mc) {
+	if observed, handled := observeExplicitHTTPFile(tool, mc); handled {
+		if observed.Presence != plan.PresencePresent {
+			return observed, nil
+		}
+	} else if !a.Check(ctx, rn, tool, mc) {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	// Presence is not sufficient evidence of an installed raw artifact when
+	// the recipe pins its exact bytes. Verify the file that was installed,
+	// not the download cache or the checksum of an unrelated archive.
+	required, verified, err := a.verifyInstalledRawChecksum(tool, mc)
+	if err != nil {
+		return plan.Observation{
+			Presence: plan.PresenceBroken,
+			Detail:   "installed raw payload failed checksum verification: " + err.Error(),
+		}, nil
+	}
+	if required && !verified {
+		return plan.Observation{
+			Presence: plan.PresenceUnknown,
+			Detail:   "cannot verify pinned raw payload without an exact installed file location",
+		}, nil
 	}
 	observation := plan.Observation{Presence: plan.PresencePresent}
 	if tool.Name != "" {
 		observation.Identity = plan.ObservedIdentity{Package: tool.Name}
 		observation.KnownFields = []plan.IdentityField{plan.FieldPackage}
+	}
+	if resource, ok := a.observedRawFileSlot(tool, mc); ok {
+		observation.Resources = []plan.ObservedResource{resource}
 	}
 	return observation, nil
 }
@@ -399,23 +449,31 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	// Authenticated artifacts bypass the URL-only cache. The same URL may
 	// resolve to different content for different credentials, and the secret
 	// value must never become part of a cache key.
-	cacheEnabled := mc == nil || mc.SecretRef == nil
+	bundlePayloads, offline := ctx.Value(bundlePayloadsKey{}).(map[string]string)
+	artifactChecksum, _ := mc.Config["checksum"].(string)
+	payloadPath := ""
+	if offline {
+		payloadPath = bundlePayloads[BundleArtifactKey(tool.Name, mc.Kind, resolvedURL, artifactChecksum)]
+		if payloadPath == "" {
+			return fmt.Errorf("http: offline bundle has no payload for %s/%s", tool.Name, mc.Kind)
+		}
+	}
+	cacheEnabled := !offline && (mc == nil || mc.SecretRef == nil)
 	cachedPath := ""
 	if cacheEnabled {
 		cachedPath = downloadcache.Lookup(resolvedURL)
 	}
 	fromCache := false
-
-	if cachedPath != "" {
-		// Copy the cached file to the temp location.
-		if err := copyLocalFile(cachedPath, tmpFile); err != nil {
-			// Cache read error is non-fatal — fall through to download.
-		} else {
+	if offline {
+		if err := copyLocalFile(payloadPath, tmpFile); err != nil {
+			return fmt.Errorf("http: read offline bundle payload for %s: %w", tool.Name, err)
+		}
+	} else if cachedPath != "" {
+		if err := copyLocalFile(cachedPath, tmpFile); err == nil {
 			fromCache = true
 		}
 	}
-
-	if !fromCache {
+	if !offline && !fromCache {
 		if err := downloadResolvedArtifact(ctx, rn, resolvedURL, tmpFile, bearerCredential, hasBearerCredential); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}
@@ -615,7 +673,6 @@ func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, fi
 		return fmt.Errorf("%s:auto: cannot determine filename from URL %q", cc.algorithm, downloadURL)
 	}
 
-	// Build the list of checksum URLs to try.
 	var checksumURLs []string
 	if cc.url != "" {
 		checksumURLs = []string{cc.url}

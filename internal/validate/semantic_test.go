@@ -9,7 +9,7 @@ import (
 	"github.com/Khorea1/depengine/internal/methodkind"
 )
 
-// ---------- Dangling references ----------
+// Dangling references
 
 func TestValidateDanglingReferences_Valid(t *testing.T) {
 	s := &config.Schema{
@@ -55,7 +55,7 @@ func TestValidateDanglingReferences_MultipleDeps(t *testing.T) {
 	}
 }
 
-// ---------- Cycles ----------
+// Dependency cycles
 
 func TestValidateCycles_NoCycle(t *testing.T) {
 	s := &config.Schema{
@@ -142,7 +142,7 @@ func TestValidateCycles_NoDeps(t *testing.T) {
 	}
 }
 
-// ---------- Malformed URLs ----------
+// Malformed URLs
 
 func TestValidateMalformedURLs_ValidHTTP(t *testing.T) {
 	s := &config.Schema{
@@ -342,7 +342,7 @@ func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 	}
 }
 
-// ---------- Unknown distro family ----------
+// Unknown distro families
 
 func TestValidateUnknownDistroFamily_Valid(t *testing.T) {
 	s := &config.Schema{
@@ -417,7 +417,7 @@ func TestValidateUnknownDistroFamily_Multiple(t *testing.T) {
 	}
 }
 
-// ---------- Integration from TOML files ----------
+// TOML fixtures
 
 func TestValidateSchemaFromFile_InvalidDanglingRef(t *testing.T) {
 	s := parseTestdata(t, "invalid_dangling_ref.toml")
@@ -531,6 +531,32 @@ func TestValidateArtifactContractsRejectHTTPPlatformInstallers(t *testing.T) {
 				}
 			} else if !strings.Contains(message, "no dedicated installer method is available") {
 				t.Fatalf("%s diagnostic must not recommend a nonexistent method: %q", ext, message)
+			}
+		})
+	}
+}
+
+func TestValidateArtifactContractsRejectInstallerScripts(t *testing.T) {
+	tests := []struct {
+		name   string
+		method *config.MethodCandidate
+	}{
+		{name: "http", method: mc("http", nil, map[string]any{"url": "https://example.com/install.sh"})},
+		{name: "github", method: mc("github", nil, map[string]any{
+			"repo": "owner/repo", "asset": "install-{os}.ps1",
+		})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{tt.method}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s installer script to be rejected", tt.name)
+			}
+			if !strings.Contains(r.Errors[0].Message, "never executes installer scripts") {
+				t.Fatalf("%s diagnostic = %q, want installer-script boundary", tt.name, r.Errors[0].Message)
 			}
 		})
 	}

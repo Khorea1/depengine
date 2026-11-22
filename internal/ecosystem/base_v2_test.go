@@ -139,6 +139,7 @@ func TestBaseAdapterV2ObserveProjectsOnlyVerifiedScopes(t *testing.T) {
 			name:      "flatpak user",
 			kind:      "flatpak",
 			config:    map[string]any{"pkg": "org.demo.App", "scope": "user"},
+			stdout:    "Application ID Origin Installation Arch Branch\norg.demo.App flathub user x86_64 stable\n",
 			wantScope: string(plan.ScopeUser),
 			wantKnown: true,
 		},
@@ -635,6 +636,79 @@ func TestBaseAdapterV2InstallResolvedRejectsNonCanonicalOperations(t *testing.T)
 			err := adapter.InstallResolved(context.Background(), testV2BaseRunner(), tool, mc, &resolved)
 			if err == nil || !strings.Contains(err.Error(), "testv2: resolved operations are unsupported") {
 				t.Fatalf("InstallResolved() error = %v, want unsupported operations", err)
+			}
+		})
+	}
+}
+
+func TestCaskInventoryValidatesAllRowsBeforePresence(t *testing.T) {
+	cases := []struct {
+		name     string
+		stdout   string
+		presence plan.PresenceState
+	}{
+		{"installed cask", "firefox\ngoogle-chrome\n", plan.PresencePresent},
+		{"absent from complete inventory", "google-chrome\n", plan.PresenceAbsent},
+		{"empty inventory", "", plan.PresenceAbsent},
+		{"valid CRLF", "firefox\r\ngoogle-chrome\r\n", plan.PresencePresent},
+		{"malformed before match", "Error: truncated inventory\nfirefox\n", plan.PresenceBroken},
+		{"malformed after match", "firefox\nError: truncated inventory\n", plan.PresenceBroken},
+		{"columnar output", "firefox google-chrome\n", plan.PresenceBroken},
+		{"duplicate entry", "firefox\nfirefox\n", plan.PresenceBroken},
+		{"non-token row", "!unexpected!\n", plan.PresenceBroken},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &run.FakeRunner{Stdout: tc.stdout}
+			tool := &config.Tool{Name: "firefox"}
+			method := &config.MethodCandidate{Kind: "cask", Config: map[string]any{"pkg": "firefox"}}
+			observation, err := NewBaseAdapter(Configs["cask"]).Observe(context.Background(), runner, tool, method)
+			if err != nil || observation.Presence != tc.presence {
+				t.Fatalf("Observe() = %#v, %v; want %s", observation, err, tc.presence)
+			}
+			if len(runner.Calls) != 1 || runner.Calls[0].Name != "brew" || !reflect.DeepEqual(runner.Calls[0].Args, []string{"list", "--cask", "-1"}) {
+				t.Fatalf("brew argv = %#v; want explicit one-entry-per-line inventory", runner.Calls)
+			}
+		})
+	}
+}
+
+func TestBaseAdapterSpecializedInventoryObservations(t *testing.T) {
+	tests := []struct {
+		name     string
+		kind     string
+		pkg      string
+		stdout   string
+		exitCode int
+		paths    map[string]bool
+		presence plan.PresenceState
+		version  string
+	}{
+		{"apm exact package", "apm", "minimap", "minimap@4.40.0\n", 0, map[string]bool{"apm": true}, plan.PresencePresent, "4.40.0"},
+		{"apm scoped package", "apm", "@scope/minimap", "@scope/minimap@4.40.0\n", 0, map[string]bool{"apm": true}, plan.PresencePresent, "4.40.0"},
+		{"apm malformed unrelated row", "apm", "minimap", "unparsed row\n", 0, map[string]bool{"apm": true}, plan.PresenceBroken, ""},
+		{"apm failed inventory", "apm", "minimap", "", 1, map[string]bool{"apm": true}, plan.PresenceUnknown, ""},
+		{"appman path proves present", "appman", "obsidian", "", 0, map[string]bool{"appman": true, "obsidian": true}, plan.PresencePresent, ""},
+		{"appman missing path is not proof of absence", "appman", "obsidian", "", 1, map[string]bool{"appman": true}, plan.PresenceUnknown, ""},
+		{"cask exact installed inventory", "cask", "firefox", "firefox\n", 0, map[string]bool{"brew": true}, plan.PresencePresent, ""},
+		{"cask complete inventory absent", "cask", "firefox", "google-chrome\n", 0, map[string]bool{"brew": true}, plan.PresenceAbsent, ""},
+		{"cask failed inventory", "cask", "firefox", "firefox\n", 1, map[string]bool{"brew": true}, plan.PresenceUnknown, ""},
+		{"flatpak identity inventory", "flatpak", "org.mozilla.firefox", "org.mozilla.firefox flathub user x86_64 stable\n", 0, map[string]bool{"flatpak": true}, plan.PresencePresent, ""},
+		{"flatpak complete inventory absent", "flatpak", "org.mozilla.firefox", "org.gnome.Builder flathub system x86_64 stable\n", 0, map[string]bool{"flatpak": true}, plan.PresenceAbsent, ""},
+		{"flatpak failed inventory", "flatpak", "org.mozilla.firefox", "", 1, map[string]bool{"flatpak": true}, plan.PresenceUnknown, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &run.FakeRunner{LookPaths: tc.paths, Stdout: tc.stdout, ExitCode: tc.exitCode}
+			pkg := tc.pkg
+			if pkg == "" {
+				pkg = "firefox"
+			}
+			tool := &config.Tool{Name: pkg}
+			mc := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": pkg}}
+			observation, err := NewBaseAdapter(Configs[tc.kind]).Observe(context.Background(), runner, tool, mc)
+			if err != nil || observation.Presence != tc.presence || observation.Identity.Version != tc.version {
+				t.Fatalf("Observe() = %#v, %v; want presence=%q version=%q", observation, err, tc.presence, tc.version)
 			}
 		})
 	}

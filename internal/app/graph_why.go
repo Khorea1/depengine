@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -12,7 +11,6 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/term"
 	"github.com/spf13/cobra"
@@ -32,20 +30,31 @@ func newGraphCmd() *cobra.Command {
 	graphSkip := new(string)
 	graphDirection := new(string)
 	graphDepth := new(int)
+	graphCatalog := new([]string)
+	graphNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "graph",
-		Short:   ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
+		Use:   "graph",
+		Short: ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
+		Example: `  depengine graph --format mermaid
+  depengine graph --format graph --width 100
+  depengine graph --only nvim --direction dependents`,
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip, graphDirection, graphDepth)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip, graphDirection, graphDepth, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(graphSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(graphManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(graphNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, graphCatalog, graphNoCatalog)
 	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text, graph")
 	f.IntVar(graphWidth, "width", 0, "terminal width for --format graph (0 = detect terminal width)")
 	f.StringVar(graphView, "view", "declared", "graph projection: declared, effective, resolved")
@@ -58,7 +67,7 @@ func newGraphCmd() *cobra.Command {
 	return cmd
 }
 
-func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip, graphDirection *string, graphDepth *int) error {
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip, graphDirection *string, graphDepth *int, catalog *config.Catalog) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text", "graph":
 	default:
@@ -99,15 +108,18 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadErrorFor("graph", err, false)
 	}
+	project.presentWarnings("")
 	*graphSchema = project.SchemaPath
 	s := project.Schema
 	if project.ManifestCount > 0 && project.ManifestAuto {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 	// The historical `--only` closure keeps its schema-level filtering. Any
 	// other direction or depth slices the complete typed IR instead, because
@@ -183,24 +195,50 @@ func newWhyCmd() *cobra.Command {
 	whyManifest := new(string)
 	whyNoManifest := new(bool)
 	whyJSON := new(bool)
+	whyFormat := new(string)
 	whyFields := new(bool)
+	whyAll := new(bool)
+	whyCatalog := new([]string)
+	whyNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "why <tool>",
-		Aliases: []string{"explain"},
-		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
+		Use:   "why [tool]",
+		Short: ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
+		Example: `  depengine why nvim --fields   # method, provenance and catalog impact
+  depengine why nvim --json
+  depengine why --all           # one line per tool in the schema`,
 		GroupID: groupInspect,
-		Args:    cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if *whyAll {
+				return cobra.NoArgs(cmd, args)
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
+			if err := normalizeOutputFormat(whyFormat, whyJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			if *whyAll {
+				return runWhyAll(cmd.Context(), whySchema, whyManifest, whyNoManifest, whyJSON, whyFields, catalog)
+			}
+			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(whySchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(whyManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(whyNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
-	f.BoolVar(whyJSON, "json", false, "JSON output")
-	f.BoolVar(whyFields, "fields", false, "show field-level provenance")
+	addCatalogFlags(cmd, whyCatalog, whyNoCatalog)
+	f.BoolVar(whyJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(whyFormat, "format", "text", "output format: text or json")
+	f.BoolVar(whyFields, "fields", false, "show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact")
+	f.BoolVar(whyAll, "all", false, "explain every tool in the schema, one line each")
 	return cmd
 }
 
@@ -330,7 +368,7 @@ func formatWhyAttemptIntent(attempt exec.MethodAttempt) string {
 // cobra.ExactArgs(1) now enforces the argument count that the old manual
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
-func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) error {
+func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool, catalog *config.Catalog) error {
 	noManifest := *whyNoManifest
 	manifestPath := *whyManifest
 	manifestAuto := false
@@ -340,11 +378,11 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields, WarningTool: toolName})
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, WarningTool: toolName, Catalog: catalog})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadErrorFor("why", err, *whyJSON)
 	}
+	project.presentWarnings(toolName)
 	*whySchema = project.SchemaPath
 	s, facts, clan := project.Schema, project.Facts, project.Clan
 	if project.ManifestCount > 0 && project.ManifestAuto {
@@ -359,24 +397,9 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 
 	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	attempts := ex.ExplainTool(ctx, tool, clan)
+	report := buildWhyReport(toolName, tool, s.Provenance[toolName], attempts)
 	if *whyJSON {
-		type jsonAttempt struct {
-			Kind           string                    `json:"kind"`
-			Label          string                    `json:"label,omitempty"`
-			Candidate      int                       `json:"candidate"`
-			CandidateKnown bool                      `json:"candidate_known"`
-			Status         string                    `json:"status"`
-			Reason         string                    `json:"reason,omitempty"`
-			Intent         map[string]string         `json:"intent,omitempty"`
-			PlanIntent     *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
-		}
-		out := make([]jsonAttempt, 0, len(attempts))
-		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Label: a.Label, Candidate: a.Candidate, CandidateKnown: a.CandidateKnown, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
-		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := writeMachineOutput(os.Stdout, "why", report); err != nil {
 			log.Default.Error("JSON encode", "error", err)
 			return exitWithCode(3)
 		}
@@ -401,23 +424,27 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			reason += " [" + intent + "]"
 		}
 		kind := padRight(names[i], kindW)
+		code := ""
+		if a.ReasonCode != "" {
+			code = " [" + a.ReasonCode + "]"
+		}
 		switch a.Status {
 		case "would_install":
 			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
 		case "already_installed":
 			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed: "+reason))
 		case "skip_when":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped"+code+": "+reason))
 		case "skip_no_distribution":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: no distribution matches this host"))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped"+code+": no distribution matches this host"))
 		case "skip_unavailable":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable"+code+": "+reason))
 		case "skip_policy":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed"+code+": "+reason))
 		case "skip_capability":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch"+code+": "+reason))
 		default:
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason+code))
 		}
 	}
 	_, _ = fmt.Fprintln(c.w)
@@ -426,25 +453,103 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	}
 
 	if *whyFields {
-		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {
-			fmt.Println("\nField provenance:")
-			for _, fs := range provenance {
-				var mergedStr string
-				switch v := fs.Merged.(type) {
-				case string:
-					mergedStr = v
-				case []string:
-					mergedStr = fmt.Sprintf("%v", v)
-				case []*config.MethodCandidate:
-					mergedStr = fmt.Sprintf("[%d methods]", len(v))
-				case bool:
-					mergedStr = fmt.Sprintf("%v", v)
-				default:
-					mergedStr = fmt.Sprintf("%v", v)
-				}
-				fmt.Printf("  %s: source=%s merged=%v\n", fs.Field, fs.Source, mergedStr)
-			}
+		renderWhyAudit(c.w, report)
+	}
+	return nil
+}
+
+// runWhyAll explains every tool in the effective schema with one compact line
+// per tool. It reuses the single-tool report so the batch and per-tool
+// contracts cannot drift.
+func runWhyAll(ctx context.Context, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool, catalog *config.Catalog) error {
+	noManifest := *whyNoManifest
+	manifestPath := *whyManifest
+	manifestAuto := false
+	if !noManifest && manifestPath == "" {
+		manifestPath = config.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, Catalog: catalog})
+	if err != nil {
+		return presentSchemaLoadErrorFor("why", err, *whyJSON)
+	}
+	project.presentWarnings("")
+	*whySchema = project.SchemaPath
+	s, facts, clan := project.Schema, project.Facts, project.Clan
+	if project.ManifestCount > 0 && project.ManifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+	}
+
+	names := sortedToolNames(s.Tools)
+	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
+	reports := make([]*whyReport, 0, len(names))
+	for _, name := range names {
+		tool := s.Tools[name]
+		attempts := ex.ExplainTool(ctx, tool, clan)
+		reports = append(reports, buildWhyReport(name, tool, s.Provenance[name], attempts))
+	}
+
+	if *whyJSON {
+		if err := writeMachineOutput(os.Stdout, "why", reports); err != nil {
+			log.Default.Error("JSON encode", "error", err)
+			return exitWithCode(3)
+		}
+		return nil
+	}
+
+	renderWhyAll(os.Stdout, reports)
+	if *whyFields {
+		c := newCLIStyle(os.Stdout)
+		for _, report := range reports {
+			_, _ = fmt.Fprintf(c.w, "\n%s\n", c.bold(report.Tool))
+			renderWhyAudit(c.w, report)
 		}
 	}
 	return nil
+}
+
+// renderWhyAll prints one deterministic line per tool. The line names the
+// selected candidate and how many earlier candidates were rejected, so a
+// host that picked a fallback is visible without a second query.
+func renderWhyAll(w *os.File, reports []*whyReport) {
+	c := newCLIStyle(w)
+	_, _ = fmt.Fprintf(c.w, "%s\n\n", c.bold(fmt.Sprintf("Why all %d tools?", len(reports))))
+	nameW := 0
+	for _, report := range reports {
+		if len(report.Tool) > nameW {
+			nameW = len(report.Tool)
+		}
+	}
+	for _, report := range reports {
+		selected, reason := whyAllSummary(report)
+		_, _ = fmt.Fprintf(c.w, "  %s  →  %-20s  %s\n", padRight(report.Tool, nameW), selected, c.dim(reason))
+	}
+}
+
+// whyAllSummary reduces one report to the selected candidate and a readable
+// reason. It is pure so the batch view stays testable without a terminal.
+func whyAllSummary(report *whyReport) (selected, reason string) {
+	selected = "none"
+	reason = "no candidate can install on this host"
+	if report.Selected != nil {
+		selected = fmt.Sprintf("%s #%d", report.Selected.displayName(), report.Selected.Candidate)
+		reason = report.Selected.Reason
+		rejected := 0
+		for _, candidate := range report.Candidates {
+			if candidate.Kind == report.Selected.Kind && candidate.Candidate == report.Selected.Candidate {
+				break
+			}
+			rejected++
+		}
+		if rejected > 0 {
+			reason = fmt.Sprintf("%s; %d earlier candidate(s) rejected", reason, rejected)
+		}
+		return selected, reason
+	}
+	if len(report.Candidates) > 0 && report.Candidates[0].ReasonCode != "" {
+		reason = "no candidate can install (" + report.Candidates[0].ReasonCode + ")"
+	}
+	return selected, reason
 }

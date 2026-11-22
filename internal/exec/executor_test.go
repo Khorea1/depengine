@@ -1964,6 +1964,47 @@ func TestExecutorParallelExecution(t *testing.T) {
 	}
 }
 
+// TestExecutorParallelSerializesSameManager proves the parallel path does not
+// run two installs for one package manager at the same time. Before the
+// manager lock, three native tools on one level called the adapter
+// concurrently and contended on the manager's own lock.
+func TestExecutorParallelSerializesSameManager(t *testing.T) {
+	var active, maxActive atomic.Int32
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		stateful:      true,
+		installFunc: func(string) error {
+			current := active.Add(1)
+			for {
+				observed := maxActive.Load()
+				if current <= observed || maxActive.CompareAndSwap(observed, current) {
+					break
+				}
+			}
+			time.Sleep(5 * time.Millisecond)
+			active.Add(-1)
+			return nil
+		},
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+	WithMaxJobs(3)(ex)
+
+	report, err := ex.Execute(context.Background(), mockSchema("a", "b", "c"), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 3 {
+		t.Fatalf("expected 3 successes, got %d", report.Success)
+	}
+	if got := maxActive.Load(); got != 1 {
+		t.Fatalf("max concurrent installs for one manager = %d, want 1", got)
+	}
+}
+
 type concurrentOutputProbe struct {
 	active  atomic.Int32
 	overlap atomic.Bool

@@ -39,13 +39,30 @@ var MethodConfigFieldStrategy = map[string]MergeStrategy{
 	"binary":        MergeOverwrite,
 }
 
-// FieldSource describes which layer contributed to a field's value.
+// Provenance layer names. The project schema has the highest precedence, the
+// personal manifest sits above the catalog, and the catalog is the lowest
+// declarative layer. CombinedSource marks a field whose effective value is the
+// merge of every declaring layer rather than the value of a single layer.
+const (
+	LayerSchema    = "schema"
+	LayerManifest  = "manifest"
+	LayerCatalog   = "catalog"
+	CombinedSource = "both"
+)
+
+// FieldSource describes which layer contributed to a field's value. Source is
+// the effective origin at the point this entry was recorded; because entries
+// accumulate across merges, the last entry for a field carries the final
+// origin. Values keeps the value every declaring layer contributed and
+// Overridden lists declared layers whose value the effective value replaced.
 type FieldSource struct {
-	Field    string `json:"field"`
-	Source   string `json:"source"` // "schema", "manifest", "both"
-	Schema   any    `json:"schema,omitempty"`
-	Manifest any    `json:"manifest,omitempty"`
-	Merged   any    `json:"merged"`
+	Field      string         `json:"field"`
+	Source     string         `json:"source"` // "schema", "manifest", "catalog" or "both"
+	Schema     any            `json:"schema,omitempty"`
+	Manifest   any            `json:"manifest,omitempty"`
+	Merged     any            `json:"merged"`
+	Values     map[string]any `json:"values,omitempty"`
+	Overridden []string       `json:"overridden,omitempty"`
 }
 
 // provenanceCollector accumulates FieldSource entries during a merge.
@@ -54,16 +71,18 @@ type provenanceCollector struct {
 	sources  []FieldSource
 }
 
-func (pc *provenanceCollector) record(field, source string, schemaVal, manifestVal, mergedVal any) {
+func (pc *provenanceCollector) record(field, source string, schemaVal, manifestVal, mergedVal any, values map[string]any, overridden []string) {
 	if pc == nil {
 		return
 	}
 	pc.sources = append(pc.sources, FieldSource{
-		Field:    field,
-		Source:   source,
-		Schema:   schemaVal,
-		Manifest: manifestVal,
-		Merged:   mergedVal,
+		Field:      field,
+		Source:     source,
+		Schema:     schemaVal,
+		Manifest:   manifestVal,
+		Merged:     mergedVal,
+		Values:     values,
+		Overridden: overridden,
 	})
 }
 
@@ -103,12 +122,34 @@ func (e *SchemaCodeError) Error() string {
 
 // ParseProjectSchema loads and normalizes a project schema.toml.
 func ParseProjectSchema(path string, m map[string]string) (*Schema, error) {
-	return parseDocument(path, m, "tools")
+	return parseDocument(path, m, "tools", "schema_version", false)
 }
 
 // ParseManifest loads and normalizes a personal manifest.toml.
 func ParseManifest(path string, m map[string]string) (*Schema, error) {
-	return parseDocument(path, m, "packages")
+	return parseDocument(path, m, "packages", "schema_version", false)
+}
+
+// ParseRecipe loads and normalizes a single-recipe catalog file. A recipe uses
+// the manifest grammar (one entry under [packages]) with recipe_version instead
+// of schema_version, and must contain exactly one package. The package name is
+// validated against the file name by Catalog.Lookup.
+func ParseRecipe(path string, m map[string]string) (*Schema, error) {
+	return parseDocument(path, m, "packages", "recipe_version", true)
+}
+
+// ParseRecipeBytes is ParseRecipe over already-read bytes, used by catalog
+// lookup so the file is read once for both parsing and content identity.
+func ParseRecipeBytes(path string, raw []byte, m map[string]string) (*Schema, error) {
+	return parseDocumentBytes(path, raw, m, "packages", "recipe_version", true)
+}
+
+// ParseProjectSchemaBytes is ParseProjectSchema over already-read bytes. It
+// lets an embedded project-schema fragment (for example the self-update
+// recipe) go through the same strict parser as a file without requiring a
+// temporary checkout.
+func ParseProjectSchemaBytes(path string, raw []byte, m map[string]string) (*Schema, error) {
+	return parseDocumentBytes(path, raw, m, "tools", "schema_version", false)
 }
 
 // parseDocument loads, decodes and normalizes a depengine TOML document. It produces a
@@ -127,18 +168,29 @@ func ParseManifest(path string, m map[string]string) (*Schema, error) {
 //     responsible for flagging them, not the parser.
 //   - the `simple` list is processed first; an inline table redeclaring a
 //     simple tool is an error (SchemaCodeError with Code "E_DUPE_TOOL").
-func parseDocument(path string, m map[string]string, sectionName string) (*Schema, error) {
-	if m == nil {
-		m = map[string]string{}
-	}
+func parseDocument(path string, m map[string]string, sectionName, versionField string, recipe bool) (*Schema, error) {
 	rawBytes, err := os.ReadFile(path) // #nosec G304 -- Parsing an explicitly selected schema/manifest path is this package's contract.
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
+	}
+	return parseDocumentBytes(path, rawBytes, m, sectionName, versionField, recipe)
+}
+
+func parseDocumentBytes(path string, rawBytes []byte, m map[string]string, sectionName, versionField string, recipe bool) (*Schema, error) {
+	if m == nil {
+		m = map[string]string{}
 	}
 
 	var raw map[string]any
 	if err := toml.Unmarshal(rawBytes, &raw); err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
+	}
+
+	// Order selectors must be literal before any host fact is substituted:
+	// expanding a placeholder there would make the candidate sequence depend
+	// on the parsing host (ADR-007).
+	if err := validateOrderSelectorsBeforeExpansion(raw, sectionName); err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, enrichSchemaError(err, rawBytes))}
 	}
 
 	// {arch}/{os} are deliberately withheld from this first, whole-tree
@@ -163,8 +215,8 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	}
 	raw = ExpandAll(raw, mWithoutArchOS).(map[string]any)
 
-	if err := validateRawSchema(raw, sectionName); err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
+	if err := validateRawSchema(raw, sectionName, versionField, recipe); err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, enrichSchemaError(err, rawBytes))}
 	}
 
 	// Extract rawTools from the specified section.
@@ -181,7 +233,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	}
 
 	allowNewTools := false
-	if sectionName == "packages" {
+	if sectionName == "packages" && !recipe {
 		if manifestRaw, ok := raw["manifest"]; ok {
 			if manifestMap, ok := manifestRaw.(map[string]any); ok {
 				if allow, ok := manifestMap["allow_new_tools"]; ok {
@@ -267,6 +319,10 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("resolve schema path %s: %w", path, err)}
 	}
+	if recipe && len(tools) != 1 {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: a recipe must declare exactly one package, got %d", path, len(tools))}
+	}
+
 	projectRoot := filepath.Dir(absPath)
 	bindProjectRoot(tools, projectRoot)
 
@@ -366,7 +422,6 @@ func extractDefaultsWithPresence(raw any) (Defaults, fieldPresence) {
 func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (map[string]*Tool, error) {
 	tools := map[string]*Tool{}
 
-	// 1. Process `simple` list first.
 	if sim, ok := rawTools["simple"].([]any); ok {
 		for _, item := range sim {
 			name, ok := item.(string)
@@ -396,7 +451,7 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 		}
 	}
 
-	// 2. Process remaining entries. Sort keys for deterministic error messages.
+	// Sort named tools to keep duplicate-declaration diagnostics deterministic.
 	for _, name := range sortedKeys(rawTools, "simple") {
 		val := rawTools[name]
 		if _, dup := tools[name]; dup {
@@ -1079,7 +1134,6 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	var hardErrors []string
 	var warnings []string
 
-	// Check Defaults.MethodOrder entries first.
 	for _, kind := range s.Defaults.MethodOrder {
 		if methodkind.IsNativeKind(kind) {
 			continue // valid: native manager name, resolved at execution time
@@ -1098,12 +1152,11 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		}
 	}
 
-	// Build set from method_order for Part B check.
 	orderSet := make(map[string]struct{}, len(s.Defaults.MethodOrder))
 	for _, k := range s.Defaults.MethodOrder {
 		orderSet[k] = struct{}{}
 	}
-	// Check each tool's method candidates. Sort tool names for deterministic output.
+	// Sort tool names for deterministic diagnostics.
 	names := make([]string, 0, len(s.Tools))
 	for name := range s.Tools {
 		names = append(names, name)
@@ -1140,7 +1193,6 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			}
 		}
 
-		// Check for parse errors on individual methods (e.g. pip = false).
 		for _, mc := range tool.Methods {
 			if mc.Err != nil {
 				hardErrors = append(hardErrors, fmt.Sprintf(

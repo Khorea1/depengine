@@ -26,7 +26,7 @@ func WindowsAdaptersWithScoop(runtime scoopruntime.Runtime) []AdapterV2 {
 			kind:       "choco",
 			binary:     "choco",
 			installCmd: []string{"choco", "install", "{pkg}", "-y"},
-			checkCmd:   []string{"choco", "list", "--exact", "--limit-output", "{pkg}"},
+			checkCmd:   []string{"choco", "list", "--local-only", "--exact", "--limit-output", "{pkg}"},
 			removeCmd:  []string{"choco", "uninstall", "{pkg}", "-y"},
 		},
 	}
@@ -99,8 +99,8 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 			observation.Identity.Source = installed.Bucket
 			observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 		}
-		if scope != "" {
-			if scope == "global" {
+		if installed.Scope != "" {
+			if installed.Scope == "global" {
 				observation.Identity.Scope = string(plan.ScopeSystem)
 			} else {
 				observation.Identity.Scope = string(plan.ScopeUser)
@@ -111,32 +111,27 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	}
 	cmd := SubstitutePkg(w.checkCmd, tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, pkg) {
-		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
-		// fall back for older Chocolatey releases that still require the flag.
-		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
-	}
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.WaitErr != nil || res.ExitCode != 0 {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
+	}
+	if malformedChocoOutput(res.Stdout) {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned malformed inventory output"}
 	}
 	version, ok := chocoVersionFromOutput(res.Stdout, pkg)
 	if !ok {
-		if outputMentionsPackage(res.Stdout, pkg) {
-			return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
-		}
 		return plan.Observation{Presence: plan.PresenceAbsent}
 	}
 	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
 }
 
-func outputMentionsPackage(stdout []byte, pkg string) bool {
-	for _, line := range strings.Split(string(stdout), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+func malformedChocoOutput(stdout []byte) bool {
+	for line := range strings.Lines(string(stdout)) {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
-		id, _, _ := strings.Cut(fields[0], "|")
-		if strings.EqualFold(id, pkg) {
+		id, version, ok := strings.Cut(line, "|")
+		if !ok || id == "" || version == "" || strings.ContainsRune(version, '|') {
 			return true
 		}
 	}
@@ -154,11 +149,6 @@ func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
 	return "", false
 }
 
-func hasChocoVersion(stdout []byte, pkg string) bool {
-	_, ok := chocoVersionFromOutput(stdout, pkg)
-	return ok
-}
-
 func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
 	if rn == nil {
 		return "", fmt.Errorf("%s: no runner", w.kind)
@@ -166,7 +156,7 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 	pkg := packageName(tool, mc)
 	switch w.kind {
 	case "choco":
-		res := rn.Run(ctx, "choco", "list", "--exact", "--limit-output", pkg)
+		res := rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
 		if err := run.CheckResultCompleteOutput(res, "choco: version check"); err != nil {
 			return "", err
 		}
@@ -201,27 +191,32 @@ func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		architecture, _ := mc.Config["architecture"].(string)
 		return w.runtime.InstallResolved(ctx, rn, scoopruntime.InstallTarget{Package: packageName(tool, mc), Version: version, Bucket: bucket, Scope: scope, Architecture: architecture})
 	}
-	cmd := SubstitutePkg(w.installCmd, tool, mc)
-	if w.kind == "choco" {
-		extra := make([]string, 0, 8)
-		if version, _ := mc.Config["version"].(string); version != "" {
-			extra = append(extra, "--version", version)
-		}
-		if source, _ := mc.Config["source"].(string); source != "" {
-			extra = append(extra, "--source", source)
-		}
-		if architecture, _ := mc.Config["architecture"].(string); architecture == "x86" {
-			extra = append(extra, "--forcex86")
-		}
-		if prerelease, _ := mc.Config["prerelease"].(bool); prerelease {
-			extra = append(extra, "--pre")
-		}
-		if len(extra) > 0 {
-			cmd = append(cmd[:len(cmd)-1], append(extra, cmd[len(cmd)-1:]...)...)
-		}
-	}
+	cmd := w.chocoInstallCommand(tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, w.kind+": install")
+}
+
+// chocoInstallCommand is the single argv builder shared by Install and the
+// dry-run preview so the reported command cannot drift from the executed one.
+func (w *winAdapter) chocoInstallCommand(tool *config.Tool, mc *config.MethodCandidate) []string {
+	cmd := SubstitutePkg(w.installCmd, tool, mc)
+	extra := make([]string, 0, 8)
+	if version, _ := mc.Config["version"].(string); version != "" {
+		extra = append(extra, "--version", version)
+	}
+	if source, _ := mc.Config["source"].(string); source != "" {
+		extra = append(extra, "--source", source)
+	}
+	if architecture, _ := mc.Config["architecture"].(string); architecture == "x86" {
+		extra = append(extra, "--forcex86")
+	}
+	if prerelease, _ := mc.Config["prerelease"].(bool); prerelease {
+		extra = append(extra, "--pre")
+	}
+	if len(extra) > 0 {
+		cmd = append(cmd[:len(cmd)-1], append(extra, cmd[len(cmd)-1:]...)...)
+	}
+	return cmd
 }
 
 func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -254,11 +249,15 @@ func (w *winAdapter) CanRemove() bool {
 // ResolvePlan returns the static intent unchanged: scoop/choco installs
 // perform no dynamic resolution ({latest}, tags, assets), so the intent is
 // already the concrete plan.
-func (w *winAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+func (w *winAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, fmt.Errorf("%s: nil plan intent", w.kind)
 	}
 	resolved := intent.Clone()
+	if w.kind == "choco" {
+		// Chocolatey installs machine-wide and needs an elevated shell.
+		annotateInstallPreview(&resolved, w.chocoInstallCommand(tool, mc), plan.ElevationRequired)
+	}
 	return &resolved, nil
 }
 

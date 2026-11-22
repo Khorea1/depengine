@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.helm]
+method_only = ["native", "aur", "go"]
+
+[packages.helm.native]
+pkg = "helm"
+pkg_overrides = { choco = "kubernetes-helm", winget = "Helm.Helm" }
+
+[packages.helm.aur]
+pkg = "helm"
+
+[packages.helm.go]
+pkg = "helm.sh/helm/v3/cmd/helm"

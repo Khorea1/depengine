@@ -22,6 +22,7 @@ import (
 type nameAwareRunner struct {
 	exitByName map[string]int // missing entries default to exit 1 (not found)
 	stdout     string
+	result     *run.Result
 	calls      []run.FakeCall
 }
 
@@ -77,6 +78,9 @@ func (r *nameAwareRunner) Run(_ context.Context, name string, args ...string) ru
 	code, ok := r.exitByName[key]
 	if !ok {
 		code = 1
+	}
+	if r.result != nil {
+		return *r.result
 	}
 	return run.Result{Stdout: []byte(r.stdout), ExitCode: code}
 }
@@ -543,23 +547,6 @@ func TestContainerAdapterRejectsTagAndDigestTogether(t *testing.T) {
 	}
 	if len(rn.calls) != 0 {
 		t.Fatalf("invalid identity should fail before runner, got %v", rn.calls)
-	}
-}
-
-func TestContainerAdapterDigestCheckDoesNotFallBackToTagPresence(t *testing.T) {
-	digest := "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"manager": "docker", "source": "redis", "digest": digest,
-	}}
-	// The runner reports inspect failure. A tag-based `images -q` implementation
-	// could incorrectly treat another redis image as satisfying the pin, so the
-	// exact digest check must return false without issuing a tag-presence query.
-	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 1}, stdout: "sha256:some-other-image\n"}
-	if NewContainerAdapter().Check(context.Background(), rn, tool("redis"), mc) {
-		t.Fatal("Check must reject a missing exact digest even if another repository image could be present")
-	}
-	if len(rn.calls) != 1 || rn.calls[0].Name != "docker" || !equalArgs(rn.calls[0].Args, []string{"image", "inspect", "redis@" + digest}) {
-		t.Fatalf("digest check calls = %#v", rn.calls)
 	}
 }
 

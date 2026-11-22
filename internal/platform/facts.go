@@ -22,8 +22,13 @@ type Facts struct {
 	IsWSL           bool   `json:"is_wsl"`
 	IsContainer     bool   `json:"is_container"`
 	IsAndroid       bool   `json:"is_android"`
-	Kernel          string `json:"kernel"`
-	Libc            string `json:"libc"`
-	InitSystem      string `json:"init_system"`
-	OS              string `json:"os"`
+	// IsWSLUnknown and IsContainerUnknown distinguish an inconclusive probe
+	// from a conclusive negative. They are false when detection is known, so
+	// manually constructed facts keep the historical two-state behavior.
+	IsWSLUnknown       bool   `json:"is_wsl_unknown,omitempty"`
+	IsContainerUnknown bool   `json:"is_container_unknown,omitempty"`
+	Kernel             string `json:"kernel"`
+	Libc               string `json:"libc"`
+	InitSystem         string `json:"init_system"`
+	OS                 string `json:"os"`
 }

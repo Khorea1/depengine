@@ -1,6 +1,133 @@
 # Changelog
 
 ## Unreleased
+- Add an append-only mutation journal (`journal.jsonl` next to `state.json`)
+  recording install/remove/upgrade/update/undo outcomes with trace id,
+  elevation decision, effective schema hash, and resolved identity. Entries are
+  redacted, written under a dedicated lock, rotated at 8 MiB, and queried with
+  `depengine journal --tool/--command/--result/--since/--until/--limit`.
+  Rotation replaces the previous `journal.jsonl.1` generation, queries hold the
+  shared journal lock while reading both generations, records with an unknown
+  `format_version` are skipped, and `--command`/`--result` values outside the
+  documented vocabulary fail instead of silently matching nothing.
+- Make strict schema-shape errors actionable: each line now carries the TOML
+  `line:column`, a `did you mean` suggestion for unknown fields (`tagz` →
+  `tags`), a minimal valid example for the failing location, and a
+  `docs/schema-reference.md` anchor. Applies to `validate`, `install --dry-run`,
+  and every other parse path, including recipes parsed from bytes.
+- Expose the planned install argv and elevation decision in `install --dry-run`.
+  Resolved plans carry a non-executable `preview` argv, never executable
+  `command`, so the capability gate is unchanged, and mutating steps report
+  `elevation` as `none`, `required`, or `unknown`. Native, Chocolatey, and
+  HTTP-backed adapters fill it; other adapters keep the explicit unknown.
+- Add `depengine explain [term...]`: offline vocabulary for schema fields,
+  installation methods, and the `validate`/resolver error codes, with the valid
+  form, a minimal example, and the document anchor. `why` no longer accepts
+  `explain` as an alias. The generated JSON Schema now documents every `tool`,
+  `condition`, `defaults`, `manifest`, and `secret_ref` field plus each method
+  kind, which also improves editor completion.
+- Add `depengine tutorial`: a guided, read-only tour that creates a disposable
+  project, walks `validate`/`why`/`update --dry-run`/`install --dry-run` with
+  explanations, and removes the directory. `--keep` preserves it and `--json`
+  exposes the steps under the machine-output envelope.
+- Make CLI localization explicitly opt-in through `DEPENGINE_LANG` and stop
+  deriving the interface language from POSIX locale variables. Only command
+  summaries are localized; flags, errors and logs stay English, and the
+  coverage contract is documented.
+- Add `depengine init --from-state [path]` and `--from-manifest [path]` to adopt
+  tools that are already installed or declared in the personal manifest.
+  Adoption merges into an existing schema without rewriting declared tools,
+  supports `--dry-run`, and leaves TODO comments where the source lacks enough
+  detail to declare a method.
+- Add `depengine audit`: one read-only report reconciling the effective schema,
+  layer merge, lockfile and tracked state/host identity. Each divergence carries
+  a remediation, `--strict` turns warnings into a failing gate, and `--json`
+  exposes the findings under the machine-output envelope.
+- Serialize installs that target the same package manager when `--jobs` is
+  greater than one, so the parallel fallback path cannot turn a valid plan into
+  `apt-get`/`pacman` lock contention. Installs for different managers still run
+  concurrently.
+- Emit one versioned machine-output envelope (`version`, `command`, `data`)
+  from every command that produces machine-readable output, and give
+  `update`, `undo`, `forget`, `bundle export`, `validate`, `check`, `remove`,
+  and `diff` the same `--format text|json` / `--json` surface. Payloads that
+  were previously top-level JSON objects or arrays now live under `data`; the
+  envelope version is documented in the compatibility contract.
+- Add artifact bundle export and frozen install support for locked HTTP/GitHub
+  payloads with literal SHA-256 checksums; signature-backed artifacts and
+  package-manager dependency graphs remain outside the offline bundle boundary.
+- Use complete inventories for Flatpak applications, Homebrew casks, and APM
+  packages so failed queries remain Unknown; malformed APM rows are Broken.
+- Enumerate Scoop's documented full installed-package table instead of treating
+  `scoop list <query>` as exact or `--global` as a scope filter; observed scope
+  now comes from its inventory marker. Chocolatey inventory is explicitly
+  local-only on both supported major versions, with no remote-query fallback.
+- Treat failed container image probes as unknown rather than absence. For a
+  completed nonzero digest/platform inspect, use repository-filtered image
+  inventory and exact digest comparison to distinguish absence from an
+  unverified installed image; process/wait failures preserve their reasons and
+  do not trigger fallback probes.
+
+- Carry catalog-layer inert-tool warnings through project loading to CLI
+  consumers such as `why`, `graph`, `install`, and status; keep `validate`'s
+  structured text/JSON output and `why`'s tool filter consistent without
+  changing exit codes.
+- Validate Windows Registry string types and empty values before decoding; registry
+  access failures now remain errors instead of being reported as an absent MSI.
+- Resolve catalog recipes for the effective `requires` closure even when
+  project and manifest roots have no catalog recipe of their own. Local tools
+  can now reach catalog-backed helpers and their transitive dependencies.
+- Keep catalog recipe specialization on the exact bytes read by `Lookup`, so
+  replacing or removing a recipe cannot combine a stale digest with new
+  content. A later lookup observes recipe drift, which frozen lock validation
+  rejects.
+- Add `depengine import <recipe.toml>`: preview and validate a recipe before
+  writing it into the first catalog root. Import rejects lifecycle hooks,
+  command-typed fields and plans that require arbitrary code, requires a
+  checksum or `checksum_secret_ref` for downloaded artifacts, flags
+  `sha256:auto` as trust-on-first-use, and warns about unverified origins. The
+  preview prints the canonical digest lock v2 will pin, and the recipe is
+  written atomically as authored.
+- Add phase-isolated `why`/`graph` benchmarks and 100-tool graph coverage to
+  document diagnostic costs at 100/1,000/5,000 tools; this changes no runtime
+  behavior or output.
+- Enforce the declarative-only recipe rule at catalog lookup, not only at
+  import: a recipe with a lifecycle hook, a command-typed field or a plan that
+  requires arbitrary code fails closed when resolved, using the same
+  `PlanRequiresArbitraryCode` predicate as the execution gate. Manually placing
+  a recipe in a catalog root can no longer bypass the import validator.
+- Replace `SortGraph`'s per-level full scan of remaining nodes with a zero
+  in-degree frontier. Deep graphs no longer pay O(nodes × depth) map lookups:
+  scheduling drops 2.7×–23.7× and `Analyze` 1.7×–11.2× on the 1,000/5,000-node,
+  fan-in 5/20 benchmarks, with an oracle test proving identical levels and
+  cycle reports. Output formats and exit codes are unchanged.
+- Make provenance a catalog-layer contract instead of optional diagnostics:
+  `why --fields` now reports the winning catalog recipe (root index, root path,
+  recipe path, content digest), every field's effective origin (`catalog`,
+  `manifest`, `schema` or `both`), the values each layer declared and which
+  layers were overridden, the selected candidate, and what a catalog update
+  would still change. Origins survive multi-layer merges, so a field inherited
+  from the catalog is no longer relabelled after passing through a later layer.
+- `why --json` emits the documented audit object (`tool`, `recipe`,
+  `field_provenance`, `catalog_update`, `candidates`, `selected`) instead of a
+  bare attempt array. Candidates carry a stable `reason_code`
+  (`when_not_matched`, `no_adapter`, `package_not_found`, ...) so consumers stop
+  parsing human text; secret references stay redacted.
+- Reject host placeholders in method order selectors (`defaults.method_prefer`,
+  the `defaults.method_order` compatibility alias, and tool-level
+  `method_prefer`/`method_only`) before schema expansion. Expanding a host fact
+  there made candidate order, v1 pin keys, and `MethodsHash` depend on the
+  parsing host, violating the host-independent candidate sequence contract.
+  Selectors must be literal; use candidate `when` conditions for host
+  selection. This also resolves the ADR-008 catalog prerequisite.
+- Whole-schema `depengine update` now keeps or refreshes the legacy v1 lock when
+  the only unpinnable tools are native methods, and warns which tools blocked
+  v2. It still never writes a partial v2 projection and never downgrades an
+  existing v2 lock; any non-native unpinnable method remains a hard failure.
+- `http` and `github` reject installer-script payloads (`.sh`, `.bash`,
+  `.zsh`, `.ksh`, `.ps1`, `.psm1`, `.bat`, `.cmd`) with an actionable
+  diagnostic instead of downloading the script text as a tool binary. The
+  documented re-expression boundary remains the supported path.
 - Slim the arbitrary-code gate for registered method kinds: it reads the arbitrary-code operation bit of the validated candidate plan directly instead of re-running the adapter capability check and a second capability derivation per candidate (~58-61% of the gate's marginal planning cost on enumerated schemas, no behavior change). A permanent characterization matrix pins equivalence with the previous gate, including unregistered kinds and requirement-failing candidates.
 - For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
@@ -9,7 +136,7 @@
 - Reject ambiguous `pkg` as a global native method alias while preserving clan-scoped `pkg_overrides` and explicitly disambiguated manager names; normalize MacPorts category-qualified requests against bare inventory entries and fail closed on incomplete observation output.
 - Track the configured asdf mise backend in resolved source identity and verify observations within that backend namespace.
 - Move the complete host-fact gathering boundary, including the deprecated `DEPENGINE_DETECT_SCRIPT` override, into `internal/platform`; document explicit retirement gates for that override and for legacy lock v1 compatibility.
-- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas can fail without writing a partial lock; cover `why`'s effective native package formatting with tests.
+- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas use the documented v1 fallback rather than writing a partial lock; cover `why`'s effective native package formatting with tests.
 - Clarify trust warnings for automatic checksums: unsigned sidecars verify artifact integrity but do not authenticate the hash source; GPG-authenticated sidecars are classified separately. `why` filters schema warnings to its selected tool; other project commands retain relevant diagnostics.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Allow explicitly opted-in Windows `.exe` GitHub/HTTP assets as raw payloads only; installer execution remains fail-closed.
@@ -46,3 +173,7 @@
 - When the home and XDG storage bases are unavailable, state and download cache use a per-user fallback instead of shared or relative paths: a private system-temp root on Unix (owner-only directories and files, with ownership/permission checks) or the OS-provided per-user cache directory on Windows and other platforms (trusting the OS-managed user ACL). Resolution fails closed when the fallback cannot be resolved or secured.
 - Debian/Termux dpkg-backed native package checks now use structured status records and a healthy `dpkg` sentinel. Unknown, malformed, or ambiguous inventory fails closed without authorizing install or batch selection; this proves package presence only and does not infer an immutable package version.
 - Fedora/SUSE RPM-backed lifecycle observation now uses strict C-locale query output plus an installed `filesystem` sentinel; ambiguous absence, diagnostics, malformed or unavailable databases, and process errors remain unknown/broken. No package version or lock-v2 identity is inferred.
+- Add the ADR-008/ADR-009 recipe catalog: a project tool declared as `name = {}` resolves methods from `<catalog-root>/<name>.toml`, merged catalog → manifest → project. One file per name keeps lookup independent of catalog size; `--catalog`/`DEPENGINE_CATALOG` replace the default platform config root and `--no-catalog` disables the layer. Catalog-sourced tools pin a canonical recipe digest in lock v2, frozen validation fails closed on a missing or changed digest, a catalog tool is rejected against a v1 lock, and a project tool that resolves to no methods and no `requires` reports `W_INERT_TOOL`.
+- Ship a read-only embedded fallback for `golang` only and publish the opt-in `recipes/` library. The embedded source stays last when `--catalog` replaces filesystem roots, `--no-catalog` disables both, `doctor` reports it as `builtin (embedded, present)`, and v2 locks pin its canonical digest. The library now covers native, AUR, Cargo, Go, npm/pnpm/Bun, pipx/uv, RubyGems, Composer, Flatpak, Snap, AppImage, GitHub Releases and HTTP methods without duplicate entries per recipe; `nvim` stays opt-in because the depengine executable is not a catalog recipe.
+- Add `depengine self update`, driven by an embedded project-schema recipe (public copy in `recipes/depengine.toml.example`), which resolves the source and revision, expands `{version}` in the recipe build command, verifies the result, and replaces the running executable with a same-directory atomic rename. `--check` reports whether the running VCS revision is behind; `--ref`, `--repo`, `--bin-dir` and `--recipe` control the source, destination and recipe. Git upgrades now quarantine a tracked target as `<target>.depengine-old` and restore it when the replacement fails to build, install, or verify, instead of deleting the old installation first. Single-file Git artifacts are also staged and renamed atomically.
+- Make `when` condition semantics explicit: `kernel_min`/`kernel_max` are inclusive bounds while `kernel` stays exact, `libc` compares the detected family token rather than a version, and `is_wsl`/`is_container` distinguish a conclusive negative from an inconclusive probe. `is_wsl = false` and `is_container = false` no longer match a host whose detection failed, `{is_wsl}`/`{is_container}` expand to `unknown` there, `why` reports the first rejecting dimension, and `validate` warns with `W_AMBIGUOUS_CONDITION` for ranges written as exact values, versioned libc values and inverted min/max pairs. `schema_version` stays 1 with no parser alias.

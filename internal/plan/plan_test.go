@@ -24,6 +24,59 @@ func TestNewPlanAndMutationClassification(t *testing.T) {
 	}
 }
 
+func TestOperationPreviewIsNotExecutableIntent(t *testing.T) {
+	op := plan.Operation{Kind: "install", Effect: plan.EffectMutation, Preview: []string{"apt-get", "install", "-y", "jq"}}
+	if err := op.Validate(); err != nil {
+		t.Fatalf("preview-only operation rejected: %v", err)
+	}
+	if len(op.Command) != 0 || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	for _, invalid := range []plan.Operation{
+		{Kind: "install", Effect: plan.EffectMutation, Preview: []string{""}},
+		{Kind: "install", Effect: plan.EffectMutation, Preview: []string{"apt-get", "jq\x00"}},
+		{Kind: "install", Effect: plan.EffectMutation, Elevation: "root-ish"},
+	} {
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("Validate() accepted invalid operation %+v", invalid)
+		}
+	}
+}
+
+func TestResolvedPlanNormalizesUnknownElevationForMutations(t *testing.T) {
+	p := plan.New("jq", "native", true)
+	p.Operations = []plan.Operation{
+		{Kind: "resolve", Effect: plan.EffectReadOnly},
+		{Kind: "install", Effect: plan.EffectMutation},
+		{Kind: "add-source", Effect: plan.EffectMutation, Elevation: plan.ElevationRequired},
+	}
+	p.NormalizePreviewElevation()
+	if p.Operations[0].Elevation != "" {
+		t.Errorf("read-only elevation = %q, want untouched", p.Operations[0].Elevation)
+	}
+	if p.Operations[1].Elevation != plan.ElevationUnknown {
+		t.Errorf("unannotated mutation elevation = %q, want unknown", p.Operations[1].Elevation)
+	}
+	if p.Operations[2].Elevation != plan.ElevationRequired {
+		t.Errorf("annotated mutation elevation = %q, want required", p.Operations[2].Elevation)
+	}
+
+	// Persisted state round-trips exactly what it was given: normalizing must
+	// happen on the resolution boundary, not through JSON marshaling.
+	operation := plan.Operation{Kind: "install", Effect: plan.EffectMutation}
+	data, err := json.Marshal(operation)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if _, present := decoded["elevation"]; present {
+		t.Fatalf("unannotated mutation serialized an elevation: %s", data)
+	}
+}
+
 func TestSourceMutationsMustBeMutating(t *testing.T) {
 	p := plan.New("x", "native", true)
 	p.SourceMutations = []plan.Operation{{Kind: "add-repo", Effect: plan.EffectReadOnly}}

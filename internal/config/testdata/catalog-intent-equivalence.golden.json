@@ -1,0 +1,44 @@
+[
+  {
+    "Kind": "native",
+    "Label": "",
+    "Inferred": false,
+    "When": null,
+    "Config": {
+      "pkg": "foo-pkg"
+    },
+    "Err": null,
+    "ArchMap": null,
+    "OSMap": null,
+    "Requires": null,
+    "Sources": null,
+    "Distributions": null,
+    "PreInstall": null,
+    "PostInstall": null,
+    "SecretRef": null,
+    "ChecksumSecretRef": null,
+    "SignatureSecretRef": null
+  },
+  {
+    "Kind": "github",
+    "Label": "",
+    "Inferred": false,
+    "When": null,
+    "Config": {
+      "asset": "foo-{version}.tar.gz",
+      "checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "repo": "owner/foo"
+    },
+    "Err": null,
+    "ArchMap": null,
+    "OSMap": null,
+    "Requires": null,
+    "Sources": null,
+    "Distributions": null,
+    "PreInstall": null,
+    "PostInstall": null,
+    "SecretRef": null,
+    "ChecksumSecretRef": null,
+    "SignatureSecretRef": null
+  }
+]

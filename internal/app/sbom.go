@@ -16,23 +16,27 @@ import (
 // newSBOMCmd builds `depengine sbom`.
 func newSBOMCmd() *cobra.Command {
 	sbomFormat := new(string)
+	sbomLockPath := new(string)
 
 	cmd := &cobra.Command{
-		Use:     "sbom",
-		Short:   ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
+		Use:   "sbom",
+		Short: ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
+		Example: `  depengine sbom                  # CycloneDX
+  depengine sbom --format spdx`,
 		GroupID: groupExport,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSBOMContext(cmd.Context(), sbomFormat)
+			return runSBOMContext(cmd.Context(), sbomFormat, *sbomLockPath)
 		},
 	}
 	cmd.Flags().StringVar(sbomFormat, "format", "cyclonedx", "output format: cyclonedx or spdx")
+	cmd.Flags().StringVar(sbomLockPath, "lock", "", "lockfile to read for missing versions (default: derived from recorded schema)")
 	return cmd
 }
 
 func runSBOM(sbomFormat *string) error { return runSBOMContext(context.Background(), sbomFormat) }
 
-func runSBOMContext(ctx context.Context, sbomFormat *string) error {
+func runSBOMContext(ctx context.Context, sbomFormat *string, lockOverride ...string) error {
 	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		log.Default.Error("load state", "error", err)
@@ -44,8 +48,8 @@ func runSBOMContext(ctx context.Context, sbomFormat *string) error {
 
 	// Fill missing state versions from the authoritative lock format. V2
 	// projection data is decoded once and never falls back to its legacy payload.
-	if st.SchemaPath != "" {
-		lk, lerr := lock.Load(lock.DefaultPath(st.SchemaPath))
+	if st.SchemaPath != "" || (len(lockOverride) > 0 && lockOverride[0] != "") {
+		lk, lerr := lock.Load(lock.Path(st.SchemaPath, lockOverride...))
 		if lerr != nil {
 			log.Default.Error("load lock for SBOM", "error", lerr)
 			return exitWithCode(3)

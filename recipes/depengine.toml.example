@@ -1,0 +1,29 @@
+# Self-update recipe for the depengine executable.
+#
+# This is a project-schema fragment, not an importable catalog recipe: the git
+# method carries a command-typed build field, which catalog recipes reject.
+# `depengine self update` reads this recipe, resolves the requested ref, and
+# uses the build/artifact contract below. `--repo`, `--ref`, and `--bin-dir`
+# override the source, revision, and destination; `--recipe <path>` loads a
+# different project-schema fragment with the same single `[tools.depengine]`
+# git method shape.
+schema_version = 1
+
+[tools.depengine]
+method_only = ["git"]
+
+[tools.depengine.git]
+url = "https://github.com/Khorea1/depengine.git"
+depth = 1
+build = { run = [
+  "env", "CGO_ENABLED=0",
+  "go", "build",
+  "-buildvcs=true",
+  "-trimpath",
+  "-ldflags", "-s -w -X main.version={version}",
+  "-o", "depengine",
+  ".",
+] }
+artifact = "depengine"
+extract_to = "~/.local/bin"
+binary = "depengine"

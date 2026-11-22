@@ -44,7 +44,7 @@ This is an order of authority, not a requirement that every command materialize 
 - **`unknown`** — presence cannot be established, or a present target lacks authoritative values for one or more desired identity fields, with no known mismatch.
 - **`broken`** — desired identity, presence value, observation field set, or verification probe is invalid or failed.
 
-A missing known field is not an empty value: `KnownFields` determines which reported values are authoritative. The support boundary describes command-specific behavior; notably, remove and upgrade stop on `unknown`/`broken`, while proven absence can release tracked ownership without invoking a remover.
+A missing known field is not an empty value: `KnownFields` determines which reported values are authoritative. The support boundary describes command-specific behavior; notably, remove and undo stop on `drifted`/`unknown`/`broken` (a projected removal identity that no longer matches the host could target another version or package), upgrade stops on `unknown`/`broken`, and proven absence can release tracked ownership without invoking a remover.
 
 ## Adapter verification after install
 
@@ -91,11 +91,81 @@ The failure domain of a failed tool is its transitive dependent closure, not its
 
 Subprocess failure and incomplete captured output are distinct: a direct process failure is reported as such, while incomplete output capture does not by itself establish that the process failed. This documents the executor/recovery contract, not a scheduler or retry policy.
 
+## CLI mutation isolation (interim)
+
+`install`, `upgrade`, `remove`, `undo` (except `--list`), `forget`, and
+non-dry-run `update` first acquire an owner-only, cross-process
+`host.mutations.lock` in the OS-specific per-user private temp/cache root,
+then the original `state.json.mutations.lock` in the chosen state root.
+The first lock serializes cooperating CLI processes even when their
+`XDG_STATE_HOME` values differ; the second preserves coordination with older
+clients that only use the state-root lock. Both precede actionable state reads
+and schema lockfile transactions. `update` participates because
+refreshing the desired lockfile while `upgrade` executes a physical replacement
+could change the target during reconciliation.
+Both locks remain held through physical operations, final persistence,
+and journal reporting. The lock order is **per-user host → state-root mutation →
+lockfile/state**; short-lived state locks and write-ahead recovery still
+apply. Dry runs acquire neither mutation lock.
+A canceled acquisition fails before touching host state. OS lock release
+after a process crash does not resolve ambiguous WAL outcomes.
+On Unix, lock-file opening refuses symbolic links, multiply linked files and
+non-regular targets before tightening permissions; an unexpected pathname
+change during acquisition fails rather than proceeding on a stale inode.
+The private per-user and state directories and their lock pathnames must
+not be replaced while a mutation is active. The OS releases both locks on
+process exit; the per-user location must resolve consistently across
+processes (e.g. identical temp-root configuration). Neither lock constrains
+other programs that do not cooperate with this protocol.
+
+Cross-process regression coverage exercises the vulnerable upgrade-style gap
+between an initial state read and a later state commit, with a controlled
+physical adapter running while the ordinary state lock is free. A concurrent
+`forget` times out on the mutation guard, then succeeds on retry after the
+physical phase finishes, with both state updates preserved. Another process
+using a different state root also blocks during that physical phase; direct
+cross-root lock acquisition and release are independently tested. A separate
+cross-process update regression holds the host mutation guard and verifies
+that a lockfile refresh times out without writing; after release, the retry
+writes a valid lock. An `update --dry-run` still runs without acquiring the
+guard or writing a lockfile. A separate
+process-kill test confirms that an external effect completed before state
+commit does not fabricate a commit and that the OS releases the lock for
+subsequent commands. These tests are controlled process simulations, not
+full CLI upgrade integration or recovery proof for ambiguous host effects.
+
+This deliberately coarse guard prevents these CLI writers from interleaving
+against each other within **one per-user temp/cache namespace**, including
+different state roots that share that namespace. It does not establish
+physical resource ownership, validate cross-schema compatibility, coordinate
+different OS users or separate temp/cache namespaces, cover external package
+managers, or protect library callers that invoke executor APIs directly.
+It is an interim concurrency safeguard, **not**
+completion of the global claims/admission protocol in ADR-010. Long-running
+installs can delay unrelated mutations; fine-grained concurrency remains open.
+
+## Claim arbitration is not persisted ownership
+
+`internal/state.InstallationClaim` and `ClaimLedger` are a **planning
+primitive**, not a state record. The ledger validates an explicit claim set,
+indexes it by observed `scope/kind/identity` keys, and answers whether one
+proposed claim would create, share, transition, remain unchanged, or conflict.
+It never reads the host, never grants ownership, and is not persisted: state v5
+stores no installation claims, and install/remove paths do not consult it.
+
+The persisted "resource-use claims" retained by `ToolState` and the preparation
+WAL remain the authoritative record of depengine-proven ownership and refcount
+release under ADR-002. A shared name is not shared authority; do not treat a
+`ClaimLedger` decision as permission to mutate the host, and do not implement
+recovery from planning claims. See
+[ADR-010](adr-010-global-resource-effects-and-claims.md) for the staged gate.
+
 ## References
 
 - [ADR-001 — Universal lock projection](adr-001-universal-lock-projection.md)
 - [ADR-002 — Transactional preparation](adr-002-transactional-preparation.md)
 - [ADR-003 — Hook lifecycle](adr-003-hook-lifecycle.md)
 - [ADR-005 — Resolved install plan projection](adr-005-resolved-install-plan-projection.md)
+- [ADR-010 — Global resource effects and claims](adr-010-global-resource-effects-and-claims.md)
 - [Support boundary](../support-boundary.md)
 - [Schema reference](../schema-reference.md)

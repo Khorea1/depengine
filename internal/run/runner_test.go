@@ -334,6 +334,9 @@ func TestOSExecRunnerSignalTerminationSetsErr(t *testing.T) {
 }
 
 func TestRedactErrorPreservesCauseAndHidesSecret(t *testing.T) {
+	if got := RedactError(nil); got != nil {
+		t.Fatalf("RedactError(nil) = %v, want nil", got)
+	}
 	cause := errors.New("GET https://example.com/file?token=topsecret: failed")
 	err := RedactError(cause)
 	if !errors.Is(err, cause) {

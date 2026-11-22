@@ -58,7 +58,12 @@ func (a *AppImageAdapter) Kind() string { return "appimage" }
 // ResolvePlan reuses HTTP artifact resolution so dry-run reports the concrete
 // URL/version consumed by the delegated downloader.
 func (a *AppImageAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	return resolveDownloadPlan(ctx, rn, mc, intent)
+	resolved, err := resolveDownloadPlan(ctx, rn, mc, intent)
+	if err != nil {
+		return resolved, err
+	}
+	annotateInstallElevation(resolved, a.RequiresElevation(tool, mc))
+	return resolved, nil
 }
 
 func (a *AppImageAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {

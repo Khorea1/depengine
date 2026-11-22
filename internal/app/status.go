@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
@@ -23,37 +22,54 @@ import (
 // newStatusCmd builds `depengine status`.
 func newStatusCmd() *cobra.Command {
 	statusSchema := new(string)
+	statusLock := new(string)
 	statusManifest := new(string)
 	statusNoManifest := new(bool)
 	statusFormat := new(string)
 	statusJSON := new(bool)
 	statusOrphans := new(bool)
+	statusQuiet := new(bool)
+	statusCatalog := new([]string)
+	statusNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "status",
 		Aliases: []string{"st"},
 		Short:   ifPT("Mostrar estado das ferramentas em relação ao schema", "Show tool installation state vs schema"),
 		Long:    ifPT("Reconcilia o estado rastreado com a identidade observada no host. Os status incluem installed, missing, outdated, unknown e broken.", "Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken."),
+		Example: `  depengine status              # schema vs state vs host
+  depengine status --orphans    # installed tools missing from schema
+  depengine status --format json`,
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
+			if err := normalizeOutputFormat(statusFormat, statusJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusOrphans, statusQuiet, catalog, *statusLock)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(statusSchema, "schema", "", "override schema path")
+	f.StringVar(statusLock, "lock", "", "lockfile to inspect (default: derived from schema path)")
 	f.StringVar(statusManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(statusNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, statusCatalog, statusNoCatalog)
 	f.StringVar(statusFormat, "format", "text", "output format: text or json")
-	f.BoolVar(statusJSON, "json", false, "JSON output (shorthand for --format=json)")
+	f.BoolVar(statusJSON, "json", false, "shorthand for --format=json")
 	f.BoolVar(statusOrphans, "orphans", false, "show only orphaned tools")
+	f.BoolVar(statusQuiet, "quiet", false, "suppress layer and manifest header lines")
 	return cmd
 }
 
 // runStatus compares tracked and observed host state with the current schema.
-func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
-	normalizeStatusFormat(statusFormat, statusJSON)
-
+func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusOrphans, statusQuiet *bool, catalog *config.Catalog, lockOverride ...string) error {
 	ls, err := openStatusState(ctx)
 	if err != nil {
 		return err
@@ -67,31 +83,14 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return nil
 	}
 
-	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest, *statusQuiet, catalog, lockOverride...)
 	if err != nil {
 		log.Default.Error("load lock for status", "error", err)
 		return exitWithCode(3)
 	}
-	var s *config.Schema
-	if project != nil {
-		s = project.Schema
-	}
-	var lockDocument *plan.LockDocument
-	if lk != nil && lk.Version == lock.CurrentVersion {
-		document, err := lk.ProjectionDocument()
-		if err != nil {
-			return fmt.Errorf("load universal lock projection for status: %w", err)
-		}
-		lockDocument = &document
-	}
-
-	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
-	if project != nil && !*statusOrphans {
-		ex := newProjectExecutor(s, project.Clan, project.Facts, run.OSExecRunner{})
-		if lockDocument != nil {
-			exec.WithLockDocument(*lockDocument)(ex)
-		}
-		tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, project.Clan)
+	tools, err := statusRows(ctx, project, lk, st.Tools, *statusOrphans)
+	if err != nil {
+		return err
 	}
 
 	if *statusFormat == "json" {
@@ -100,14 +99,32 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 	return renderStatusTable(tools, *statusOrphans)
 }
 
-// normalizeStatusFormat folds the deprecated --json shorthand into --format.
-func normalizeStatusFormat(statusFormat *string, statusJSON *bool) {
-	if *statusJSON {
-		if *statusFormat == "text" {
-			*statusFormat = "json"
-		}
-		fmt.Fprintln(os.Stderr, "depengine: --json is deprecated; use --format=json instead")
+// statusRows builds the tracked/observed rows shared by `status` and `audit`:
+// classification against the schema, then host reconciliation for tools the
+// schema expects. orphansOnly keeps the cheap classification-only path.
+func statusRows(ctx context.Context, project *loadedProject, lk *lock.Lock, installed map[string]state.ToolState, orphansOnly bool) ([]toolStatus, error) {
+	var s *config.Schema
+	if project != nil {
+		s = project.Schema
 	}
+	var lockDocument *plan.LockDocument
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			return nil, fmt.Errorf("load universal lock projection for status: %w", err)
+		}
+		lockDocument = &document
+	}
+
+	tools := classifyStatusTools(installed, s, lk, orphansOnly)
+	if project != nil && !orphansOnly {
+		ex := newProjectExecutor(s, project.Clan, project.Facts, run.OSExecRunner{})
+		if lockDocument != nil {
+			exec.WithLockDocument(*lockDocument)(ex)
+		}
+		tools = reconcileStatusTools(ctx, tools, installed, s, lk, ex, project.Clan)
+	}
+	return tools, nil
 }
 
 // openStatusState loads the shared state file for reading.
@@ -141,7 +158,7 @@ func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, boo
 // installed-vs-pinned version comparisons (outdated detection). A missing
 // lock is fine. A schema that fails to parse (or a manifest that fails to
 // merge) degrades to state-only reporting with a warning.
-func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*loadedProject, *lock.Lock, error) {
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool, quiet bool, catalog *config.Catalog, lockOverride ...string) (*loadedProject, *lock.Lock, error) {
 	if schemaPath == "" {
 		return nil, nil, nil
 	}
@@ -156,19 +173,23 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		}
 	}
 
-	project, projectErr := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	project, projectErr := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	lockSchemaPath := schemaPath
 	if projectErr != nil {
 		log.Default.Warn("load schema for comparison", "error", projectErr)
 		project = nil
 	} else {
 		lockSchemaPath = project.SchemaPath
-		if project.ManifestCount > 0 && project.ManifestAuto {
+		project.presentWarnings("")
+		if !quiet && project.ManifestCount > 0 && project.ManifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+		}
+		if !quiet && project.CatalogCount > 0 {
+			fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 		}
 	}
 
-	lk, err := lock.Load(lock.DefaultPath(lockSchemaPath))
+	lk, err := lock.Load(lock.Path(lockSchemaPath, lockOverride...))
 	if err != nil {
 		return nil, nil, fmt.Errorf("load lock for status: %w", err)
 	}
@@ -307,9 +328,7 @@ func classifyStatusTools(installed map[string]state.ToolState, s *config.Schema,
 
 // renderStatusJSON emits the report as indented JSON on stdout.
 func renderStatusJSON(tools []toolStatus) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(tools); err != nil {
+	if err := writeMachineOutput(os.Stdout, "status", tools); err != nil {
 		log.Default.Error("json output", "error", err)
 		return exitWithCode(3)
 	}

@@ -22,6 +22,8 @@ type FakeRunner struct {
 	// LookPaths overrides executable lookup results by name. Unlisted names
 	// retain the default result derived from Err and ExitCode.
 	LookPaths map[string]bool
+	// ResolvedPaths gives deterministic results for path resolution tests.
+	ResolvedPaths map[string]string
 	// Delay, if set, blocks Run this long (used to test ctx cancellation).
 	Delay time.Duration
 }
@@ -83,6 +85,11 @@ func (f *FakeRunner) LookPath(ctx context.Context, name string) bool {
 		return found
 	}
 	return result.Err == nil && result.ExitCode == 0
+}
+
+func (f *FakeRunner) ResolvePath(_ context.Context, name string) (string, bool) {
+	path, ok := f.ResolvedPaths[name]
+	return path, ok
 }
 
 func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) Result {

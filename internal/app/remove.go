@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,16 +28,26 @@ func newRemoveCmd() *cobra.Command {
 	removeSchema := new(string)
 	removeOnly := new(string)
 	removeForce := new(bool)
+	removeQuiet := new(bool)
+	removeJSON := new(bool)
+	removeFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "remove [tool...]",
 		Aliases: []string{"rm", "uninstall"},
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
-		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail."),
+		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações drifted, unknown ou broken preservam o state e falham. Se a instalação mudou fora do depengine, use 'depengine forget' para largar o rastreamento e limpe manualmente.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail. If the installation changed outside depengine, use 'depengine forget' to drop tracking and clean up manually."),
+		Example: `  depengine remove bat                  # remove one tool
+  depengine remove bat lsd --dry-run    # preview the removal
+  depengine remove --all --force        # remove everything without prompting`,
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
+			if err := normalizeOutputFormat(removeFormat, removeJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeQuiet, removeJSON)
 		},
 	}
 	f := cmd.Flags()
@@ -45,6 +56,9 @@ func newRemoveCmd() *cobra.Command {
 	f.StringVar(removeSchema, "schema", "", "path to schema.toml (optional, for validation)")
 	f.StringVar(removeOnly, "only", "", "only remove specific tool (alternative to positional arg)")
 	f.BoolVar(removeForce, "force", false, "skip confirmation when removing all tools")
+	f.BoolVar(removeQuiet, "quiet", false, "suppress per-tool status lines")
+	f.BoolVar(removeJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(removeFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
@@ -66,7 +80,7 @@ type removeSession struct {
 
 // runRemove validates flags and configures a run-scoped executor before
 // delegating the state, selection, removal, ownership, and persistence flow.
-func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
+func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeQuiet, removeJSON *bool) error {
 	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
 		return err
 	}
@@ -74,19 +88,28 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	facts := gatherRemoveFacts()
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
+	if *removeQuiet {
+		exec.WithQuiet()(executor)
+	}
 	if facts != nil {
 		clan := platform.ResolveFamily(facts)
 		exec.WithFacts(facts)(executor)
 		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
-	return runRemoveWithExecutor(ctx, removeArgs, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, executor, facts)
+	return runRemoveWithExecutor(ctx, removeArgs, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, removeJSON, executor, facts)
 }
 
 // runRemoveWithExecutor runs the complete state-driven removal flow using the
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
-func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *platform.Facts) error {
+func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce, removeJSON *bool, executor *exec.Executor, facts *platform.Facts) error {
+	unlockMutations, err := holdHostMutations(ctx, *removeDryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err
@@ -126,11 +149,51 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 	if err := persistRemoveState(ls, *removeDryRun); err != nil {
 		return err
 	}
+	if !*removeDryRun {
+		recordRemoveJournal("remove", sess.schemaTools, sess.removedThisRun, sess.requestedRemoval, sess.state.Tools)
+	}
+
+	if *removeJSON {
+		payload := removeMachineResult{
+			DryRun:  *removeDryRun,
+			Removed: sortedBoolKeys(sess.removedThisRun),
+			Failed:  missingBoolKeys(sess.requestedRemoval, sess.removedThisRun),
+		}
+		if err := writeMachineOutput(os.Stdout, "remove", payload); err != nil {
+			return exitWithCode(3)
+		}
+	}
 
 	if hadFailure {
 		return exitWithCode(1)
 	}
 	return nil
+}
+
+type removeMachineResult struct {
+	DryRun  bool     `json:"dry_run"`
+	Removed []string `json:"removed"`
+	Failed  []string `json:"failed"`
+}
+
+func sortedBoolKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func missingBoolKeys(all, done map[string]bool) []string {
+	keys := make([]string, 0)
+	for key := range all {
+		if !done[key] {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // validateRemoveFlags rejects mutually exclusive flag combinations.
@@ -170,8 +233,7 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, 
 	}
 	s, _, _, err := loadSchema(schemaPath)
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		return nil, "", exitWithCode(2)
+		return nil, "", presentSchemaLoadErrorFor("remove", err, false)
 	}
 	return s.Tools, s.Defaults.AurHelper, nil
 }
@@ -268,7 +330,13 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 			return verifiedRemovalTarget{}, err
 		}
 		*tool = *schemaTool
-		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
+		// State owns the installed config; the schema candidate still supplies
+		// typed metadata the state does not persist: secret references,
+		// sources, distribution selection, and conditions used to resolve the
+		// same variant that was installed.
+		methodCopy := *tracked
+		method = &methodCopy
+		method.OwnsArchivePayload = toolState.ArchivePayloadOwned()
 		if toolState.Config != nil {
 			method.Config = toolState.Config
 		}
@@ -434,7 +502,7 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 		return false
 	}
 	switch target.verification.State {
-	case plan.StateSatisfied, plan.StateDrifted:
+	case plan.StateSatisfied:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
@@ -445,8 +513,8 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 	case plan.StateAbsent:
 		log.Default.Warn("tracked target already absent; releasing state and ownership", "tool", toolName)
 		s.removedThisRun[toolName] = true
-	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot safely remove target with unverifiable state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot safely remove target with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
@@ -544,8 +612,10 @@ func (s *removeSession) cleanupReleasedPrerequisites(ctx context.Context, ownerN
 
 		helperState, exists := s.state.Tools[helperName]
 		if !exists {
-			log.Default.Error("owned prerequisite is not tracked as a tool; retaining zero-ref state", "tool", ownerName, "prerequisite", helperName)
-			ok = false
+			// The helper was forgotten or never tracked, so depengine has no target
+			// to verify. Retaining the zero-ref record is the only safe action; the
+			// requested owner removal still succeeded.
+			log.Default.Warn("owned prerequisite is not tracked; retaining zero-ref state (run 'depengine forget <prerequisite>' to drop the record)", "tool", ownerName, "prerequisite", helperName)
 			continue
 		}
 		if helperState.RootRequested {
@@ -573,7 +643,7 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 		return false
 	}
 	switch target.verification.State {
-	case plan.StateSatisfied, plan.StateDrifted:
+	case plan.StateSatisfied:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
@@ -581,8 +651,8 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 		log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
 	case plan.StateAbsent:
 		log.Default.Info("target already absent; would release tracked ownership/resources", "tool", toolName, "method", toolState.Method)
-	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot plan removal with unverifiable target state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
+	case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot plan removal with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
 		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
@@ -608,11 +678,15 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 				log.Default.Error("decode owned prerequisite", "tool", toolName, "resource", resource.Key, "error", err)
 				return false
 			}
-			if helperState, exists := s.state.Tools[helperName]; exists && helperState.RootRequested {
+			helperState, tracked := s.state.Tools[helperName]
+			switch {
+			case tracked && helperState.RootRequested:
 				log.Default.Info("would retain prerequisite requested as root", "tool", toolName, "prerequisite", helperName)
-			} else if s.requestedRemoval[helperName] {
+			case !tracked:
+				log.Default.Info("prerequisite is not tracked; would retain zero-ref ownership record", "tool", toolName, "prerequisite", helperName)
+			case s.requestedRemoval[helperName]:
 				log.Default.Info("prerequisite is also explicitly scheduled for removal", "tool", toolName, "prerequisite", helperName)
-			} else {
+			default:
 				log.Default.Info("would remove owned prerequisite", "tool", toolName, "prerequisite", helperName)
 			}
 		default:

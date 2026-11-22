@@ -1,0 +1,13 @@
+recipe_version = 1
+
+[packages.prettier]
+method_only = ["npm", "pnpm", "bun"]
+
+[packages.prettier.npm]
+pkg = "prettier"
+
+[packages.prettier.pnpm]
+pkg = "prettier"
+
+[packages.prettier.bun]
+pkg = "prettier"

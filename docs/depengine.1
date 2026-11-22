@@ -22,8 +22,41 @@ detection still relies on a POSIX shell and standard base utilities.
 .B "depengine [flags]"
 Distro\-agnostic dependency installer
 .TP
+.B "depengine audit [flags]"
+Reconciles the effective schema, the lockfile, tracked state and observed host identity. Every divergence carries a remediation, and one exit code aggregates the result (0 without errors, 1 with errors, 2 invalid schema, 3 runtime failure).
+.PP
+Examples:
+.nf
+  depengine audit                       # full consistency report
+  depengine audit \-\-strict              # warnings also fail the gate
+  depengine audit \-\-json                # machine\-readable report
+  depengine audit \-\-schema ci/schema.toml \-\-no\-manifest
+.fi
+.TP
+.B "depengine bundle [flags]"
+Manage offline artifact bundles
+.PP
+Examples:
+.nf
+  depengine bundle export \-\-output ./offline\-bundle
+.fi
+.TP
+.B "depengine bundle export [flags]"
+Export artifacts from a v2 lockfile
+.PP
+Examples:
+.nf
+  depengine bundle export \-\-lock depengine.lock \-\-output ./offline\-bundle
+.fi
+.TP
 .B "depengine check <tool> [flags]"
 Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
+.PP
+Examples:
+.nf
+  depengine check nvim                 # compare desired state with the host
+  depengine check nvim \-\-live \-\-json   # probe through the adapter
+.fi
 .TP
 .B "depengine completion [flags]"
 Generate the autocompletion script for depengine for the specified shell. See each sub\-command's help for details on how to use the generated script.
@@ -42,56 +75,215 @@ Generate the autocompletion script for the zsh shell. If shell completion is not
 .TP
 .B "depengine diff [file1] [file2] [flags]"
 Compare two state files
+.PP
+Examples:
+.nf
+  depengine diff state\-before.json state\-after.json
+  depengine diff state\-before.json state\-after.json \-\-json
+.fi
+.TP
+.B "depengine doctor [flags]"
+Print host facts, discovered layers (schema, manifest, catalog), available managers and elevation, and lock state. It installs nothing, writes no state, and changes no files.
+.PP
+Examples:
+.nf
+  depengine doctor
+  depengine doctor \-\-json
+  depengine doctor \-\-schema ./schema.toml \-\-no\-manifest
+.fi
+.TP
+.B "depengine explain [term...] [flags]"
+Answers depengine's vocabulary without leaving the terminal: schema fields, installation methods, and error codes, with the valid form, a minimal example, and the matching document. It reads neither the project schema, the host, nor the network.
+.PP
+Examples:
+.nf
+  depengine explain                 # list every known term
+  depengine explain requires_when   # one field
+  depengine explain http            # one method
+  depengine explain E_DUPE_TOOL     # one error code
+  depengine explain \-\-json http     # machine\-readable answer
+.fi
 .TP
 .B "depengine forget <tool> [flags]"
-Forget a tool from state without removing it from the system
+Drop the tool's tracking; the system is untouched. For an untracked name, releases dangling shared\-resource claims and drops a zero\-reference prerequisite ownership record; refuses while tracked tools still require the prerequisite.
+.PP
+Examples:
+.nf
+  depengine forget nvim   # drop install state; the system is untouched
+.fi
 .TP
 .B "depengine graph [flags]"
 Show the dependency graph
+.PP
+Examples:
+.nf
+  depengine graph \-\-format mermaid
+  depengine graph \-\-format graph \-\-width 100
+  depengine graph \-\-only nvim \-\-direction dependents
+.fi
 .TP
 .B "depengine help [command] [flags]"
 Help about any command
 .TP
+.B "depengine import <recipe.toml> [flags]"
+Validate a recipe before writing it to the catalog: preview declared origins, integrity and candidates; reject arbitrary code and credential references; require a checksum and warn about TOFU. Use \-\-expected\-digest to verify a separately trusted recipe identity.
+.PP
+Examples:
+.nf
+  depengine import ./fd.toml \-\-dry\-run   # preview origin, integrity and candidates
+  depengine import ./fd.toml \-\-dry\-run \-\-json  # inspect the preview in scripts
+  depengine import ./fd.toml \-\-force     # replace an existing recipe
+  depengine import ./fd.toml \-\-expected\-digest sha256:YOUR_TRUSTED_DIGEST  # verify an out\-of\-band pin
+.fi
+.TP
 .B "depengine init [flags]"
 Initialize a schema.toml for a new project
+.PP
+Examples:
+.nf
+  depengine init                          # scaffold with placeholder tools
+  depengine init \-\-add "zsh,bat,nvim"     # non\-interactive tool list
+  depengine init \-\-add nvim \-\-dry\-run     # preview without creating files
+  depengine init \-\-from\-state             # adopt installed tools from tracked state
+  depengine init \-\-from\-manifest \-\-dry\-run  # adopt personal manifest entries without writing
+  depengine init \-\-schema path/to/schema.toml
+.fi
 .TP
 .B "depengine install [flags]"
 Install tools from schema.toml
 Aliases: i.
+.PP
+Examples:
+.nf
+  depengine install                          # install every tool declared in schema.toml
+  depengine install \-\-only nvim              # one tool plus its dependencies
+  depengine install \-\-dry\-run \-\-sort\-by name # preview the plan without mutating
+  depengine install \-\-frozen\-lockfile        # reproducible install from depengine.lock
+  depengine install \-\-allow\-arbitrary\-code   # run pre_install/post_install hooks
+.fi
+.TP
+.B "depengine journal [flags]"
+Shows the durable install/remove/upgrade/update/undo history, filterable by tool, command, result, and time window. The journal lives in journal.jsonl next to state.json and contains no secrets.
+.PP
+Examples:
+.nf
+  depengine journal                          # recent mutations
+  depengine journal \-\-tool nvim \-\-since 7d   # one tool, last week
+  depengine journal \-\-result failed \-\-json   # failures as machine output
+.fi
 .TP
 .B "depengine remove [tool...] [flags]"
-Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
+Observes the tracked target before removal. Proven\-absent targets release state and ownership; drifted, unknown or broken observations preserve state and fail. If the installation changed outside depengine, use 'depengine forget' to drop tracking and clean up manually.
 Aliases: rm, uninstall.
+.PP
+Examples:
+.nf
+  depengine remove bat                  # remove one tool
+  depengine remove bat lsd \-\-dry\-run    # preview the removal
+  depengine remove \-\-all \-\-force        # remove everything without prompting
+.fi
 .TP
 .B "depengine sbom [flags]"
 Export a software bill of materials of installed state
+.PP
+Examples:
+.nf
+  depengine sbom                  # CycloneDX
+  depengine sbom \-\-format spdx
+.fi
+.TP
+.B "depengine self [flags]"
+Manage the depengine executable itself
+.TP
+.B "depengine self update [flags]"
+Rebuild depengine from a Git checkout and atomically replace the running executable. Cloning and building happen in a temporary directory; the previous binary is replaced only after the new build compiles and answers 'version'. Use \-\-check to compare the running revision with the remote without installing, and \-\-dry\-run to resolve the source without building.
+.PP
+Examples:
+.nf
+  depengine self update
+  depengine self update \-\-check
+  depengine self update \-\-ref master \-\-bin\-dir "$HOME/.local/bin"
+  depengine self update \-\-recipe recipes/depengine.toml.example \-\-dry\-run
+  depengine self update \-\-dry\-run \-\-format json
+.fi
 .TP
 .B "depengine status [flags]"
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 Aliases: st.
+.PP
+Examples:
+.nf
+  depengine status              # schema vs state vs host
+  depengine status \-\-orphans    # installed tools missing from schema
+  depengine status \-\-format json
+.fi
+.TP
+.B "depengine tutorial [flags]"
+Creates a temporary project, shows a schema, runs validate/why/update/install \-\-dry\-run with an explanation of each output, and removes everything at the end. No step mutates the host.
+.PP
+Examples:
+.nf
+  depengine tutorial             # guided tour, cleans up afterwards
+  depengine tutorial \-\-keep      # keep the temporary project for inspection
+  depengine tutorial \-\-json      # machine\-readable steps
+.fi
 .TP
 .B "depengine undo [flags]"
-Revert to a previous state snapshot
+Revert to a previous state snapshot. Removing tools added after the snapshot verifies the recorded target first; drifted, unknown or broken observations preserve state and fail.
 Aliases: rollback.
+.PP
+Examples:
+.nf
+  depengine undo \-\-list                # list available snapshots
+  depengine undo \-\-snapshot <path>     # restore one snapshot
+.fi
 .TP
 .B "depengine update [flags]"
-Resolve mutable references and write v2 only when every tool has an immutable resolved identity
+Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native\-only schemas
 Aliases: lock.
+.PP
+Examples:
+.nf
+  depengine update                    # resolve mutable references; write depengine.lock
+  depengine update \-\-dry\-run \-v       # show the pins without writing
+  depengine update \-\-profile desktop  # re\-resolve only tagged tools; keep other pins
+  depengine update \-\-prune             # remove metadata for deleted tools
+.fi
 .TP
 .B "depengine upgrade [flags]"
 Upgrade installed tools to the targets pinned in depengine.lock
+.PP
+Examples:
+.nf
+  depengine upgrade             # upgrade drifted tools to the locked targets
+  depengine upgrade \-\-only nvim
+  depengine upgrade \-\-dry\-run   # show the exact targets without upgrading
+.fi
 .TP
 .B "depengine validate [flags]"
 Validate schema.toml
 Aliases: lint.
+.PP
+Examples:
+.nf
+  depengine validate                     # parse and validate schema.toml
+  depengine validate \-\-strict            # warnings become errors
+  depengine validate \-\-check\-env \-\-format json
+.fi
 .TP
 .B "depengine version [flags]"
 Show version
 Hidden compatibility command.
 .TP
-.B "depengine why <tool> [flags]"
+.B "depengine why [tool] [flags]"
 Explain how a tool would be installed
-Aliases: explain.
+.PP
+Examples:
+.nf
+  depengine why nvim \-\-fields   # method, provenance and catalog impact
+  depengine why nvim \-\-json
+  depengine why \-\-all           # one line per tool in the schema
+.fi
 .SH OPTIONS
 .SS "depengine flags"
 .TP
@@ -100,22 +292,79 @@ help for depengine Scope: local. Default: false.
 .TP
 .B "\-v, \-\-version"
 Show version Scope: local. Default: false.
-.SS "depengine check flags"
+.SS "depengine audit flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-format <string>"
-output format (json) Scope: local. Default: .
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for audit Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to audit (default: derived from schema path) Scope: local. Default: .
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml (default: the path recorded in state) Scope: local. Default: .
+.TP
+.B "\-\-strict"
+treat warnings as errors Scope: local. Default: false.
+.SS "depengine bundle flags"
+.TP
+.B "\-h, \-\-help"
+help for bundle Scope: local. Default: false.
+.SS "depengine bundle export flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for export Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+v2 lockfile to read (default depengine.lock) Scope: local. Default: .
+.TP
+.B "\-o, \-\-output <string>"
+new bundle directory to create Scope: local. Default: .
+.SS "depengine check flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for check Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-live"
 check via adapter (may run subprocesses) Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -156,19 +405,69 @@ help for zsh Scope: local. Default: false.
 disable completion descriptions Scope: local. Default: false.
 .SS "depengine diff flags"
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for diff Scope: local. Default: false.
 .TP
 .B "\-\-json"
-output as JSON Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-other <string>"
 path to other state file (used when no args) Scope: local. Default: .
+.SS "depengine doctor flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for doctor Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to inspect (default: derived from schema path) Scope: local. Default: .
+.TP
+.B "\-\-manifest <string>"
+personal manifest path to inspect (default: auto\-detect) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-no\-manifest"
+ignore the personal manifest Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+schema path to inspect Scope: local. Default: schema.toml.
+.SS "depengine explain flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for explain Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine forget flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for forget Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine graph flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-depth <int>"
 with \-\-only: maximum traversal depth in edges (\-1 = unbounded, 0 = only the tool itself) Scope: local. Default: \-1.
@@ -184,6 +483,9 @@ help for graph Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -215,10 +517,41 @@ help for help Scope: local. Default: false.
 .TP
 .B "\-\-man"
 Show the man page Scope: local. Default: false.
+.SS "depengine import flags"
+.TP
+.B "\-\-catalog <stringArray>"
+destination catalog root (repeatable; the first root wins) Scope: local. Default: [].
+.TP
+.B "\-\-dry\-run"
+preview the import without writing the recipe Scope: local. Default: false.
+.TP
+.B "\-\-expected\-digest <string>"
+require the canonical sha256:<64 hex> recipe digest from a trusted source Scope: local. Default: .
+.TP
+.B "\-\-force"
+replace an existing recipe with the same tool name Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for import Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .SS "depengine init flags"
 .TP
 .B "\-\-add <string>"
 comma\-separated tool names to pre\-populate (e.g. 'zsh,bat,nvim') Scope: local. Default: .
+.TP
+.B "\-\-dry\-run"
+print the resulting schema without writing it Scope: local. Default: false.
+.TP
+.B "\-\-from\-manifest <string>"
+adopt tools from the personal manifest (optional manifest path) Scope: local. Default: .
+.TP
+.B "\-\-from\-state <string>"
+adopt tools from tracked state (optional state file path) Scope: local. Default: .
 .TP
 .B "\-h, \-\-help"
 help for init Scope: local. Default: false.
@@ -233,11 +566,20 @@ path to write (default: schema.toml) Scope: local. Default: .
 .B "\-\-allow\-arbitrary\-code"
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
+.B "\-\-bundle <string>"
+install locked artifacts from a local frozen artifact bundle Scope: local. Default: .
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-diagnose"
 diagnostic mode: DEBUG + dry\-run + detailed report Scope: local. Default: false.
 .TP
 .B "\-\-dry\-run"
 show what would be installed Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-\-frozen\-lockfile"
 fail if depengine.lock is missing, detectably stale, or lacks a supported required pin Scope: local. Default: false.
@@ -249,13 +591,19 @@ help for install Scope: local. Default: false.
 max concurrent installations (default 1 = sequential) Scope: local. Default: 1.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read and update (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-log\-level <string>"
 log level: debug, info, warn, error Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -280,6 +628,34 @@ sort output by: name, status, method Scope: local. Default: .
 .TP
 .B "\-\-verbose"
 deprecated compatibility flag; detailed output is already the default Scope: local. Default: false.
+.SS "depengine journal flags"
+.TP
+.B "\-\-command <string>"
+only entries from this command (install, remove, upgrade, update, undo) Scope: local. Default: .
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for journal Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-limit <int>"
+maximum entries to show, most recent first; 0 means all Scope: local. Default: 50.
+.TP
+.B "\-\-result <string>"
+only entries with this result (success, already, failed, skipped, updated, removed, reverted) Scope: local. Default: .
+.TP
+.B "\-\-since <string>"
+start of the time window (RFC3339, YYYY\-MM\-DD, or duration such as 7d/24h) Scope: local. Default: .
+.TP
+.B "\-\-tool <string>"
+only entries for this tool Scope: local. Default: .
+.TP
+.B "\-\-until <string>"
+end of the time window (same formats as \-\-since) Scope: local. Default: .
 .SS "depengine remove flags"
 .TP
 .B "\-\-all"
@@ -291,11 +667,20 @@ show what would be removed Scope: local. Default: false.
 .B "\-\-force"
 skip confirmation when removing all tools Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for remove Scope: local. Default: false.
 .TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
 .B "\-\-only <string>"
 only remove specific tool (alternative to positional arg) Scope: local. Default: .
+.TP
+.B "\-\-quiet"
+suppress per\-tool status lines Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 path to schema.toml (optional, for validation) Scope: local. Default: .
@@ -306,7 +691,45 @@ output format: cyclonedx or spdx Scope: local. Default: cyclonedx.
 .TP
 .B "\-h, \-\-help"
 help for sbom Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read for missing versions (default: derived from recorded schema) Scope: local. Default: .
+.SS "depengine self flags"
+.TP
+.B "\-h, \-\-help"
+help for self Scope: local. Default: false.
+.SS "depengine self update flags"
+.TP
+.B "\-\-bin\-dir <string>"
+destination directory (default: the running executable's directory) Scope: local. Default: .
+.TP
+.B "\-\-check"
+compare revisions without building; exits 1 when an update is available Scope: local. Default: false.
+.TP
+.B "\-\-dry\-run"
+resolve the source without building or replacing Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for update Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-recipe <string>"
+project\-schema fragment declaring the git method (default: embedded recipe) Scope: local. Default: .
+.TP
+.B "\-\-ref <string>"
+branch, tag, or commit to build (default: remote default branch) Scope: local. Default: .
+.TP
+.B "\-\-repo <string>"
+Git source repository (default: the recipe's source) Scope: local. Default: .
 .SS "depengine status flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-format <string>"
 output format: text or json Scope: local. Default: text.
@@ -315,10 +738,16 @@ output format: text or json Scope: local. Default: text.
 help for status Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output (shorthand for \-\-format=json) Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to inspect (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -326,12 +755,34 @@ disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .B "\-\-orphans"
 show only orphaned tools Scope: local. Default: false.
 .TP
+.B "\-\-quiet"
+suppress layer and manifest header lines Scope: local. Default: false.
+.TP
 .B "\-\-schema <string>"
 override schema path Scope: local. Default: .
+.SS "depengine tutorial flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for tutorial Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-keep"
+keep the temporary project directory Scope: local. Default: false.
 .SS "depengine undo flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for undo Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-list"
 list available snapshots Scope: local. Default: false.
@@ -340,8 +791,14 @@ list available snapshots Scope: local. Default: false.
 revert to specific snapshot file path Scope: local. Default: .
 .SS "depengine update flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-dry\-run"
 show what would be updated without writing lock Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-\-frozen\-lockfile"
 abort if depengine.lock does not exist Scope: local. Default: false.
@@ -349,11 +806,17 @@ abort if depengine.lock does not exist Scope: local. Default: false.
 .B "\-h, \-\-help"
 help for update Scope: local. Default: false.
 .TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
 .B "\-\-lock <string>"
 path to depengine.lock (default: alongside schema.toml) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -361,15 +824,24 @@ disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .B "\-\-profile <string>"
 only re\-resolve tools with matching tag; other pins from a readable lock are preserved Scope: local. Default: .
 .TP
+.B "\-\-prune"
+remove obsolete lock metadata for tools absent from the full effective schema Scope: local. Default: false.
+.TP
+.B "\-\-quiet"
+suppress progress and the Next hint Scope: local. Default: false.
+.TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
 .TP
 .B "\-v, \-\-verbose"
-detailed output Scope: local. Default: false.
+include the resolved lock projection in the output Scope: local. Default: false.
 .SS "depengine upgrade flags"
 .TP
 .B "\-\-allow\-arbitrary\-code"
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-dry\-run"
 show what would be upgraded without making changes Scope: local. Default: false.
@@ -377,14 +849,23 @@ show what would be upgraded without making changes Scope: local. Default: false.
 .B "\-\-force"
 skip confirmation prompt Scope: local. Default: false.
 .TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
 .B "\-h, \-\-help"
 help for upgrade Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+lockfile to read (default: derived from schema path) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -397,7 +878,13 @@ suppress per\-tool status lines Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
+.TP
+.B "\-\-skip <string>"
+skip specific tools (comma\-separated) Scope: local. Default: .
 .SS "depengine validate flags"
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-check\-env"
 check system environment for required tools Scope: local. Default: false.
@@ -408,8 +895,14 @@ output format: text or json Scope: local. Default: text.
 .B "\-h, \-\-help"
 help for validate Scope: local. Default: false.
 .TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -425,17 +918,29 @@ treat warnings as errors Scope: local. Default: false.
 help for version Scope: local. Default: false.
 .SS "depengine why flags"
 .TP
+.B "\-\-all"
+explain every tool in the schema, one line each Scope: local. Default: false.
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-fields"
-show field\-level provenance Scope: local. Default: false.
+show the full audit: recipe identity, field provenance, selected candidate and catalog\-update impact Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for why Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+shorthand for \-\-format=json Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.

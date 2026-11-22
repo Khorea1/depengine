@@ -34,7 +34,7 @@ func TestDefaultsRejectsMethodPreferAndMethodOrderTogether(t *testing.T) {
 		},
 		"tools": map[string]any{},
 	}
-	err := validateRawSchema(raw, "tools")
+	err := validateRawSchema(raw, "tools", "schema_version", false)
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("validateRawSchema error = %v, want mutually exclusive diagnostic", err)
 	}

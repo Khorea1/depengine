@@ -138,3 +138,31 @@ func FuzzExpand(f *testing.F) {
 		}()
 	})
 }
+
+// FuzzParsePersonalManifest complements project-schema fuzzing. The two TOML
+// formats intentionally have different root tables and are parsed separately.
+func FuzzParsePersonalManifest(f *testing.F) {
+	for _, text := range []string{
+		"schema_version = 1\n[packages]\nfd = { apt = \"fd-find\" }\n",
+		"schema_version = 1\n[tools]\nfd = { apt = \"fd-find\" }\n",
+		"schema_version = 1\n[packages.foo]\nmethod_order = [\"go\", \"pipx\"]\n",
+		"schema_version = 1\n[packages]\nfoo = { http = { url = \"https://example.test/{version}\" } }\n",
+		"schema_version = 1\n[packages]\n\"üñicode\" = \"pkg\"\n",
+		"schema_version = 1\n[packages]\nfoo = \"foo\"\n[packages]\nbar = \"bar\"\n",
+		"\x00\xff\xfe",
+		"",
+	} {
+		f.Add([]byte(text))
+	}
+	f.Fuzz(func(t *testing.T, input []byte) {
+		if len(input) > 32<<10 {
+			return
+		}
+		path := filepath.Join(t.TempDir(), "manifest.toml")
+		if err := os.WriteFile(path, input, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// Parse errors are expected for arbitrary bytes; crashes are not.
+		_, _ = ParseManifest(path, fixedMap())
+	})
+}

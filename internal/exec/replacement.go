@@ -124,9 +124,32 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	if err := locked.PlanReplacementRemoval(ac.tool.Name); err != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("persist removal boundary: %w", err))
 	}
-	if err := runReplacementRemoval(removeCredentials, runner, ac.tool, oldMethod, oldAdapter); err != nil {
+	var commitQuarantine, rollbackQuarantine func() error
+	if _, ok := oldAdapter.(ReplacementQuarantiner); ok {
+		commitQuarantine, rollbackQuarantine, err = runReplacementQuarantine(methodCtx, runner, oldAdapter, ac.tool, oldMethod)
+		if errors.Is(err, ErrQuarantineUnsupported) {
+			commitQuarantine, rollbackQuarantine = nil, nil
+			err = runReplacementRemoval(removeCredentials, runner, ac.tool, oldMethod, oldAdapter)
+		}
+	} else {
+		err = runReplacementRemoval(removeCredentials, runner, ac.tool, oldMethod, oldAdapter)
+	}
+	if err != nil {
 		err = methodTimeoutError(context.Cause(methodCtx), ex.toolTimeout, ex.methodTimeout, err)
 		return ex.failReplacement(ac, result, err)
+	}
+	replacementCommitted := false
+	if rollbackQuarantine != nil {
+		// Restore the tracked target on every failure before the new state is
+		// committed, including install, verification, and state-save errors.
+		defer func() {
+			if replacementCommitted {
+				return
+			}
+			if rollbackErr := rollbackQuarantine(); rollbackErr != nil {
+				ex.logWarn(ac.toolCtx, "tool", ac.tool.Name, "method", ac.displayKind, "status", "replacement_rollback_failed", "error", rollbackErr)
+			}
+		}()
 	}
 	if err := locked.RecordReplacementRemoved(ac.tool.Name); err != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("persist removed state: %w", err))
@@ -181,6 +204,14 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	if err := locked.CommitReplacementInstallWithPreparation(ac.tool.Name, toolState, owned, preparationKey, preparationPlan, ac.tool.Name); err != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("commit verified replacement install: %w", err))
 	}
+	replacementCommitted = true
+	if commitQuarantine != nil {
+		if err := commitQuarantine(); err != nil {
+			// The replacement is installed and recorded. A leftover backup is
+			// safer than failing the operation after its state is durable.
+			ex.logWarn(ac.toolCtx, "tool", ac.tool.Name, "method", ac.displayKind, "status", "replacement_cleanup_failed", "error", err)
+		}
+	}
 	ac.replacementCommitted = true
 	ac.replacementPlanPostHook = func() error {
 		if ex.beforeReplacementSave != nil {
@@ -234,6 +265,45 @@ func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.
 		return fmt.Errorf("remove tracked installation: %w", err)
 	}
 	return nil
+}
+
+// runReplacementQuarantine applies the same timeout, credential omission, and
+// elevation safeguards as removal, but leaves the tracked target detached
+// instead of destroyed. ErrQuarantineUnsupported is returned verbatim so the
+// caller can fall back to ordinary removal.
+func runReplacementQuarantine(ctx context.Context, runner run.Runner, adapter AdapterV2, tool *config.Tool, method *config.MethodCandidate) (func() error, func() error, error) {
+	quarantiner, ok := adapter.(ReplacementQuarantiner)
+	if !ok {
+		return nil, nil, ErrQuarantineUnsupported
+	}
+	quarantineCtx, cancel := context.WithTimeoutCause(ctx, 2*time.Minute, errReplacementRemovalTimeout)
+	defer cancel()
+	quarantineCtx = run.WithOmittedEnv(quarantineCtx, methodSecretEnvNames(method)...)
+	if requirer, ok := adapter.(RemovalElevationRequirer); ok && requirer.RequiresRemovalElevation(tool, method) {
+		if session, ok := runner.(run.ElevationSession); ok {
+			stop, err := session.StartElevationSession(quarantineCtx)
+			if err != nil {
+				if stop != nil {
+					stop()
+				}
+				if errors.Is(context.Cause(quarantineCtx), errReplacementRemovalTimeout) {
+					return nil, nil, fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
+				}
+				return nil, nil, fmt.Errorf("replacement quarantine elevation: %w", err)
+			}
+			if stop != nil {
+				defer stop()
+			}
+		}
+	}
+	commit, rollback, err := quarantiner.QuarantineForReplacement(quarantineCtx, runner, tool, method)
+	if err != nil {
+		if errors.Is(context.Cause(quarantineCtx), errReplacementRemovalTimeout) {
+			return nil, nil, fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
+		}
+		return nil, nil, err
+	}
+	return commit, rollback, nil
 }
 
 func (ex *Executor) failReplacement(ac *candidateAttempt, result *ToolResult, err error) attemptOutcome {

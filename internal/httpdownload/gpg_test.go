@@ -207,14 +207,11 @@ func TestGPGVerifyAllExistingPass(t *testing.T) {
 	}
 }
 
-// TestGPGVerifyWrongSigner verifies that GPGVerify rejects a signature made
-// by key B when key A was expected, even when both keys are present in the
-// keyring. This test proves the signer-confusion vulnerability is fixed.
+// TestGPGVerifyWrongSigner rejects a valid signature from an unexpected signer.
 func TestGPGVerifyWrongSigner(t *testing.T) {
 	skipIfNoGPG(t)
 	setupGPGDir(t)
 
-	// Create checksum file.
 	checksumContent := []byte("abc123  test.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
 	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
@@ -225,7 +222,6 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	genGPGKey(t, "signer-b@example.com")
 	sigFile := signFile(t, checksumFile) // signs with B (the default key)
 
-	// Export B's key.
 	exportB := exec.Command("gpg", "--armor", "--export", "signer-b@example.com")
 	keyDataB, err := exportB.Output()
 	if err != nil {
@@ -236,7 +232,6 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Generate signer A.
 	genGPGKey(t, "signer-a@example.com")
 	exportA := exec.Command("gpg", "--armor", "--export", "signer-a@example.com")
 	keyDataA, err := exportA.Output()
@@ -248,10 +243,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a combined key file: A's public key first, then B's.
-	// extractFingerprintFromKeyFile (called by importSigningKey via --show-key)
-	// will return A's fingerprint (the first fpr: line).
-	// But the checksum was signed by B. The identity check must catch this.
+	// A is the expected signer, but B signs the checksum; both keys are available.
 	combinedKeyFile := filepath.Join(t.TempDir(), "pubkey-combined.asc")
 	combined := append([]byte(nil), keyDataA...)
 	combined = append(combined, keyDataB...)
@@ -259,18 +251,11 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Reset GNUPGHOME to a clean dir — no keys pre-imported.
+	// Start verification without pre-imported keys.
 	setupGPGDir(t)
 
-	// Call GPGVerify with the combined key file as signingKey.
-	// Before the fix: imports both keys into the shared keyring, verifies B's sig using B's key — passes (BUG).
-	// After the fix:  extracts A's fingerprint as expected, imports both into isolated homedir,
-	//                 verifies B's sig using B's key — passes crypto check (exit 0),
-	//                 then identity comparison fails: expected A, got B.
 	rn := &run.OSExecRunner{}
-	// Build a well-formed file:// URL: the native path concatenation
-	// ("file://" + backslash path) is malformed on Windows; the canonical
-	// file:/// form (leading slash, forward separators) parses on both.
+	// file:/// with forward separators parses on Windows and Unix.
 	keyURLPath := filepath.ToSlash(combinedKeyFile)
 	if !strings.HasPrefix(keyURLPath, "/") {
 		keyURLPath = "/" + keyURLPath

@@ -200,7 +200,15 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
 | `managed_paths` | no | Absolute paths owned by the recipe; all must exist for `Check`, and removal deletes only these exact targets |
 
-Revision-aware verification is available when extract_to retains the clone root (the default or root artifact) and managed_paths is not active: depengine observes the checkout's actual HEAD commit. If that declared checkout exists but its Git metadata or HEAD cannot be verified, observation is broken rather than silently treated as absence. Non-root artifacts, managed-path outputs, and binary-only installs remain presence-only; depengine cannot claim their installed revision.
+Revision-aware verification is available when `extract_to` retains the clone root (the default or root artifact) and `managed_paths` is not active: depengine observes the checkout's actual HEAD commit. If that declared checkout exists but its Git metadata or HEAD cannot be verified, observation is broken rather than silently treated as absence. For a single installed binary with `extract_to` and `binary`, **clean Go builds** with embedded `vcs.revision` and `vcs.modified=false` also expose the installed commit, even after the temporary clone is removed. Set `-buildvcs=true` in `go build` to require VCS stamping. Unstamped, modified or non-Go binaries retain presence-only semantics. The revision is not a signature or proof of the remote publisher's identity; other non-root and managed-path artifacts remain presence-only.
+
+On upgrade, a Git method detaches its tracked target to a sibling
+`<target>.depengine-old` path before building the replacement. A failed build,
+install, or verification restores the old target; a successful replacement
+removes the backup after the new state is durable. `managed_paths` entries are
+detached individually. Windows keeps the ordinary remove-then-install path
+because a running executable cannot be renamed there. Single-file Git artifacts
+are staged and renamed atomically instead of deleting the destination first.
 
 For example, set `secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }`
 on a Git method that clones a private HTTPS repository. depengine passes the
@@ -712,7 +720,40 @@ every path and `Remove` deletes only those exact targets.
 
 `flatpak` no longer assumes Flathub. `remote` selects and verifies the origin, `branch` is appended to the application ref (`APP//BRANCH`), and `scope = "user" | "system"` is applied consistently to check/install/remove. If `remote` is omitted, depengine leaves remote resolution to Flatpak rather than silently forcing `flathub`.
 
-`snap` keeps `channel = "edge"`-style shorthand for risk-only selection. For full channel identity, use `track`, optional `risk` (default `stable`), and optional `branch`; depengine composes `track/risk[/branch]` and verifies the installed tracking channel from `snap list`. `channel` cannot be combined with the structured fields.
+`snap` keeps `channel = "edge"`-style shorthand for risk-only selection
+(`latest/edge`). For full channel identity, use `track`, optional `risk`
+(default `stable`), and optional `branch`; depengine composes
+`track/risk[/branch]`, preserving the branch in resolved install plans.
+`channel` cannot be combined with the structured fields. V2 uses the complete
+unfiltered `snap list` inventory to establish package presence/absence; a
+successful empty result is absent only with snapd's documented
+`No snaps are installed yet. Try 'snap install hello-world'.` stderr message.
+The command's `Tracking` column is not always a complete channel: snapd 2.63
+formats `track/risk/branch` as `track/risk/…`. The ellipsis is display
+abbreviation, never channel identity. For such a row, depengine obtains the
+full installed tracking value from `snap info <package>` and accepts it only
+when the package identity and the `track/risk` prefix agree with the list row;
+it rechecks the listed package, version, revision, and abbreviated tracking
+value around that query. Invalid, inconsistent, or incomplete evidence is
+`Unknown`, not channel drift.
+
+A local snap is shown with tracking `-`; this means no tracked channel was
+reported, not a channel named `-`. depengine does not mark `FieldChannel` as
+known for that value, so it cannot create channel drift from it. For a full,
+consistent channel, a mismatch is reported as `Drifted`; it does not authorize
+automatic channel changes. A channel selector cannot serve as the immutable
+target required by the destructive replacement journal. The executor fails
+the unsupported transition before invoking candidate hooks or lazy
+prerequisites; it never substitutes remove/install for an in-place channel
+change. To reconcile tracking manually, operators may use
+`snap switch --channel=<channel> <package>` (tracking only) or
+`snap refresh --channel=<channel> <package>` (also refreshes the installed
+revision), then rerun depengine observation. Automatic switching still needs
+its own durable transaction and recovery contract; neither command is
+executed by depengine for channel drift. Even with the recheck, a channel
+branch changing under the same `track/risk` prefix and installed revision
+between CLI queries is not detectable atomically; the inventory is not an
+atomic lock or a guarantee against that race.
 
 
 `msi` accepts exactly one artifact source (`url`, or `repo` + `asset`) plus
@@ -746,7 +787,9 @@ methods.
 
 One-line syntax for every supported method. All accept `when` (see
 [Platform targeting](#platform-targeting)); methods with richer configuration
-are described above or alongside their examples.
+are described above or alongside their examples. `http` and `github` reject
+installer-script payloads (`.sh`, `.bash`, `.zsh`, `.ksh`, `.ps1`, `.psm1`,
+`.bat`, `.cmd`); declare the underlying artifact or a native package instead.
 
 | Method | What it installs | Example |
 |--------|-------------------|---------|
@@ -804,11 +847,23 @@ Bun, RubyGems, Yarn Classic, Composer, SDKMAN, Conda, and asdf/mise. Their
 installed-version checks read the selected package manager's installed
 metadata or the manager's version-specific install target. Exact checks require
 the requested version, while observations retain a different installed version
-so status/reconciliation reports version drift rather than absence. RubyGems
+so status/reconciliation reports version drift rather than absence. For pip,
+pipx, uv, RubyGems, Composer, npm, pnpm, Bun, and Yarn Classic, versionless
+observations also use installed-version queries: a failed command or incomplete
+capture cannot prove absence, and a trustworthy version is reported when found.
+Only recognized not-installed responses or complete inventories without the
+requested package establish absence.
+RubyGems
 can keep multiple versions installed, so its observation selects the requested
 version when it appears anywhere in the installed version list. asdf/mise and
 SDKMAN likewise distinguish an installed-but-different version from a missing
-tool.
+tool. For asdf/mise, observation checks both available managers and selects the
+requested exact version if either reports it; a failed query cannot establish
+absence or drift without positive evidence. Removal queries the inventories
+again and uninstalls only when the requested version has one verified backend
+owner. With no exact version, exactly one installed version across both managers
+is required; missing, duplicated, or ambiguous ownership requires manual
+resolution instead of guessing which manager to modify.
 Source or registry selection is available where the adapter has a typed field.
 
 These methods are not yet universally lockable to immutable package identities.
@@ -839,11 +894,11 @@ Hooks are transition callbacks, not managed installation methods. Running an
 upstream installer such as `curl ... | sh` or `irm ... | iex` from a hook does
 not tell depengine which files the script installed, how to observe them, or
 how to remove or roll them back. Likewise, `http` and `github` methods download
-artifacts; supplying an installer-script URL downloads the script without
-executing it. For a tool distributed this way, declare a supported native
-package or the underlying managed HTTP/GitHub binary or archive with explicit
-paths and checksum verification where available. See
-[Support boundaries](support-boundary.md).
+artifacts but never execute them; an installer-script URL is rejected during
+validation instead of installing the script text as the tool payload. For a
+tool distributed this way, declare a supported native package or the underlying
+managed HTTP/GitHub binary or archive with explicit paths and checksum
+verification where available. See [Support boundaries](support-boundary.md).
 
 When a hook belongs to one install method, put it inside that method table. It
 then cannot leak to a fallback candidate:
@@ -1055,13 +1110,35 @@ engine evaluates all non-empty fields against the detected system facts:
 | `os` | `string[]` | Exact (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
 | `target_family` | `string[]` | Exact (case-insensitive) | `unix` (linux, darwin, BSDs, termux), `windows` |
 | `kernel` | `string[]` | Exact (case-insensitive) | `6.7.0-arch`, `5.15.0-generic`... |
-| `libc` | `string[]` | **Prefix** match | `glibc` matches `glibc 2.35`; `musl` for Alpine |
+| `kernel_min` | `string` | Inclusive minimum | `6.6` |
+| `kernel_max` | `string` | Inclusive maximum | `6.8` |
+| `libc` | `string[]` | Family-token prefix, trimmed and case-insensitive | `glibc` matches `glibc`; `musl` for Alpine. Detection emits no version, so `glibc 2.35` never matches. |
 | `init_system` | `string[]` | Exact (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |
-| `is_wsl` | `bool` | Three-state | Detected via `/proc/version` or `WSL_DISTRO_NAME` |
-| `is_container` | `bool` | Three-state | Detected via `.dockerenv`, cgroup, etc. |
+| `is_wsl` | `bool` | Three-state | `true` needs a positive detection; `false` needs a conclusive negative; an inconclusive probe matches neither |
+| `is_container` | `bool` | Three-state | Same rule as `is_wsl` |
 | `is_android` | `bool` | Three-state | Detected via Termux env vars. Needed because `os` reports `linux` on Termux — `os = ["android"]` never matches there |
 
-Version conditions compare numeric and textual runs rather than applying SemVer rules, because OS release identifiers are not uniformly SemVer. Numeric runs ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are inclusive. A host with no detected distro version does not satisfy a version condition.
+Version conditions compare numeric and textual runs rather than applying SemVer
+rules, because OS release identifiers are not uniformly SemVer. Numeric runs
+ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are
+inclusive. A host with no detected distro version does not satisfy a version
+condition.
+
+`kernel` is exact and is not a range: `kernel = ["6.7"]` does not match
+`6.7.0-arch1-1`. Use `kernel_min`/`kernel_max` for an inclusive range. Wildcard
+or comparison-operator syntax in `kernel` or `distro_version` is reported by
+`depengine validate` as `W_AMBIGUOUS_CONDITION`, as is a libc value that carries
+a version or an inverted min/max pair.
+
+`is_wsl` and `is_container` are three-state. A positive detection sets the fact
+to `true`; a conclusive probe that found nothing sets it to `false`; a probe
+that could not run leaves it unknown. `true` matches only a positive detection,
+`false` matches only a conclusive negative, and unknown matches neither. This is
+fail-closed: an unreadable `/proc/version` or cgroup file is not silently
+treated as "not WSL" or "not a container". The `{is_wsl}` and `{is_container}`
+placeholders expand to `true`, `false`, or `unknown`. The full detection and
+matching contract is in
+[the environment conditions spec](specs/environment-conditions.md).
 
 ```toml
 # AUR only on Arch, HTTP fallback everywhere else
@@ -1126,12 +1203,12 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
 ```
 
 ```toml
-# Kernel-specific DKMS package. `kernel` is matched exactly
-# (case-insensitive) against the value reported by `uname -r`.
+# Kernel-specific DKMS package. Use an inclusive range, not a list of exact
+# `uname -r` values: exact equality would stop matching after a kernel update.
 [tools.v4l2loopback]
   [tools.v4l2loopback.aur]
   pkg  = "v4l2loopback-dkms"
-  when = { distro_family = ["arch"], kernel = ["6.7.0-arch1-1", "6.8.0-arch1-1", "6.9.0-arch1-1"] }
+  when = { distro_family = ["arch"], kernel_min = "6.7", kernel_max = "6.99" }
 ```
 
 > Run `depengine why <tool>` to inspect which method applies on the
@@ -1181,6 +1258,11 @@ candidate label. TOML declaration order is never an order control, and
 `[defaults].method_prefer` plus per-tool `method_prefer` are prefixes: unlisted default
 methods remain available. Only `method_only` removes the remainder.
 
+Selectors are literal. Host placeholders such as `{distro_family}` are rejected
+before expansion because they would make candidate order, v1 pin keys, and
+`MethodsHash` depend on the parsing host. Express per-host selection with
+`when` conditions on candidates and keep the order list stable across hosts.
+
 ---
 
 ## Placeholders
@@ -1217,7 +1299,8 @@ GitHub's `{arch_any}` and `{os_any}` tokens remain intact for asset matching.
 | `{init_system}` | Native host facts | any method | `systemd`, `openrc` |
 | `{detection}` | Native host facts | any method | `os-release` |
 | `{confidence}` | Native host facts | any method | `high`, `medium` |
-| `{is_wsl}` / `{is_container}` / `{is_android}` | Native host facts | any method | `true`, `false` |
+| `{is_wsl}` / `{is_container}` | Native host facts | any method | `true`, `false`, `unknown` |
+| `{is_android}` | Native host facts | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
 | `{latest}` | Adapter-owned — resolved via GitHub API | Literal `url` in `git`, `http`, `appimage`, `android`, or `msi` | `v1.2.3` |
 | `{version}` | Adapter-owned — matched against a resolved GitHub release tag | `asset` in `github`, `http`, `appimage`, `android`, or `msi` when using `repo` + `asset` | matches `v1.2.3` or `1.2.3` |
@@ -1280,3 +1363,153 @@ unlabeled candidate or a duplicated label. Multiple same-kind candidates with
 unique labels are already unambiguous for upgrade, remove, and lock state. Add `--fields` to see exactly
 which layer contributed each field for a given tool; `--json` exposes identity
 metadata under `intent` plus `candidate`/`candidate_known` ordinals.
+
+## Catalog recipes
+
+A catalog is an optional layer of reusable recipes below the personal manifest.
+User recipes live at `<catalog-root>/<name>.toml`; the file system is the index,
+so a lookup never scans the directory. The binary also embeds a read-only
+fallback for `golang`. The public Git checkout has an opt-in library under
+[`recipes/`](../recipes/README.md), including `nvim`.
+They use the same parser, declarative/integrity validator, canonical digest,
+lock v2 identity and provenance as recipes on disk.
+
+Default root:
+
+- Linux/Unix: `$XDG_CONFIG_HOME/depengine/catalog`, falling back to
+  `~/.config/depengine/catalog` when `XDG_CONFIG_HOME` is unset or relative.
+- macOS: `~/Library/Application Support/depengine/catalog`.
+- Windows: `%AppData%\depengine\catalog`.
+
+`--catalog <dir>` (repeatable) and `DEPENGINE_CATALOG` (a path list) replace the
+default **filesystem** roots; the embedded fallback remains last. `--no-catalog`
+disables both filesystem and embedded recipes. The first filesystem root
+containing a name wins; roots are not field-merged. A broken user recipe is an
+error, never a reason to fall back to the embedded version. In `why --fields`,
+embedded recipes show `root: builtin`, `root_index: -1` in JSON and a logical
+`builtin:builtin_recipes/<name>.toml` path. `doctor` lists the embedded source
+as `builtin (embedded, present)`.
+
+The binary fallback remains deliberately small:
+
+- `golang`: native aliases, Arch AUR, and Go 1.27.4 Linux amd64 with a pinned
+  SHA-256. Other HTTP variants remain manifest-local until hashes are verified.
+
+`recipes/depengine.toml.example` is a project-schema fragment, not a catalog
+recipe. Catalog recipes reject command fields such as `build`, so a source
+build cannot be imported or looked up from `recipes/*.toml`. The binary embeds
+that self-update recipe and consumes it directly:
+
+```sh
+depengine self update          # rebuild from the embedded recipe and swap atomically
+depengine self update --check  # exit 1 when the running revision is behind
+```
+
+`self update` resolves the recipe's source and the requested revision, then
+clones, builds, verifies the new executable, and replaces the running binary
+with a same-directory atomic rename. `{version}` in the recipe's build command
+receives the resolved revision or tag. A failed clone or build leaves the
+previous executable untouched. It refuses to replace a running executable on
+Windows. `--ref` pins a branch, tag, or commit; `--bin-dir` selects the
+destination; `--repo` overrides the recipe source; `--recipe <path>` loads a
+different project-schema fragment with the same single `[tools.depengine]` git
+method. The command does not write project state or a lockfile.
+
+The Git-versioned library covers the portable method families: native, AUR,
+Cargo, Go, npm/pnpm/Bun, pipx/uv, RubyGems, Composer, Flatpak, Snap, AppImage,
+GitHub Releases and HTTP artifacts. `golang.toml` is also embedded; every other
+recipe, including `nvim.toml`, is opt-in. Release-artifact recipes pin an
+explicit release and a literal SHA-256. From a repository checkout use:
+
+```sh
+depengine import recipes/nvim.toml --dry-run
+depengine import recipes/nvim.toml
+# Alternatively choose the entire checkout directory explicitly:
+depengine validate --catalog "$(pwd)/recipes"
+```
+
+A repository checkout is not automatically consulted. `import` reads a local
+file and copies it to a user catalog; it does not fetch a remote URL or verify
+publisher identity. Pin the Git revision and review the TOML before importing.
+The optional `--expected-digest` verifies a separately trusted canonical
+recipe digest. When `--catalog` points at a directory, it replaces the default
+filesystem roots but still leaves embedded fallback last.
+
+These shipped recipes can change in later binary versions. The lock v2 recipe
+digest will detect changed content; run a whole-schema `depengine update`
+when intentionally adopting the new recipe. A declaration with no matching
+recipe still behaves as before.
+
+A recipe uses the personal-manifest grammar with `recipe_version` instead of
+`schema_version` and exactly one entry under `[packages]`:
+
+```toml
+recipe_version = 1
+
+[packages.fd]
+github = { repo = "sharkdp/fd", asset = "fd-v{version}-{arch}-unknown-linux-musl.tar.gz", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+```
+
+The package name must match the file name (`fd.toml` declares `[packages.fd]`).
+Names are ASCII and must match `[A-Za-z0-9][A-Za-z0-9._+-]{0,127}`; they may not
+end with a dot or be a Windows reserved device name (`CON`, `PRN`, `COM1`, ...).
+A recipe may not declare `[defaults]` or `[manifest]`, and lifecycle hooks,
+command-typed fields, arbitrary-code plans and typed credential references are
+rejected. Private credentials must be configured in an operator-controlled
+project schema or personal manifest, never supplied by a shared catalog recipe.
+
+`depengine import <recipe.toml>` applies that check before writing, and adds an
+integrity floor: a candidate that downloads an artifact must declare
+`checksum`. A `checksum_secret_ref` is not allowed in catalog recipes.
+`checksum = "<algo>:auto"` is accepted but
+warned as trust-on-first-use (TOFU) because the checksum is fetched with the
+artifact. Import also inventories declared source selectors, package sources and
+artifact/checksum/signature origins, including per-distribution sidecars. This
+is not a complete inventory of runtime network requests or a verification of
+publisher identity. The preview prints the canonical digest that lock v2 pins;
+the recipe is written atomically as authored. Use `--expected-digest sha256:<hex>`
+with a separately trusted canonical digest to reject changed recipe content.
+Use `--dry-run` to preview without writing and `--force` to replace an existing
+recipe with the same name.
+
+The project schema then declares only its intent; the recipe supplies the
+methods, sources and conditions the project did not override:
+
+```toml
+[tools.fd]
+tags = ["cli"]          # project-specific; everything else comes from fd.toml
+```
+
+A field declared in the project schema wins over the recipe field by field. A
+project-declared tool that resolves to no methods and no `requires` is reported
+by `depengine validate` as `W_INERT_TOOL`, with a hint to add a method, a
+`requires`, or a recipe. An explicit `requires = []` is a deliberate marker for
+a non-installable tool and does not warn.
+
+Precedence is project schema, personal manifest, catalog roots in order, then
+derived sources. The catalog is consulted only for tools declared by the project
+schema and for their transitive `requires` closure. A tool admitted only by
+`[manifest] allow_new_tools = true` is never resolved from the catalog. A
+missing default root is not an error; an explicitly named root that is missing,
+unreadable or not a directory is. Invalid TOML, an unreadable recipe, a symlink
+recipe, or a file name that does not match the declared package name fails
+closed.
+
+Catalog content identity is pinned in lock v2 as a canonical digest of the
+recipe document. Frozen validation fails closed when the digest is missing or
+changed, and a catalog-sourced tool combined with a v1 lock is rejected; run a
+whole-schema `depengine update` to write the v2 projection.
+The digest covers the whole recipe, including fields that never reach the
+resolved plan (`extract_to`, `link_dir`, `entrypoints`), and is computed before
+host placeholders are expanded.
+
+The pinned real-recipe corpus and its deterministic authoring tool live under
+`testdata/recipe-corpus/dep-ixd-13/`. Run `go run ./scripts -write` to regenerate
+the canonical projections and verify the source/license hashes; run
+`go run ./scripts` to verify without writing. The corpus report records the
+upstream revisions, projection metrics and sample limits. This tool is corpus
+research tooling, not a general recipe import format or a change to project
+schema behavior.
+
+See [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) for
+the full layout and lookup contract.

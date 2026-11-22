@@ -124,6 +124,41 @@ func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
 	}
 }
 
+// An unknown Conda inventory must not be interpreted as a missing package.
+// Only an explicit [] means that the selected environment has no matches.
+func TestCondaInvalidInventoryFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewCondaAdapter()
+	tool, mc := condaTool("numpy", "numpy")
+	for _, tc := range []struct {
+		name   string
+		output string
+	}{
+		{"null document", `null`},
+		{"null element", `[null]`},
+		{"missing package name", `[{}]`},
+		{"invalid element after valid element", `[{"name":"numpy","version":"2.1.0"},null]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rn := &run.FakeRunner{Stdout: tc.output}
+			observed, err := adapter.Observe(ctx, rn, tool, mc)
+			if err == nil || observed.Presence != plan.PresenceBroken {
+				t.Fatalf("Observe() = %+v, %v; want broken with error", observed, err)
+			}
+			if adapter.Check(ctx, &run.FakeRunner{Stdout: tc.output}, tool, mc) {
+				t.Fatal("Check() must not accept an invalid inventory")
+			}
+			if version, err := adapter.InstalledVersion(ctx, &run.FakeRunner{Stdout: tc.output}, tool, mc); err == nil {
+				t.Fatalf("InstalledVersion() = %q, nil; want error", version)
+			}
+		})
+	}
+	observed, err := adapter.Observe(ctx, &run.FakeRunner{Stdout: `[]`}, tool, mc)
+	if err != nil || observed.Presence != plan.PresenceAbsent {
+		t.Fatalf("valid empty inventory = %+v, %v; want absent", observed, err)
+	}
+}
+
 func TestCondaObservedEnvironment(t *testing.T) {
 	tests := []struct {
 		name   string

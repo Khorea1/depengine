@@ -2,6 +2,9 @@ package git
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -184,15 +187,31 @@ func copyRegularRootFile(srcRoot, dstRoot *os.Root, srcName, dstName string, exp
 	}
 	defer func() { _ = in.Close() }()
 
-	if err := removeRootCopyTarget(dstRoot, dstName); err != nil {
+	if info, err := dstRoot.Lstat(dstName); err == nil {
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("replace %s: destination is a directory", dstName)
+		}
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	out, err := dstRoot.OpenFile(dstName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, expected.Mode().Perm())
+
+	// Write a sibling staging file and rename it over the destination instead
+	// of unlinking the old file first. The rename is atomic on one filesystem,
+	// so a failed build or interrupted copy cannot leave an installed binary
+	// missing or truncated.
+	out, stageName, err := createRootTempFile(dstRoot, expected.Mode().Perm())
 	if err != nil {
 		return err
 	}
+	removeStage := true
+	defer func() {
+		if removeStage {
+			_ = dstRoot.Remove(stageName)
+		}
+	}()
 	_, copyErr := io.Copy(out, in)
 	chmodErr := out.Chmod(expected.Mode().Perm())
+	syncErr := out.Sync()
 	closeErr := out.Close()
 	if copyErr != nil {
 		return copyErr
@@ -200,7 +219,38 @@ func copyRegularRootFile(srcRoot, dstRoot *os.Root, srcName, dstName string, exp
 	if chmodErr != nil {
 		return chmodErr
 	}
-	return closeErr
+	if syncErr != nil {
+		return syncErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := dstRoot.Rename(stageName, dstName); err != nil {
+		return err
+	}
+	removeStage = false
+	return nil
+}
+
+// createRootTempFile allocates an exclusive staging file below root. The
+// random name avoids collisions between concurrent installations that share a
+// destination directory without introducing a lock file into user directories.
+func createRootTempFile(root *os.Root, perm fs.FileMode) (*os.File, string, error) {
+	for i := 0; i < 16; i++ {
+		var suffix [12]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return nil, "", err
+		}
+		name := ".depengine-copy-" + hex.EncodeToString(suffix[:])
+		file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
+		if err == nil {
+			return file, name, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return nil, "", err
+		}
+	}
+	return nil, "", fmt.Errorf("cannot allocate a temporary copy name")
 }
 
 func removeRootCopyTarget(root *os.Root, name string) error {

@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -22,6 +24,9 @@ type undoPlanAdapter struct {
 	canRemove  bool
 	removed    bool
 	removePkg  string
+	// observedVersion overrides the version echoed back from the requested
+	// config so tests can simulate a host that drifted from tracked state.
+	observedVersion string
 }
 
 func (a *undoPlanAdapter) Kind() string                             { return a.kind }
@@ -40,11 +45,15 @@ func (a *undoPlanAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Too
 	}
 	pkg, _ := method.Config["pkg"].(string)
 	version, _ := method.Config["version"].(string)
+	observed := plan.ObservedIdentity{Package: pkg, Version: version}
+	if a.observedVersion != "" {
+		observed.Version = a.observedVersion
+	}
 	known := []plan.IdentityField{plan.FieldPackage}
 	if version != "" {
 		known = append(known, plan.FieldVersion)
 	}
-	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: known}, nil
+	return plan.Observation{Presence: presence, Identity: observed, KnownFields: known}, nil
 }
 func (*undoPlanAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	return nil
@@ -127,16 +136,34 @@ func TestRemoveUndoToolsPreservesTrackingOnUnverifiableTarget(t *testing.T) {
 	}
 }
 
+func TestRemoveUndoToolsPreservesTrackingOnDriftedTarget(t *testing.T) {
+	adapter := &undoPlanAdapter{kind: "cargo", canRemove: true, observedVersion: "1.0.0"}
+	current := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool", "version": "2.0.0"}},
+	}}
+	_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
+	if !failed || succeeded["tool"] {
+		t.Fatalf("removeUndoTools failed=%t succeeded=%v, want failure", failed, succeeded)
+	}
+	if adapter.removed {
+		t.Fatal("Remove called for a version-drifted target")
+	}
+	mergeUndoTools(current, []string{"tool"}, succeeded)
+	if _, ok := current.Tools["tool"]; !ok {
+		t.Fatal("drifted target lost its tracked state")
+	}
+}
+
 func TestRemoveUndoToolsPreservesPartialFailureAfterResolvedRemovalError(t *testing.T) {
 	adapter := &undoPlanAdapter{kind: "cargo", canRemove: true, removeErr: errors.New("remove failed")}
 	current := &state.State{Tools: map[string]state.ToolState{
 		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool"}},
 	}}
-	original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
+	_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
 	if !failed || succeeded["tool"] || !adapter.removed {
 		t.Fatalf("failed=%t succeeded=%v removed=%t", failed, succeeded, adapter.removed)
 	}
-	mergeUndoTools(current, &state.State{Tools: map[string]state.ToolState{}}, []string{"tool"}, succeeded, original, failed)
+	mergeUndoTools(current, []string{"tool"}, succeeded)
 	if _, ok := current.Tools["tool"]; !ok {
 		t.Fatal("failed removal lost tracked tool")
 	}
@@ -240,10 +267,7 @@ func TestMergeUndoToolsSuccess(t *testing.T) {
 		"keep":  {Method: "go", MethodKind: "go"},
 		"extra": {Method: "go", MethodKind: "go"},
 	}}
-	snap := &state.State{Tools: map[string]state.ToolState{
-		"keep": {Method: "go", MethodKind: "go"},
-	}}
-	mergeUndoTools(cur, snap, []string{"extra"}, map[string]bool{"extra": true}, nil, false)
+	mergeUndoTools(cur, []string{"extra"}, map[string]bool{"extra": true})
 	if len(cur.Tools) != 1 {
 		t.Fatalf("mergeUndoTools success tools = %v, want only [keep]", cur.Tools)
 	}
@@ -263,8 +287,7 @@ func TestMergeUndoToolsPartialFailure(t *testing.T) {
 		"ok":   original["ok"],
 		"bad":  original["bad"],
 	}}
-	snap := &state.State{Tools: map[string]state.ToolState{"keep": original["keep"]}}
-	mergeUndoTools(cur, snap, []string{"ok", "bad"}, map[string]bool{"ok": true}, original, true)
+	mergeUndoTools(cur, []string{"ok", "bad"}, map[string]bool{"ok": true})
 
 	if _, ok := cur.Tools["keep"]; !ok {
 		t.Errorf("mergeUndoTools partial dropped snapshot tool; tools = %v", cur.Tools)
@@ -302,7 +325,7 @@ func TestFinalizeUndoSuccess(t *testing.T) {
 		Tools:            map[string]state.ToolState{"keep": {Method: "go", MethodKind: "go"}},
 	}
 
-	if err := finalizeUndo(ls, curState, snapState, []string{"extra"}, nil, map[string]bool{"extra": true}, false); err != nil {
+	if err := finalizeUndo(ls, curState, snapState, []string{"extra"}, map[string]bool{"extra": true}, false); err != nil {
 		t.Fatalf("finalizeUndo success: unexpected error: %v", err)
 	}
 	st := loadTestState(t, stateHome)
@@ -311,6 +334,46 @@ func TestFinalizeUndoSuccess(t *testing.T) {
 	}
 	if st.SchemaPath != "schema.toml" {
 		t.Errorf("finalizeUndo success SchemaPath = %q, want snapshot value", st.SchemaPath)
+	}
+}
+
+func TestFinalizeUndoReleasesRemovedToolClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"helper": {Method: "go", MethodKind: "go"},
+			"extra":  {Method: "go", MethodKind: "go"},
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"extra"},
+		}},
+	})
+
+	ls, err := state.LoadLocked()
+	if err != nil {
+		t.Fatalf("LoadLocked: %v", err)
+	}
+	defer func() { _ = ls.Close() }()
+	curState := ls.State()
+	snapState := &state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{"helper": {Method: "go", MethodKind: "go"}},
+	}
+	if err := finalizeUndo(ls, curState, snapState, []string{"extra"}, map[string]bool{"extra": true}, false); err != nil {
+		t.Fatalf("finalizeUndo: %v", err)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["extra"]; ok {
+		t.Fatal("removed tool remains tracked after undo")
+	}
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources after undo = %#v, want retained zero-ref prerequisite", st.OwnedResources)
 	}
 }
 
@@ -338,7 +401,7 @@ func TestFinalizeUndoPartialFailure(t *testing.T) {
 		Tools:      map[string]state.ToolState{"keep": original["keep"]},
 	}
 
-	err = finalizeUndo(ls, curState, snapState, []string{"bad"}, original, map[string]bool{}, true)
+	err = finalizeUndo(ls, curState, snapState, []string{"bad"}, map[string]bool{}, true)
 	if code := exitCodeOf(err); code != 1 {
 		t.Fatalf("finalizeUndo partial exit = %d, want 1 (err=%v)", code, err)
 	}
@@ -348,5 +411,90 @@ func TestFinalizeUndoPartialFailure(t *testing.T) {
 	}
 	if bad, ok := st.Tools["bad"]; !ok || bad.Method != "bogus" {
 		t.Errorf("finalizeUndo partial did not preserve failed tool; tools = %v", st.Tools)
+	}
+}
+
+// An undo is a rollback of additions, not a request to resurrect tools that
+// the user deliberately removed after the snapshot was taken.
+func TestMergeUndoToolsDoesNotResurrectRemovedEntries(t *testing.T) {
+	current := &state.State{Tools: map[string]state.ToolState{
+		"existing": {Method: "go"},
+		"new":      {Method: "cargo"},
+	}}
+	mergeUndoTools(current, []string{"new"}, map[string]bool{"new": true})
+	if _, exists := current.Tools["removed-since-snapshot"]; exists {
+		t.Fatal("undo resurrected a tool that was removed after the snapshot")
+	}
+	if _, exists := current.Tools["new"]; exists {
+		t.Fatal("undo retained an added tool successfully removed")
+	}
+	if _, exists := current.Tools["existing"]; !exists {
+		t.Fatal("undo dropped a tool present in both states")
+	}
+}
+
+func TestValidateUndoSnapshotRejectsCrossSchemaAndSharedDrift(t *testing.T) {
+	old := state.ToolState{Method: "native", MethodKind: "native", Version: "1.0.0", Config: map[string]any{"pkg": "rust"}}
+	changed := state.ToolState{Method: "native", MethodKind: "native", Version: "2.0.0", Config: map[string]any{"pkg": "rust"}}
+	tests := []struct {
+		name     string
+		snapshot *state.State
+		current  *state.State
+		want     string
+	}{
+		{"same schema and identity", &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old}}, &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old, "new": {Method: "cargo"}}}, ""},
+		{"different schema", &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old}}, &state.State{SchemaPath: "/b/schema.toml", Tools: map[string]state.ToolState{"rust": old, "new": {Method: "cargo"}}}, "snapshot schema"},
+		{"changed existing identity", &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old}}, &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": changed, "new": {Method: "cargo"}}}, "changed since snapshot"},
+		{"missing schema provenance", &state.State{Tools: map[string]state.ToolState{"rust": old}}, &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old, "new": {Method: "cargo"}}}, "no schema identity"},
+		{"empty first-install snapshot", &state.State{Tools: map[string]state.ToolState{}}, &state.State{SchemaPath: "/a/schema.toml", Tools: map[string]state.ToolState{"rust": old}}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateUndoSnapshot(tc.current, tc.snapshot)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected refusal: %v", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("refusal = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunUndoRejectsExternalSchemaBeforeRemovalAndKeepsState(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	old := state.ToolState{Method: "native", MethodKind: "native", Config: map[string]any{"pkg": "rust"}}
+	initial := &state.State{Version: state.CurrentVersion, SchemaPath: "/project-a/schema.toml", Tools: map[string]state.ToolState{"rust": old}}
+	if err := state.Save(initial); err != nil {
+		t.Fatalf("seed initial state: %v", err)
+	}
+	snapshot, err := state.SaveSnapshot()
+	if err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
+	current := &state.State{Version: state.CurrentVersion, SchemaPath: "/project-b/schema.toml", Tools: map[string]state.ToolState{
+		"rust":   old,
+		"rustup": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "rustup"}},
+	}}
+	if err := state.Save(current); err != nil {
+		t.Fatalf("seed other project: %v", err)
+	}
+	before, err := state.Load()
+	if err != nil {
+		t.Fatalf("read state before undo: %v", err)
+	}
+	list, jsonOut := false, false
+	specific := snapshot.Path
+	err = runUndo(context.Background(), &list, &specific, &jsonOut)
+	if exitCodeOf(err) != 3 {
+		t.Fatalf("unsafe cross-schema undo returned %v (exit %d), want exit 3", err, exitCodeOf(err))
+	}
+	after, err := state.Load()
+	if err != nil {
+		t.Fatalf("read state after undo: %v", err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("undo modified global state on cross-schema refusal: before=%+v after=%+v", before, after)
 	}
 }

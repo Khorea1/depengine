@@ -1,0 +1,322 @@
+package app
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Khorea1/depengine/internal/state"
+)
+
+// machineTestEnvelope mirrors machineEnvelope so tests decode the wire shape
+// instead of the Go type: a field rename must fail these tests.
+type machineTestEnvelope struct {
+	Version int             `json:"version"`
+	Command string          `json:"command"`
+	Data    json.RawMessage `json:"data"`
+}
+
+// decodeEnvelope checks the complete stdout document, including any prefix or suffix.
+func decodeEnvelope(t *testing.T, out string) machineTestEnvelope {
+	t.Helper()
+	env, err := parseMachineEnvelope(out)
+	if err != nil {
+		t.Fatalf("invalid machine envelope: %v\nstdout:\n%s", err, out)
+	}
+	return env
+}
+
+func parseMachineEnvelope(out string) (machineTestEnvelope, error) {
+	var env machineTestEnvelope
+	err := json.Unmarshal([]byte(out), &env)
+	return env, err
+}
+
+func decodeMachineObject(raw json.RawMessage) (map[string]any, error) {
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, errors.New("expected a JSON object, got null")
+	}
+	return data, nil
+}
+
+func decodeMachineArray(raw json.RawMessage) error {
+	var data []any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return err
+	}
+	if data == nil {
+		return errors.New("expected a JSON array, got null")
+	}
+	return nil
+}
+
+func TestMachineEnvelopeRejectsMixedStdout(t *testing.T) {
+	const valid = `{"version":1,"command":"why","data":{"tool":"demo"}}`
+	for _, tc := range []struct{ name, stdout string }{
+		{name: "human prefix", stdout: "loading...\n" + valid},
+		{name: "human suffix", stdout: valid + "\ndone"},
+		{name: "second JSON document", stdout: valid + "\n" + valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseMachineEnvelope(tc.stdout); err == nil {
+				t.Fatalf("accepted invalid machine stdout: %q", tc.stdout)
+			}
+		})
+	}
+	if _, err := parseMachineEnvelope(valid + "\n"); err != nil {
+		t.Fatalf("valid JSON with trailing newline: %v", err)
+	}
+}
+
+func TestMachinePayloadRejectsWrongType(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{name: "array instead of object", raw: json.RawMessage(`[]`)},
+		{name: "null instead of object", raw: json.RawMessage(`null`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeMachineObject(tc.raw); err == nil {
+				t.Fatalf("accepted %s as object", tc.raw)
+			}
+		})
+	}
+	if err := decodeMachineArray(json.RawMessage(`{}`)); err == nil {
+		t.Fatal("accepted object as array")
+	}
+}
+
+// TestMachineOutputEnvelope pins one versioned envelope across every command
+// that renders machine output: version, producing command, and a payload under
+// `data`. Each case also checks one command-specific key so a silently empty
+// payload cannot pass.
+func TestMachineOutputEnvelope(t *testing.T) {
+	checksum := strings.Repeat("a", 64)
+	schemaDir := t.TempDir()
+	schemaPath := filepath.Join(schemaDir, "schema.toml")
+	schema := "schema_version = 1\n\n[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \"sha256:" + checksum + "\"\n"
+	if err := os.WriteFile(schemaPath, []byte(schema), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seededState := func(t *testing.T) string {
+		stateHome := t.TempDir()
+		writeTestState(t, stateHome, map[string]state.ToolState{"gostr": goToolState()})
+		return stateHome
+	}
+
+	cases := []struct {
+		name      string
+		command   string
+		args      func(t *testing.T) (env []string, args []string)
+		wantArray bool
+		assert    func(t *testing.T, data map[string]any)
+	}{
+		{
+			name:    "audit",
+			command: "audit",
+			args: func(*testing.T) ([]string, []string) {
+				return []string{"XDG_STATE_HOME=" + t.TempDir()}, []string{"--schema", schemaPath, "--no-manifest", "--no-catalog", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if _, ok := data["summary"]; !ok {
+					t.Errorf("audit data missing summary: %v", data)
+				}
+				if _, ok := data["findings"]; !ok {
+					t.Errorf("audit data missing findings: %v", data)
+				}
+			},
+		},
+		{
+			name:    "validate",
+			command: "validate",
+			args: func(*testing.T) ([]string, []string) {
+				return nil, []string{"--schema", schemaPath, "--no-manifest", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if _, ok := data["errors"]; !ok {
+					t.Errorf("validate data missing errors: %v", data)
+				}
+			},
+		},
+		{
+			name:      "status",
+			command:   "status",
+			wantArray: true,
+			args: func(*testing.T) ([]string, []string) {
+				return []string{"XDG_STATE_HOME=" + t.TempDir()}, []string{"--schema", schemaPath, "--no-manifest", "--format", "json"}
+			},
+		},
+		{
+			name:      "diff",
+			command:   "diff",
+			wantArray: true,
+			args: func(t *testing.T) ([]string, []string) {
+				path := func(tools map[string]state.ToolState) string {
+					stateHome := t.TempDir()
+					writeTestState(t, stateHome, tools)
+					return filepath.Join(stateHome, "depengine", "state.json")
+				}
+				before := path(map[string]state.ToolState{})
+				after := path(map[string]state.ToolState{"gostr": goToolState()})
+				return nil, []string{before, after, "--json"}
+			},
+		},
+		{
+			name:    "undo-list",
+			command: "undo",
+			args: func(*testing.T) ([]string, []string) {
+				return []string{"XDG_STATE_HOME=" + t.TempDir()}, []string{"--list", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				snapshots, ok := data["snapshots"].([]any)
+				if !ok || len(snapshots) != 0 {
+					t.Errorf("undo list snapshots = %v, want empty array", data["snapshots"])
+				}
+			},
+		},
+		{
+			name:    "forget",
+			command: "forget",
+			args: func(t *testing.T) ([]string, []string) {
+				return []string{"XDG_STATE_HOME=" + seededState(t)}, []string{"gostr", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if data["tool"] != "gostr" {
+					t.Errorf("forget tool = %v, want gostr", data["tool"])
+				}
+			},
+		},
+		{
+			name:    "remove-dry-run",
+			command: "remove",
+			args: func(t *testing.T) ([]string, []string) {
+				stateHome := seededState(t)
+				binDir := t.TempDir()
+				fakeBinary(t, binDir, "stringer")
+				return append([]string{"XDG_STATE_HOME=" + stateHome}, goBinEnvironment(binDir)...),
+					[]string{"--dry-run", "gostr", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if data["dry_run"] != true {
+					t.Errorf("remove dry_run = %v, want true", data["dry_run"])
+				}
+			},
+		},
+		{
+			name:    "update-dry-run",
+			command: "update",
+			args: func(*testing.T) ([]string, []string) {
+				return nil, []string{"--schema", schemaPath, "--no-manifest", "--dry-run", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if pinned, _ := data["pinned"].(float64); pinned != 1 {
+					t.Errorf("update pinned = %v, want 1", data["pinned"])
+				}
+				if data["dry_run"] != true {
+					t.Errorf("update dry_run = %v, want true", data["dry_run"])
+				}
+			},
+		},
+		{
+			name:    "install-dry-run",
+			command: "install",
+			args: func(*testing.T) ([]string, []string) {
+				return nil, []string{"--schema", schemaPath, "--no-manifest", "--dry-run", "--json"}
+			},
+		},
+		{
+			name:    "why",
+			command: "why",
+			args: func(*testing.T) ([]string, []string) {
+				return nil, []string{"demo", "--schema", schemaPath, "--no-manifest", "--json"}
+			},
+			assert: func(t *testing.T, data map[string]any) {
+				if data["tool"] != "demo" {
+					t.Errorf("why tool = %v, want demo", data["tool"])
+				}
+			},
+		},
+		{
+			name:    "doctor",
+			command: "doctor",
+			args: func(*testing.T) ([]string, []string) {
+				return nil, []string{"--schema", schemaPath, "--no-manifest", "--no-catalog", "--json"}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env, args := tc.args(t)
+			code, stdout, stderr := runCommandStreams(t, tc.command, env, args...)
+			if code != 0 {
+				t.Fatalf("%s exit = %d, want 0 (stdout: %q; stderr: %q)", tc.name, code, stdout, stderr)
+			}
+			envl := decodeEnvelope(t, stdout)
+			if envl.Version != machineOutputVersion {
+				t.Errorf("version = %d, want %d", envl.Version, machineOutputVersion)
+			}
+			if envl.Command != tc.command {
+				t.Errorf("command = %q, want %q", envl.Command, tc.command)
+			}
+			if len(envl.Data) == 0 || string(envl.Data) == "null" {
+				t.Fatalf("data is empty for %s", tc.name)
+			}
+			if tc.wantArray {
+				if err := decodeMachineArray(envl.Data); err != nil {
+					t.Fatalf("%s data must be an array: %v; stderr: %q", tc.name, err, stderr)
+				}
+				return
+			}
+			data, err := decodeMachineObject(envl.Data)
+			if err != nil {
+				t.Fatalf("%s data must be an object: %v; stderr: %q", tc.name, err, stderr)
+			}
+			if tc.assert != nil {
+				tc.assert(t, data)
+			}
+		})
+	}
+}
+
+func TestNormalizeOutputFormat(t *testing.T) {
+	tests := []struct {
+		name      string
+		format    string
+		jsonFlag  bool
+		want      string
+		wantError bool
+	}{
+		{name: "default text", format: "", want: "text"},
+		{name: "explicit text", format: "text", want: "text"},
+		{name: "explicit json", format: "json", want: "json"},
+		{name: "json shorthand", format: "text", jsonFlag: true, want: "json"},
+		{name: "json shorthand with empty format", format: "", jsonFlag: true, want: "json"},
+		{name: "unknown format", format: "yaml", wantError: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			format := tc.format
+			if err := normalizeOutputFormat(&format, &tc.jsonFlag); err != nil {
+				if !tc.wantError {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if tc.wantError {
+				t.Fatal("expected an error for an unknown format")
+			}
+			if format != tc.want {
+				t.Fatalf("format = %q, want %q", format, tc.want)
+			}
+		})
+	}
+}

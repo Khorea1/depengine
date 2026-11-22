@@ -1,124 +1,67 @@
 package i18n
 
-import (
-	"testing"
-)
+import "testing"
 
 func clearLocaleEnv(t *testing.T) {
 	t.Helper()
-	for _, env := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
+	for _, env := range []string{"DEPENGINE_LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
 		t.Setenv(env, "")
 	}
 }
 
-func TestGetLocaleDefault(t *testing.T) {
+func TestGetLocaleDefaultsToEnglish(t *testing.T) {
 	clearLocaleEnv(t)
-	// No env vars set → should default to "en"
 	if got := GetLocale(); got != "en" {
 		t.Fatalf("expected en, got %s", got)
 	}
 }
 
-func TestGetLocaleLANG(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANG", "en_US.UTF-8")
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en, got %s", got)
-	}
-}
-
-func TestGetLocaleLCMessages(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8")
-	t.Setenv("LANG", "en_US.UTF-8") // should be overridden
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt, got %s", got)
-	}
-}
-
-func TestGetLocaleLCAll(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LC_ALL", "en_US.UTF-8")
-	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8") // should be overridden
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en, got %s", got)
-	}
-}
-
-func TestGetLocaleUnsupported(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANG", "fr_FR.UTF-8")
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en (fallback), got %s", got)
-	}
-}
-
-func TestGetLocalePTSet(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANG", "pt_BR.UTF-8")
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt, got %s", got)
-	}
-}
-
-func TestGetLocaleLANGUAGE(t *testing.T) {
+// TestGetLocaleIgnoresHostLocale pins the opt-in contract: a pt-BR host must
+// not get partially translated output just because of its locale.
+func TestGetLocaleIgnoresHostLocale(t *testing.T) {
 	clearLocaleEnv(t)
 	t.Setenv("LANGUAGE", "pt_BR.UTF-8")
-	t.Setenv("LC_ALL", "en_US.UTF-8") // LANGUAGE overrides LC_ALL for messages
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt (LANGUAGE overrides), got %s", got)
-	}
-}
-
-func TestGetLocaleLANGUAGEColonList(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANGUAGE", "pt_BR.UTF-8:en_US.UTF-8")
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt (first in LANGUAGE list), got %s", got)
-	}
-}
-
-func TestGetLocaleLANGUAGEFallbackThroughOtherVars(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANGUAGE", "fr:de") // unsupported, fall through
-	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8")
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt (fallback through LC_MESSAGES), got %s", got)
-	}
-}
-
-func TestGetLocaleLANGCPOSIX(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANG", "C")
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en for LANG=C, got %s", got)
-	}
-}
-
-func TestGetLocaleLCALLCoverridesWithC(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LC_ALL", "C")
-	t.Setenv("LANG", "pt_BR.UTF-8") // should be overridden by LC_ALL=C
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en (LC_ALL=C overrides), got %s", got)
-	}
-}
-
-func TestGetLocaleLCALLPOSIX(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LC_ALL", "POSIX")
-	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8")
-	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en (LC_ALL=POSIX overrides), got %s", got)
-	}
-}
-
-func TestGetLocaleLANGUAGEC(t *testing.T) {
-	clearLocaleEnv(t)
-	t.Setenv("LANGUAGE", "C")
 	t.Setenv("LC_ALL", "pt_BR.UTF-8")
-	// LANGUAGE has highest priority for message language per GNU gettext
+	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8")
+	t.Setenv("LANG", "pt_BR.UTF-8")
 	if got := GetLocale(); got != "en" {
-		t.Fatalf("expected en (LANGUAGE=C), got %s", got)
+		t.Fatalf("host locale must not enable localization; got %s", got)
+	}
+}
+
+func TestGetLocaleDEPENGINE_LANG(t *testing.T) {
+	for _, value := range []string{"pt", "pt-BR", "pt_BR.UTF-8"} {
+		t.Run(value, func(t *testing.T) {
+			clearLocaleEnv(t)
+			t.Setenv("DEPENGINE_LANG", value)
+			if got := GetLocale(); got != "pt" {
+				t.Fatalf("DEPENGINE_LANG=%q: expected pt, got %s", value, got)
+			}
+		})
+	}
+}
+
+func TestGetLocaleDEPENGINE_LANGAliasList(t *testing.T) {
+	clearLocaleEnv(t)
+	t.Setenv("DEPENGINE_LANG", "fr:pt")
+	if got := GetLocale(); got != "pt" {
+		t.Fatalf("expected pt from the alias list, got %s", got)
+	}
+}
+
+func TestGetLocaleUnsupportedFallsBackToEnglish(t *testing.T) {
+	clearLocaleEnv(t)
+	t.Setenv("DEPENGINE_LANG", "fr_FR.UTF-8")
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en fallback, got %s", got)
+	}
+}
+
+func TestGetLocaleDEPENGINE_LANGWinsOverLocale(t *testing.T) {
+	clearLocaleEnv(t)
+	t.Setenv("DEPENGINE_LANG", "en")
+	t.Setenv("LANGUAGE", "pt_BR.UTF-8")
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en from DEPENGINE_LANG, got %s", got)
 	}
 }

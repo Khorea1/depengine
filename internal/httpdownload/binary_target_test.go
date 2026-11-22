@@ -159,6 +159,7 @@ func TestHTTPAdapterRemoveRejectsUnsafeBinary(t *testing.T) {
 }
 
 func TestHTTPAdapterInstallRecordsArchiveOwnership(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	var archive bytes.Buffer
 	zipWriter := zip.NewWriter(&archive)
 	file, err := zipWriter.Create("tool")

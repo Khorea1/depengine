@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // validateRequiredFields applies the central methodkind contracts to each
@@ -22,84 +24,108 @@ func validateRequiredFields(s *config.Schema) *Result {
 			if !ok {
 				continue
 			}
-			keys := make([]string, 0, len(contract.Fields))
-			for key := range contract.Fields {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				field := contract.Fields[key]
-				value, present := method.Config[key]
-				if !present {
-					if field.Required {
-						r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q requires a %s field", contract.Kind, toolName, key)})
-					}
-					continue
-				}
-				if !methodFieldTypeMatches(value, field.Type) {
-					r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s must be %s, got %T", key, fieldTypeDescription(field.Type), value)})
-					continue
-				}
-				if field.NonEmpty {
-					if value, ok := value.(string); ok && value == "" {
-						r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q: %s must not be empty", contract.Kind, toolName, key)})
-					}
-				}
-				if len(field.Enum) > 0 {
-					value, _ := value.(string)
-					if !containsString(field.Enum, value) {
-						r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method %s must be one of %q, got %q", contract.Kind, key, field.Enum, value)})
-					}
-				}
-			}
-			configKeys := make([]string, 0, len(method.Config))
-			for key := range method.Config {
-				configKeys = append(configKeys, key)
-			}
-			sort.Strings(configKeys)
-			for _, key := range configKeys {
-				if strings.HasPrefix(key, "_") {
-					continue
-				}
-				if _, ok := contract.Fields[key]; !ok {
-					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("field %s is not supported by method kind %s", key, contract.Kind)})
-				}
-			}
-			for _, group := range contract.MutuallyExclusive {
-				var present []string
-				for _, key := range group {
-					if _, ok := method.Config[key]; ok {
-						present = append(present, key)
-					}
-				}
-				if len(present) > 1 {
-					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
-				}
-			}
-			for key, required := range contract.Requires {
-				if _, configured := method.Config[key]; !configured {
-					continue
-				}
-				for _, dependency := range required {
-					if _, ok := method.Config[dependency]; !ok {
-						r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q: %s requires %s", contract.Kind, toolName, key, dependency)})
-					}
-				}
-			}
-			validateSourceAlternatives(toolName, i, method, contract, r)
-			if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
-				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "strip_components"), Message: "strip_components must be non-negative"})
-			}
-			if _, ok := contract.Fields["managed_paths"]; ok {
-				validateManagedPaths(toolName, i, method.Config["managed_paths"], r)
-			}
-			if _, ok := contract.Fields["depth"]; ok {
-				validateGitDepth(toolName, i, method.Config["depth"], r)
-			}
-			validateChecksum(toolName, i, method, contract, r)
+			validateContractFields(toolName, i, method, contract, r)
+			validateUnknownFields(toolName, i, method, contract, r)
+			validateMutuallyExclusiveFields(toolName, i, method, contract, r)
+			validateContractDependencies(toolName, i, method, contract, r)
+			validateMethodSpecificFields(toolName, i, method, contract, r)
 		}
 	}
 	return r
+}
+
+// validateContractFields checks declared fields in sorted order: presence,
+// type, non-empty, and enum membership.
+func validateContractFields(toolName string, index int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	keys := make([]string, 0, len(contract.Fields))
+	for key := range contract.Fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		field := contract.Fields[key]
+		value, present := method.Config[key]
+		if !present {
+			if field.Required {
+				r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("%s method for tool %q requires a %s field", contract.Kind, toolName, key)})
+			}
+			continue
+		}
+		if !methodFieldTypeMatches(value, field.Type) {
+			r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("%s must be %s, got %T", key, fieldTypeDescription(field.Type), value)})
+			continue
+		}
+		if field.NonEmpty {
+			if value, ok := value.(string); ok && value == "" {
+				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("%s method for tool %q: %s must not be empty", contract.Kind, toolName, key)})
+			}
+		}
+		if len(field.Enum) > 0 {
+			value, _ := value.(string)
+			if !containsString(field.Enum, value) {
+				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("%s method %s must be one of %q, got %q", contract.Kind, key, field.Enum, value)})
+			}
+		}
+	}
+}
+
+func validateUnknownFields(toolName string, index int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	keys := make([]string, 0, len(method.Config))
+	for key := range method.Config {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.HasPrefix(key, "_") {
+			continue
+		}
+		if _, ok := contract.Fields[key]; !ok {
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("field %s is not supported by method kind %s", key, contract.Kind)})
+		}
+	}
+}
+
+func validateMutuallyExclusiveFields(toolName string, index int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	for _, group := range contract.MutuallyExclusive {
+		var present []string
+		for _, key := range group {
+			if _, ok := method.Config[key]; ok {
+				present = append(present, key)
+			}
+		}
+		if len(present) > 1 {
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, index, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
+		}
+	}
+}
+
+func validateContractDependencies(toolName string, index int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	for key, required := range contract.Requires {
+		if _, configured := method.Config[key]; !configured {
+			continue
+		}
+		for _, dependency := range required {
+			if _, ok := method.Config[dependency]; !ok {
+				r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, index, key), Message: fmt.Sprintf("%s method for tool %q: %s requires %s", contract.Kind, toolName, key, dependency)})
+			}
+		}
+	}
+}
+
+// validateMethodSpecificFields covers rules whose field name is shared across
+// contracts but whose meaning requires dedicated validation.
+func validateMethodSpecificFields(toolName string, index int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	validateSourceAlternatives(toolName, index, method, contract, r)
+	if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
+		r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, index, "strip_components"), Message: "strip_components must be non-negative"})
+	}
+	if _, ok := contract.Fields["managed_paths"]; ok {
+		validateManagedPaths(toolName, index, method.Config["managed_paths"], r)
+	}
+	if _, ok := contract.Fields["depth"]; ok {
+		validateGitDepth(toolName, index, method.Config["depth"], r)
+	}
+	validateChecksum(toolName, index, method, contract, r)
 }
 
 func validateSourceAlternatives(toolName string, methodIdx int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
@@ -344,11 +370,50 @@ func validateWhenDirectives(s *config.Schema) *Result {
 					Field:   fieldPath(toolName, i, "when"),
 					Message: fmt.Sprintf("tool %q has an empty when clause — possible unrecognized key(s)", toolName),
 				})
+				continue
+			}
+			if message := ambiguousConditionMessage(mc.When); message != "" {
+				r.Add(ValidationError{
+					Code:    WarnAmbiguousCondition,
+					Field:   fieldPath(toolName, i, "when"),
+					Message: message,
+				})
 			}
 		}
 	}
 
 	return r
+}
+
+// ambiguousConditionMessage flags conditions that cannot mean what they look
+// like: exact matches written as ranges, libc values carrying a version, and
+// inverted min/max pairs.
+func ambiguousConditionMessage(c *config.Condition) string {
+	if c == nil {
+		return ""
+	}
+	for _, kernel := range c.Kernel {
+		if strings.ContainsAny(kernel, "*<>=~") {
+			return fmt.Sprintf("kernel %q is matched exactly; use kernel_min/kernel_max for a range", kernel)
+		}
+	}
+	for _, libc := range c.Libc {
+		if strings.IndexFunc(libc, func(r rune) bool { return unicode.IsDigit(r) || unicode.IsSpace(r) }) >= 0 {
+			return fmt.Sprintf("libc %q includes a version; detection reports only the family token (for example \"glibc\"), so this never matches", libc)
+		}
+	}
+	for _, version := range c.DistroVersion {
+		if strings.ContainsAny(version, "*<>=~") {
+			return fmt.Sprintf("distro_version %q is matched exactly; use distro_version_min/distro_version_max for a range", version)
+		}
+	}
+	if c.KernelMin != "" && c.KernelMax != "" && platform.CompareVersion(c.KernelMin, c.KernelMax) > 0 {
+		return fmt.Sprintf("kernel_min %q is greater than kernel_max %q", c.KernelMin, c.KernelMax)
+	}
+	if c.DistroVersionMin != "" && c.DistroVersionMax != "" && platform.CompareVersion(c.DistroVersionMin, c.DistroVersionMax) > 0 {
+		return fmt.Sprintf("distro_version_min %q is greater than distro_version_max %q", c.DistroVersionMin, c.DistroVersionMax)
+	}
+	return ""
 }
 
 // validatePlaceholders scans every string leaf in the schema (tool names,

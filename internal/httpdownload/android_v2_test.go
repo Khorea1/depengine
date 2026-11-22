@@ -28,6 +28,7 @@ func TestAndroidAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 	if err := os.MkdirAll(apkDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	apkDir = resolveTestPath(t, apkDir)
 	if err := os.WriteFile(filepath.Join(apkDir, "present-app.apk"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +83,11 @@ func TestAndroidAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 				Presence:    plan.PresencePresent,
 				Identity:    plan.ObservedIdentity{Package: tt.tool.Name},
 				KnownFields: []plan.IdentityField{plan.FieldPackage},
+				// The cached APK is a real observed file slot, not proof that
+				// the Android package installer completed the user-driven install.
+				Resources: []plan.ObservedResource{{
+					Scope: "host-filesystem", Kind: "file-slot", Identity: filepath.Join(apkDir, "present-app.apk"),
+				}},
 			}
 			if !reflect.DeepEqual(observation, want) {
 				t.Fatalf("Observe() = %#v, want %#v", observation, want)

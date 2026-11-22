@@ -23,7 +23,7 @@ func TestGitHubAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 	ctx := context.Background()
 	adapter := NewGitHubAdapter()
 
-	extractDir := t.TempDir()
+	extractDir := resolveTestPath(t, t.TempDir())
 	if err := os.WriteFile(filepath.Join(extractDir, "gh-tool"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
@@ -95,6 +95,13 @@ func TestGitHubAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 				Identity:    plan.ObservedIdentity{Package: tt.tool.Name},
 				KnownFields: []plan.IdentityField{plan.FieldPackage},
 			}
+			if tt.name == "extract_to file present" {
+				// The delegated HTTP probe now reports the canonical file slot.
+				// The PATH-only probe has no physical-location evidence.
+				want.Resources = []plan.ObservedResource{{
+					Scope: "host-filesystem", Kind: "file-slot", Identity: filepath.Join(extractDir, "gh-tool"),
+				}}
+			}
 			if !reflect.DeepEqual(observation, want) {
 				t.Fatalf("Observe() = %#v, want %#v", observation, want)
 			}
@@ -144,6 +151,7 @@ func TestGitHubAdapterV2ObservationReconciles(t *testing.T) {
 }
 
 func TestGitHubAdapterInstallResolvedClassifiesResolvedArtifact(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("#!/bin/sh\necho hello\n"))
 	}))

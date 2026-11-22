@@ -9,6 +9,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -16,13 +17,14 @@ type verifyStateRunner struct {
 	responses       map[string]string
 	defaultResponse string
 	exitCodes       map[string]int
+	stderr          map[string]string
 	calls           []string
 }
 
 func (r *verifyStateRunner) Run(_ context.Context, name string, args ...string) run.Result {
 	key := strings.Join(append([]string{name}, args...), " ")
 	r.calls = append(r.calls, key)
-	result := run.Result{ExitCode: r.exitCodes[key]}
+	result := run.Result{ExitCode: r.exitCodes[key], Stderr: []byte(r.stderr[key])}
 	if response, ok := r.responses[key]; ok {
 		result.Stdout = []byte(response)
 		return result
@@ -128,6 +130,7 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 			runner := &verifyStateRunner{
 				responses: map[string]string{"pip show demo-a": "Name: demo-a\nVersion: 1.0\n"},
 				exitCodes: map[string]int{"pip show demo-b": 1},
+				stderr:    map[string]string{"pip show demo-b": "WARNING: Package(s) not found: demo-b"},
 			}
 			methods := [2]*config.MethodCandidate{{Kind: "pip", Config: map[string]any{"pkg": "demo-a"}}, {Kind: "pip", Config: map[string]any{"pkg": "demo-b"}}}
 			for i, method := range methods {
@@ -244,47 +247,60 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 		})
 	})
 
-	t.Run("flatpak selectors", func(t *testing.T) {
+	t.Run("flatpak selectors use observed inventory identity", func(t *testing.T) {
 		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["flatpak"])
-		probe := func(t *testing.T, a, b map[string]any, runner *verifyStateRunner) {
-			t.Helper()
-			methods := [2]*config.MethodCandidate{{Kind: "flatpak", Config: a}, {Kind: "flatpak", Config: b}}
-			for i, method := range methods {
-				obs := probeObservation(t, adapter, runner, method)
-				want := plan.StateSatisfied
-				if i == 1 {
-					want = plan.StateAbsent
-				}
-				if got := plan.Reconcile(plan.ResolvedIdentity{Package: "org.example.App"}, obs).State; got != want {
-					t.Fatalf("state=%s want=%s calls=%v", got, want, runner.calls)
-				}
+		const inventory = "Application ID Origin Installation Arch Branch\norg.example.App testing user x86_64 beta\norg.example.App flathub user x86_64 stable\n"
+		runner := &verifyStateRunner{defaultResponse: inventory}
+		stable := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App", "remote": "flathub", "branch": "stable", "scope": "user"}}
+		beta := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App", "remote": "testing", "branch": "beta", "scope": "user"}}
+		for _, method := range []*config.MethodCandidate{stable, beta} {
+			obs := probeObservation(t, adapter, runner, method)
+			identity := plan.ResolvedIdentity{Package: "org.example.App", Source: method.Config["remote"].(string), Revision: method.Config["branch"].(string), Scope: string(plan.ScopeUser)}
+			if state := plan.Reconcile(identity, obs).State; state != plan.StateSatisfied {
+				t.Fatalf("matching observed identity state=%s observation=%+v", state, obs)
 			}
 		}
-		t.Run("pkg", func(t *testing.T) {
-			runner := &verifyStateRunner{exitCodes: map[string]int{"flatpak info org.example.Other": 1}}
-			probe(t, map[string]any{"pkg": "org.example.App"}, map[string]any{"pkg": "org.example.Other"}, runner)
-		})
-		t.Run("branch", func(t *testing.T) {
-			runner := &verifyStateRunner{exitCodes: map[string]int{"flatpak info org.example.App//beta": 1}}
-			probe(t, map[string]any{"pkg": "org.example.App", "branch": "stable"}, map[string]any{"pkg": "org.example.App", "branch": "beta"}, runner)
-		})
-		t.Run("remote", func(t *testing.T) {
-			runner := &verifyStateRunner{defaultResponse: "stable-remote"}
-			probe(t, map[string]any{"pkg": "org.example.App", "remote": "stable-remote"}, map[string]any{"pkg": "org.example.App", "remote": "testing-remote"}, runner)
-		})
-		t.Run("scope", func(t *testing.T) {
-			runner := &verifyStateRunner{exitCodes: map[string]int{"flatpak info --system org.example.App": 1}}
-			probe(t, map[string]any{"pkg": "org.example.App", "scope": "user"}, map[string]any{"pkg": "org.example.App", "scope": "system"}, runner)
-		})
+
+		mismatched := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App", "remote": "other", "branch": "stable", "scope": "user"}}
+		mismatchRunner := &verifyStateRunner{defaultResponse: "Application ID Origin Installation Arch Branch\norg.example.App flathub user x86_64 stable\n"}
+		obs := probeObservation(t, adapter, mismatchRunner, mismatched)
+		want := plan.ResolvedIdentity{Package: "org.example.App", Source: "other", Revision: "stable", Scope: string(plan.ScopeUser)}
+		if state := plan.Reconcile(want, obs).State; state != plan.StateDrifted {
+			t.Fatalf("requested remote mismatch state=%s observation=%+v, want drifted from actual inventory identity", state, obs)
+		}
+	})
+
+	t.Run("flatpak scope is observed", func(t *testing.T) {
+		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["flatpak"])
+		runner := &verifyStateRunner{defaultResponse: "Application ID Origin Installation Arch Branch\norg.example.App flathub user x86_64 stable\n"}
+		method := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App", "scope": "user"}}
+		obs := probeObservation(t, adapter, runner, method)
+		identity := plan.ResolvedIdentity{Package: "org.example.App", Source: "flathub", Revision: "stable", Scope: string(plan.ScopeUser)}
+		if state := plan.Reconcile(identity, obs).State; state != plan.StateSatisfied {
+			t.Fatalf("state=%s observation=%+v", state, obs)
+		}
+		system := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App", "scope": "system"}}
+		if got := probeObservation(t, adapter, runner, system).Presence; got != plan.PresenceAbsent {
+			t.Fatalf("system-only complete inventory presence=%s, want absent", got)
+		}
+	})
+
+	t.Run("flatpak complete inventory proves package absence", func(t *testing.T) {
+		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["flatpak"])
+		runner := &verifyStateRunner{defaultResponse: "Application ID Origin Installation Arch Branch\norg.example.Other flathub user x86_64 stable\n"}
+		method := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{"pkg": "org.example.App"}}
+		if got := probeObservation(t, adapter, runner, method).Presence; got != plan.PresenceAbsent {
+			t.Fatalf("complete inventory presence=%s, want absent", got)
+		}
 	})
 
 	t.Run("snap selectors", func(t *testing.T) {
 		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["snap"])
 		runPair := func(t *testing.T, a, b map[string]any, packageA, packageB string) {
 			t.Helper()
-			response := "demo 1 1 latest/stable publisher -\n"
+			response := "Name Version Rev Tracking Publisher Notes\ndemo 1 1 latest/stable publisher -\n"
 			if requested, ok := a["branch"].(string); ok {
-				response = "demo 1 1 latest/stable/" + requested + " publisher -\n"
+				response = "Name Version Rev Tracking Publisher Notes\ndemo 1 1 latest/stable/" + requested + " publisher -\n"
 			}
 			runner := &verifyStateRunner{defaultResponse: response}
 			methods := [2]*config.MethodCandidate{{Kind: "snap", Config: a}, {Kind: "snap", Config: b}}
@@ -292,14 +308,25 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 				obs := probeObservation(t, adapter, runner, method)
 				want := plan.StateSatisfied
 				if i == 1 {
-					want = plan.StateAbsent
+					want = plan.StateDrifted
+				}
+				intent, err := planner.BuildCandidateIntent(&config.Tool{Name: "probe"}, method)
+				if err != nil {
+					t.Fatalf("BuildCandidateIntent: %v", err)
 				}
 				pkg := packageA
 				if i == 1 {
 					pkg = packageB
 				}
-				if got := plan.Reconcile(plan.ResolvedIdentity{Package: pkg}, obs).State; got != want {
-					t.Fatalf("state=%s want=%s calls=%v", got, want, runner.calls)
+				if intent.Identity.Package != pkg {
+					t.Fatalf("projected package=%q want=%q", intent.Identity.Package, pkg)
+				}
+				result := plan.Reconcile(intent.Identity, obs)
+				if result.State != want {
+					t.Fatalf("state=%s want=%s channel=%q observed=%q calls=%v", result.State, want, intent.Identity.Channel, obs.Identity.Channel, runner.calls)
+				}
+				if i == 1 && (len(result.Drift) != 1 || result.Drift[0].Field != plan.FieldChannel) {
+					t.Fatalf("channel mismatch drift=%+v", result.Drift)
 				}
 			}
 		}

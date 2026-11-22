@@ -65,8 +65,8 @@ func BuildMap(f *platform.Facts, clan string) map[string]string {
 		"os":             f.OS,
 	}
 	// Booleans render as their string form for URL/template ergonomics.
-	m["is_wsl"] = boolStr(f.IsWSL)
-	m["is_container"] = boolStr(f.IsContainer)
+	m["is_wsl"] = traitStr(f.IsWSL, f.IsWSLUnknown)
+	m["is_container"] = traitStr(f.IsContainer, f.IsContainerUnknown)
 	m["is_android"] = boolStr(f.IsAndroid)
 	return m
 }
@@ -128,6 +128,13 @@ func normalizeAliasMap(raw any) map[string]string {
 
 // boolStr exposes booleans to placeholders with a stable "true"/"false"
 // string form.
+func traitStr(value, unknown bool) string {
+	if unknown {
+		return "unknown"
+	}
+	return boolStr(value)
+}
+
 func boolStr(b bool) string {
 	if b {
 		return "true"

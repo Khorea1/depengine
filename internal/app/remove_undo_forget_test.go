@@ -2,11 +2,13 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +28,21 @@ import (
 // state/Go/home variables the tests control and re-set from `extraEnv`, so
 // every scenario is hermetic: temp XDG_STATE_HOME, fake GOBIN dir, no
 // network, no real package managers.
-func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (exitCode int, output string) {
+func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (int, string) {
+	t.Helper()
+	var out strings.Builder
+	code := runCommandTo(t, cmd, extraEnv, &out, &out, args...)
+	return code, out.String()
+}
+
+func runCommandStreams(t *testing.T, cmd string, extraEnv []string, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr strings.Builder
+	code := runCommandTo(t, cmd, extraEnv, &stdout, &stderr, args...)
+	return code, stdout.String(), stderr.String()
+}
+
+func runCommandTo(t *testing.T, cmd string, extraEnv []string, stdout, stderr io.Writer, args ...string) int {
 	t.Helper()
 	c := osexec.Command(os.Args[0], "-test.run=^TestCommandHelperSubprocess$") // #nosec G204 G702 -- test intentionally launches the current test binary as a controlled helper subprocess.
 
@@ -61,9 +78,8 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 	env = append(env, extraEnv...)
 	c.Env = env
 
-	var out strings.Builder
-	c.Stdout = &out
-	c.Stderr = &out
+	c.Stdout = stdout
+	c.Stderr = stderr
 	err := c.Run()
 	code := 0
 	if err != nil {
@@ -73,7 +89,7 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 		}
 		code = ee.ExitCode()
 	}
-	return code, out.String()
+	return code
 }
 
 // TestCommandHelperSubprocess is not a real test — it is the entry point for
@@ -101,6 +117,24 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		runViaCobra(newUpgradeCmd(), args)
 	case "graph":
 		runViaCobra(newGraphCmd(), args)
+	case "validate":
+		runViaCobra(newValidateCmd(), args)
+	case "update":
+		runViaCobra(newUpdateCmd(), args)
+	case "why":
+		runViaCobra(newWhyCmd(), args)
+	case "check":
+		runViaCobra(newCheckCmd(), args)
+	case "status":
+		runViaCobra(newStatusCmd(), args)
+	case "diff":
+		runViaCobra(newDiffCmd(), args)
+	case "doctor":
+		runViaCobra(newDoctorCmd(), args)
+	case "audit":
+		runViaCobra(newAuditCmd(), args)
+	case "journal":
+		runViaCobra(newJournalCmd(), args)
 	default:
 		os.Exit(99)
 	}
@@ -187,16 +221,35 @@ func writeTestSnapshot(t *testing.T, stateHome string, tools map[string]state.To
 	}
 }
 
+// fakeBinary builds a small real Go executable so `go version -m` can verify
+// its package identity. A shell-script placeholder would make the removal
+// scenario test an invalid installation rather than the intended lifecycle.
 func fakeBinary(t *testing.T, binDir, name string) string {
 	t.Helper()
-	// `go install` produces name.exe on Windows and the adapter removes
-	// exactly that; fixtures must carry the suffix.
+	module := "example.test"
+	if name == "stringer" {
+		module = "golang.org/x/tools"
+	}
+	moduleDir := t.TempDir()
+	commandDir := filepath.Join(moduleDir, "cmd", name)
+	if err := os.MkdirAll(commandDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	path := filepath.Join(binDir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
-		t.Fatal(err)
+	// -mod=mod isolates this temporary standalone module from the repository's
+	// offline vendor mode. No external dependencies are needed.
+	res := (run.OSExecRunner{}).RunInDir(context.Background(), moduleDir, "go", "build", "-mod=mod", "-o", path, "./cmd/"+strings.TrimSuffix(name, ".exe"))
+	if err := run.CheckResult(res, "build Go test binary"); err != nil {
+		t.Fatalf("build Go fixture %s: %v", name, err)
 	}
 	return path
 }
@@ -374,6 +427,80 @@ func TestForgetGoTool(t *testing.T) {
 	}
 }
 
+// TestForgetReleasesOwnedResourceClaims forgets a tracked owner while leaving
+// its shared prerequisite untouched on the host. The forgotten name must not
+// keep a phantom reference that prevents later prerequisite cleanup.
+func TestForgetReleasesOwnedResourceClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+			"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "owner")
+	if code != 0 {
+		t.Fatalf("forget exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["owner"]; ok {
+		t.Fatal("forgotten tool remains tracked")
+	}
+	if _, ok := st.Tools["helper"]; !ok {
+		t.Fatal("forget dropped the unrelated prerequisite's tracking")
+	}
+	if len(st.OwnedResources) != 1 {
+		t.Fatalf("owned resources = %#v, want the retained prerequisite record", st.OwnedResources)
+	}
+	if got := st.OwnedResources[0]; got.Resource != resource || got.RefCount() != 0 {
+		t.Fatalf("owned prerequisite after forget = %#v, want zero-ref %s", got, resource.Key)
+	}
+}
+
+func TestForgetRequiredPrerequisiteWarnsAndRetainsClaims(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+			"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 0 {
+		t.Fatalf("forget helper exit = %d, want 0 (output: %s)", code, out)
+	}
+	if !strings.Contains(out, "still required") {
+		t.Fatalf("output should warn about dependents, got: %s", out)
+	}
+	st := loadTestState(t, stateHome)
+	if _, ok := st.Tools["owner"]; !ok {
+		t.Fatal("forget dropped the dependent owner's tracking")
+	}
+	if len(st.OwnedResources) != 1 || !reflect.DeepEqual(st.OwnedResources[0].Dependents, []string{"owner"}) {
+		t.Fatalf("owned resources after forget = %#v, want owner's retained claim", st.OwnedResources)
+	}
+}
+
 func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
@@ -459,6 +586,153 @@ func TestRemoveLastOwnerCleansUnreferencedPrerequisite(t *testing.T) {
 	}
 	if !strings.Contains(out, "removed unreferenced prerequisite") {
 		t.Fatalf("output should report prerequisite cleanup, got: %s", out)
+	}
+}
+
+// TestRemoveOwnerAfterForgottenPrerequisiteSucceeds covers the forgotten-helper
+// case: the claim is released, but the untracked prerequisite cannot be
+// verified or removed. Owner removal must still succeed and retain the record.
+// TestRemoveDryRunReportsUntrackedPrerequisiteRetention keeps dry-run aligned
+// with the real path, which retains a prerequisite that is no longer tracked.
+func TestForgetOrphanedPrerequisiteRecord(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version:        state.CurrentVersion,
+		Tools:          map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{Resource: resource, Ownership: plan.OwnershipDepengine}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 0 {
+		t.Fatalf("forget orphaned prerequisite exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 0 {
+		t.Fatalf("owned resources = %#v, want the zero-ref record dropped", st.OwnedResources)
+	}
+}
+
+func TestForgetReleasesDanglingDependentClaim(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"ghost"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "ghost")
+	if code != 0 {
+		t.Fatalf("forget dangling dependent exit = %d, want 0 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources = %#v, want the retained zero-ref record", st.OwnedResources)
+	}
+}
+
+func TestForgetOrphanedPrerequisiteRefusesClaimedRecord(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools:   map[string]state.ToolState{"owner": prerequisiteGoToolState("example.test/cmd/owner", true)},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "forget", []string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, "helper")
+	if code != 1 {
+		t.Fatalf("forget claimed prerequisite exit = %d, want 1 (output: %s)", code, out)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 1 {
+		t.Fatalf("owned resources = %#v, want the claimed record retained", st.OwnedResources)
+	}
+}
+
+func TestRemoveDryRunReportsUntrackedPrerequisiteRetention(t *testing.T) {
+	stateHome := t.TempDir()
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	fakeBinary(t, binDir, "owner")
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner": prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "remove",
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+		"--dry-run", "owner",
+	)
+	if code != 0 {
+		t.Fatalf("remove --dry-run exit = %d, want 0 (output: %s)", code, out)
+	}
+	if !strings.Contains(out, "would retain zero-ref") {
+		t.Fatalf("dry-run should report retained untracked prerequisite, got: %s", out)
+	}
+}
+
+func TestRemoveOwnerAfterForgottenPrerequisiteSucceeds(t *testing.T) {
+	stateHome := t.TempDir()
+	binDir := t.TempDir()
+	homeDir := t.TempDir()
+	ownerBin := fakeBinary(t, binDir, "owner")
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFullState(t, stateHome, state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"owner": prerequisiteGoToolState("example.test/cmd/owner", true),
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+		}},
+	})
+
+	code, out := runCommand(t, "remove",
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+		"owner",
+	)
+	if code != 0 {
+		t.Fatalf("remove owner with forgotten helper exit = %d, want 0 (output: %s)", code, out)
+	}
+	if _, err := os.Stat(ownerBin); !os.IsNotExist(err) {
+		t.Fatalf("owner binary still present (err=%v)", err)
+	}
+	st := loadTestState(t, stateHome)
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 {
+		t.Fatalf("owned resources = %#v, want retained zero-ref prerequisite", st.OwnedResources)
+	}
+	if !strings.Contains(out, "not tracked") {
+		t.Fatalf("output should report the retained untracked prerequisite, got: %s", out)
 	}
 }
 
@@ -705,6 +979,45 @@ func TestExplicitOwnerAndPrerequisiteRemovalIsOrderIndependent(t *testing.T) {
 				t.Fatalf("state after remove %v = tools:%#v resources:%#v, want empty", order, st.Tools, st.OwnedResources)
 			}
 		})
+	}
+}
+
+// TestRemoveAllWithSharedPrerequisiteIsOrderIndependent exercises --all, whose
+// map iteration may visit an owner before or after its helper. Neither order
+// may fail the run or leave state behind.
+func TestRemoveAllWithSharedPrerequisiteIsOrderIndependent(t *testing.T) {
+	for attempt := 0; attempt < 3; attempt++ {
+		stateHome := t.TempDir()
+		binDir := t.TempDir()
+		homeDir := t.TempDir()
+		fakeBinary(t, binDir, "owner")
+		fakeBinary(t, binDir, "helper")
+		resource, err := plan.PrerequisiteResource("helper")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestFullState(t, stateHome, state.State{
+			Version: state.CurrentVersion,
+			Tools: map[string]state.ToolState{
+				"owner":  prerequisiteGoToolState("example.test/cmd/owner", true),
+				"helper": prerequisiteGoToolState("example.test/cmd/helper", false),
+			},
+			OwnedResources: []plan.OwnedResourceState{{
+				Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
+			}},
+		})
+
+		code, out := runCommand(t, "remove",
+			append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
+			"--all", "--force",
+		)
+		if code != 0 {
+			t.Fatalf("remove --all attempt %d exit = %d, want 0 (output: %s)", attempt, code, out)
+		}
+		st := loadTestState(t, stateHome)
+		if len(st.Tools) != 0 || len(st.OwnedResources) != 0 {
+			t.Fatalf("remove --all attempt %d state = tools:%#v resources:%#v, want empty", attempt, st.Tools, st.OwnedResources)
+		}
 	}
 }
 

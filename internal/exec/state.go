@@ -100,6 +100,17 @@ func (ex *Executor) toolStateForResult(
 }
 
 func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, report *ExecReport) error {
+	// Failed, skipped, and read-only previews must not change the provenance
+	// of the host-wide state. A different schema may have written it last;
+	// updating SchemaPath without a successful observation or commit would
+	// falsely attribute its existing installations to this failed run.
+	hasCommittedResult := false
+	for _, result := range report.Tools {
+		if result.Status == StatusInstalled || result.Status == StatusAlready || result.InstallCommitted {
+			hasCommittedResult = true
+			break
+		}
+	}
 	if ex.schemaPath == "" {
 		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
 		return nil
@@ -111,7 +122,9 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 	defer func() { _ = lockedState.Close() }()
 
 	current := lockedState.State()
-	ex.prepareStateMetadata(current)
+	if hasCommittedResult {
+		ex.prepareStateMetadata(current)
+	}
 	if current.Tools == nil {
 		current.Tools = make(map[string]depstate.ToolState, len(report.Tools))
 	}

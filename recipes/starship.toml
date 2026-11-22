@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.starship]
+method_only = ["native", "aur", "cargo"]
+
+[packages.starship.native]
+pkg = "starship"
+pkg_overrides = { emerge = "app-shells/starship", winget = "Starship.Starship" }
+
+[packages.starship.aur]
+pkg = "starship"
+
+[packages.starship.cargo]
+pkg = "starship"

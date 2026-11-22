@@ -11,6 +11,7 @@ import (
 
 const uninstallKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
 const errorNoMoreItems syscall.Errno = 259
+const errorInvalidData syscall.Errno = 13
 
 type windowsRegistry struct{}
 
@@ -55,15 +56,27 @@ func findInRegistry(root syscall.Handle, view uint32, name, publisher string) (s
 		subPtr, _ := syscall.UTF16PtrFromString(subName)
 		var sub syscall.Handle
 		if err := syscall.RegOpenKeyEx(key, subPtr, 0, syscall.KEY_READ|view, &sub); err != nil {
-			continue
+			if err == syscall.ERROR_FILE_NOT_FOUND {
+				continue
+			}
+			return "", false, err
 		}
 		display, displayErr := registryString(sub, "DisplayName")
 		vendor, vendorErr := registryString(sub, "Publisher")
 		code := subName
 		if productCode, err := registryString(sub, "ProductCode"); err == nil && productCode != "" {
 			code = productCode
+		} else if err != nil && err != syscall.ERROR_FILE_NOT_FOUND {
+			_ = syscall.RegCloseKey(sub)
+			return "", false, err
 		}
-		_ = syscall.RegCloseKey(sub) // best-effort; leaked handle is closed with the process
+		_ = syscall.RegCloseKey(sub)
+		if displayErr != nil && displayErr != syscall.ERROR_FILE_NOT_FOUND {
+			return "", false, displayErr
+		}
+		if vendorErr != nil && vendorErr != syscall.ERROR_FILE_NOT_FOUND {
+			return "", false, vendorErr
+		}
 		if displayErr == nil && display == name && strings.HasPrefix(code, "{") && strings.HasSuffix(code, "}") && (publisher == "" || (vendorErr == nil && vendor == publisher)) {
 			return code, true, nil
 		}
@@ -77,11 +90,23 @@ func registryString(key syscall.Handle, name string) (string, error) {
 	if err := syscall.RegQueryValueEx(key, valueName, nil, &valueType, nil, &size); err != nil {
 		return "", err
 	}
+	if valueType != syscall.REG_SZ && valueType != syscall.REG_EXPAND_SZ {
+		return "", errorInvalidData
+	}
+	if size == 0 {
+		return "", nil
+	}
+	if size%2 != 0 {
+		return "", errorInvalidData
+	}
 	buf := make([]byte, size)
 	if err := syscall.RegQueryValueEx(key, valueName, nil, &valueType, &buf[0], &size); err != nil {
 		return "", err
 	}
-	words := unsafe.Slice((*uint16)(unsafe.Pointer(&buf[0])), len(buf)/2)
+	if valueType != syscall.REG_SZ && valueType != syscall.REG_EXPAND_SZ || size%2 != 0 {
+		return "", errorInvalidData
+	}
+	words := unsafe.Slice((*uint16)(unsafe.Pointer(&buf[0])), int(size/2))
 	for len(words) > 0 && words[len(words)-1] == 0 {
 		words = words[:len(words)-1]
 	}

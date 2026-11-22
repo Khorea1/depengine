@@ -26,6 +26,57 @@ Prefer immutable identities when available: checksums, container digests, and
 Git commits are easier to replay and audit than branches, tags, channels, or
 mutable URLs.
 
+## Self-update
+
+`depengine self update` clones and builds the repository named by its recipe,
+so it compiles code from that source and must be treated as executing it. The
+embedded recipe is the default; `--recipe <path>` substitutes another
+project-schema fragment and is exactly as trusted as that file. Use the default
+HTTPS upstream or a repository you trust, and pin `--ref` to a tag or commit
+when reproducibility matters. The command verifies that the new binary answers
+`version` and swaps it atomically, but it does not verify a signature, SBOM, or
+publisher identity. A local path or `file://` source is accepted for development
+and is exactly as trusted as that directory.
+
+## Catalog imports
+
+A catalog recipe is declarative, not automatically safe. `depengine import`
+rejects lifecycle hooks, command-typed fields and plans that require arbitrary
+code (using the same predicate as the execution gate). It additionally rejects
+`secret_ref`, `checksum_secret_ref`, `signature_secret_ref` and credential
+references on declared package sources. Shared recipes cannot select an
+operator's environment credentials or silently forward them to a publisher.
+Declare any credentials needed for private installations in the **local**
+project schema or personal manifest, not in a shared catalog recipe.
+
+Import requires a `checksum` for every candidate that downloads an artifact,
+and warns when `checksum = "<algo>:auto"` makes verification trust-on-first-use
+(TOFU). A `checksum_secret_ref` cannot satisfy this requirement in a catalog
+recipe because credential references themselves are forbidden.
+
+The same rule applies when a recipe is read from the catalog, so placing a file
+in a catalog root manually cannot bypass import. For candidates with
+`distributions`, every declared variant must inherit or declare a checksum;
+a checksum on one sibling does not cover another. Lookup fails closed before
+the recipe is merged or executed.
+
+Import does not verify where a recipe or its artifacts come from: depengine does
+not sign or allowlist recipe sources. The preview lists the *declared* source
+selectors, package sources, artifact origins, checksum/signature sidecars and
+per-distribution sidecar overrides. It cannot predict runtime redirects,
+package-manager defaults or external manager network requests. Preview URL
+origins are sanitized to a scheme and host, not the full requested path.
+
+For a recipe received from outside the machine, obtain its canonical digest
+from an **independently trusted** channel, then use
+`depengine import ./tool.toml --expected-digest sha256:<64 lowercase hex>`.
+An absent or mismatched pin is rejected before the recipe is written. The pin
+protects the contents accepted at import against unexpected modification; it
+does **not** prove publisher identity, guarantee artifact safety, or establish
+trust in the channel that supplied the digest. Without the flag, import remains
+explicitly unverified (for backward compatibility). The recipe is written
+atomically as authored, and the canonical digest is also what v2 locks pin.
+
 ## Checksums and signatures
 
 Artifact checksums are verified before installation when declared. Signature
@@ -184,8 +235,19 @@ frozen installs reject missing or changed source identity. This protects
 the project's requested source configuration from silent drift; it does not
 pin mutable repository contents or prove publisher trust.
 
-Shared-source reference counting is still incomplete, so source cleanup should
-be conservative.
+Source ownership is reference-counted per tool. A successful candidate claim
+stores the tool as a dependent of every source it uses, atomically with the
+tool state through the candidate WAL. Removal, undo and forget release that
+claim; a source is removed only when the last depengine dependent is released,
+its host presence is still proven (including the configured Git origin for
+Brew taps and Scoop buckets), and the ownership record says depengine created
+it. Undo and forget keep the zero-ref record because they do not verify host
+cleanup; a source observed as pre-existing stays `external` with zero
+dependents and is never removed by depengine. Failed cleanup keeps the
+zero-ref owned record so the next removal can retry. A zero-ref prerequisite
+record whose tool is no longer tracked, and a dangling dependent claim left in
+older state, can be cleared explicitly with `depengine forget <tool>` once no
+tracked tool still requires the prerequisite.
 
 ## Lockfile
 

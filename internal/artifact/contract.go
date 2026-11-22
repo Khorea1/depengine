@@ -20,11 +20,22 @@ type Contract struct {
 	ForbiddenExtensions          []string
 	UnsupportedArchiveExtensions []string
 	RequiredExtensions           []string
+	// RejectInstallerScripts rejects payloads that look like shell or
+	// PowerShell installer scripts. Download-backed methods copy artifacts;
+	// they never execute them, so accepting such a URL is always a mistake.
+	RejectInstallerScripts bool
 }
 
 // PlatformInstallerExtensions are installer formats that must never be treated
 // as ordinary HTTP payloads. Only formats with a dedicated adapter may execute.
 var PlatformInstallerExtensions = []string{".msi", ".exe", ".pkg", ".dmg", ".msix", ".appx"}
+
+// InstallerScriptExtensions are shell and PowerShell installer-script formats.
+// depengine downloads artifacts but never executes installer scripts, so a
+// download-backed method must not silently install the script text as a
+// payload. Authors must declare a native package or the underlying managed
+// artifact instead.
+var InstallerScriptExtensions = []string{".sh", ".bash", ".zsh", ".ksh", ".ps1", ".psm1", ".bat", ".cmd"}
 
 // UnsupportedArchiveExtensions are common archive/compression formats that the
 // HTTP installer cannot extract. Rejecting them is safer than the generic
@@ -132,6 +143,17 @@ func (e *ForbiddenExtensionError) Error() string {
 	return fmt.Sprintf("artifact extension %s is not supported", e.Extension)
 }
 
+// InstallerScriptError reports an artifact that looks like an installer
+// script. Download-backed methods never execute such scripts, so the message
+// points at the supported alternatives instead of implying the script ran.
+type InstallerScriptError struct {
+	Extension string
+}
+
+func (e *InstallerScriptError) Error() string {
+	return fmt.Sprintf("artifact extension %s looks like an installer script; depengine downloads artifacts but never executes installer scripts: declare a native package or the underlying managed artifact with explicit paths and checksum", e.Extension)
+}
+
 // RequiredExtensionError reports that an artifact does not match any format
 // accepted by a method-specific contract.
 // UnsupportedArchiveError reports an archive/compression format that is
@@ -164,6 +186,11 @@ func (c *Contract) ValidateArtifact(raw string) error {
 func (c *Contract) ValidateArtifactAllowing(raw string, allowedForbiddenExtensions []string) error {
 	if c == nil || raw == "" {
 		return nil
+	}
+	if c.RejectInstallerScripts {
+		if ext := Extension(raw, InstallerScriptExtensions); ext != "" {
+			return &InstallerScriptError{Extension: ext}
+		}
 	}
 	if ext := Extension(raw, c.ForbiddenExtensions); ext != "" {
 		allowed := false

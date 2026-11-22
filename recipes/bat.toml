@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.bat]
+method_only = ["native", "aur", "cargo"]
+
+[packages.bat.native]
+pkg = "bat"
+pkg_overrides = { emerge = "sys-apps/bat", winget = "sharkdp.bat" }
+
+[packages.bat.aur]
+pkg = "bat"
+
+[packages.bat.cargo]
+pkg = "bat"

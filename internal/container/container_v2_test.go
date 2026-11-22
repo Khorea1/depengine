@@ -163,6 +163,52 @@ func TestContainerAdapterV2ObserveUnknownWhenProbeFails(t *testing.T) {
 		t.Fatalf("Observe() presence = %q, want unknown", observation.Presence)
 	}
 }
+func TestContainerAdapterV2ObserveDoesNotTreatFailedQueriesAsAbsent(t *testing.T) {
+	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, tc := range []struct {
+		name   string
+		config map[string]any
+		result run.Result
+	}{
+		{"tag exit", map[string]any{"source": "redis", "tag": "7"}, run.Result{ExitCode: 1, Stderr: []byte("daemon unavailable")}},
+		{"tag wait", map[string]any{"source": "redis", "tag": "7"}, run.Result{WaitErr: errors.New("wait failed")}},
+		{"digest exit", map[string]any{"source": "redis", "digest": digest}, run.Result{ExitCode: 1}},
+		{"digest wait", map[string]any{"source": "redis", "digest": digest}, run.Result{WaitErr: errors.New("wait failed")}},
+		{"platform exit", map[string]any{"source": "redis", "tag": "7", "platform": "linux/amd64"}, run.Result{ExitCode: 1}},
+		{"platform wait", map[string]any{"source": "redis", "tag": "7", "platform": "linux/amd64"}, run.Result{WaitErr: errors.New("wait failed")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}, result: &tc.result}
+			observation, err := NewContainerAdapter().Observe(context.Background(), runner, tool("redis"), containerMethod(tc.config))
+			if err != nil {
+				t.Fatalf("Observe() error = %v", err)
+			}
+			if observation.Presence != plan.PresenceUnknown {
+				t.Fatalf("Observe() presence = %q, want unknown", observation.Presence)
+			}
+			if tc.result.WaitErr != nil && len(runner.calls) != 1 {
+				t.Fatalf("WaitErr must not trigger a second inventory command; calls = %v", runner.calls)
+			}
+		})
+	}
+}
+func TestContainerAdapterV2DigestPlatformFallbackUsesDigestInventory(t *testing.T) {
+	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	result := run.Result{ExitCode: 1}
+	runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}, result: &result}
+	config := map[string]any{"source": "redis", "digest": digest, "platform": "linux/amd64"}
+	observation, err := NewContainerAdapter().Observe(context.Background(), runner, tool("redis"), containerMethod(config))
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if observation.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() presence = %q, want unknown when digest inventory query fails", observation.Presence)
+	}
+	want := []string{"images", "--digests", "--format", "{{.Digest}}", "redis"}
+	if got := runner.calls[len(runner.calls)-1].Args; !equalArgs(got, want) {
+		t.Fatalf("digest+platform fallback argv = %v, want %v", got, want)
+	}
+}
 
 func TestContainerAdapterV2ObserveRequiresToolAndMethod(t *testing.T) {
 	ctx := context.Background()

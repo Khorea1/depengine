@@ -460,7 +460,6 @@ nvim = { pacman = "neovim" }
 		t.Fatal("expected nvim in merged schema")
 	}
 
-	// Find the native method
 	var nativeMethod *MethodCandidate
 	for _, m := range nvim.Methods {
 		if m.Kind == "native" {

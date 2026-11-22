@@ -1,6 +1,9 @@
 package plan
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // ReplacementPhase is the persisted write-ahead boundary for replacing one
 // installed tool with an exact, immutable target.
@@ -106,8 +109,11 @@ func (j ReplacementJournal) PlanPostHook() (ReplacementJournal, error) {
 }
 
 // ReplacementRecoveryFor decides the next safe action from phase and two
-// independently observed identities. Unknown, broken, drifted, or conflicting
-// observations never authorize mutation or finalization.
+// independently observed identities. Unknown, broken, or conflicting probes
+// never authorize mutation or finalization. When the old target is satisfied,
+// drift of the desired identity can authorize a removal retry only if both
+// independent probes identify the same installed package and agree on all
+// identity fields they share.
 func ReplacementRecoveryFor(phase ReplacementPhase, old, desired VerificationResult) (ReplacementRecoveryAction, error) {
 	if err := (ReplacementJournal{Phase: phase}).Validate(); err != nil {
 		return ReplacementBlocked, err
@@ -122,11 +128,13 @@ func ReplacementRecoveryFor(phase ReplacementPhase, old, desired VerificationRes
 	desiredPresent := desired.State == StateSatisfied
 	switch phase {
 	case ReplacementPlanned:
-		if oldPresent && desired.State == StateAbsent {
+		if oldPresent && (desired.State == StateAbsent ||
+			desired.State == StateDrifted && sameObservedReplacementTarget(old, desired)) {
 			return ReplacementRetryRemoval, nil
 		}
 	case ReplacementRemoving:
-		if oldPresent && desired.State == StateAbsent {
+		if oldPresent && (desired.State == StateAbsent ||
+			desired.State == StateDrifted && sameObservedReplacementTarget(old, desired)) {
 			return ReplacementRetryRemoval, nil
 		}
 		if old.State == StateAbsent && desired.State == StateAbsent {
@@ -145,4 +153,24 @@ func ReplacementRecoveryFor(phase ReplacementPhase, old, desired VerificationRes
 		}
 	}
 	return ReplacementBlocked, nil
+}
+
+// sameObservedReplacementTarget requires both observations to identify the
+// same installed package before treating desired drift as a safe removal
+// precondition. Different or incomplete probes do not authorize mutation.
+func sameObservedReplacementTarget(old, desired VerificationResult) bool {
+	if old.Observed.Package == "" || old.Observed.Package != desired.Observed.Package ||
+		!slices.Contains(old.KnownFields, FieldPackage) || !slices.Contains(desired.KnownFields, FieldPackage) {
+		return false
+	}
+	for _, field := range old.KnownFields {
+		if !slices.Contains(desired.KnownFields, field) {
+			continue
+		}
+		if comparableIdentityValue(field, observedField(old.Observed, field)) !=
+			comparableIdentityValue(field, observedField(desired.Observed, field)) {
+			return false
+		}
+	}
+	return true
 }

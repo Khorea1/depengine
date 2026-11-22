@@ -5,7 +5,7 @@ FROM archlinux:latest
 # container (go.mod requires go 1.27; arch's `go` package tracks upstream).
 # NOTE: keep the sync databases — depengine's native availability checks
 # need the package index at test time.
-RUN pacman -Sy --noconfirm \
+RUN pacman -Syu --noconfirm \
     go \
     curl \
     git \

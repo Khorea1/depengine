@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.zoxide]
+method_only = ["native", "aur", "cargo"]
+
+[packages.zoxide.native]
+pkg = "zoxide"
+pkg_overrides = { winget = "ajeetdsouza.zoxide" }
+
+[packages.zoxide.aur]
+pkg = "zoxide"
+
+[packages.zoxide.cargo]
+pkg = "zoxide"

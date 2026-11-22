@@ -74,7 +74,6 @@ func TestStoreAndLookup(t *testing.T) {
 	// Override cache dir to use temp dir so we don't pollute real cache.
 	t.Setenv("XDG_CACHE_HOME", dir)
 
-	// Create a "downloaded" file.
 	src := filepath.Join(dir, "downloaded-file.bin")
 	content := "some binary content for " + t.Name()
 	if err := os.WriteFile(src, []byte(content), 0o600); err != nil {
@@ -139,7 +138,6 @@ func TestStoreOverwritesExisting(t *testing.T) {
 
 	url := testURL + "#Overwrite"
 
-	// First store.
 	src1 := filepath.Join(dir, "first.bin")
 	if err := os.WriteFile(src1, []byte("first"), 0o600); err != nil {
 		t.Fatal(err)

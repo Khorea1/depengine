@@ -38,7 +38,6 @@ func TestExportCycloneDX(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	// Validate structure.
 	if bom["bomFormat"] != "CycloneDX" {
 		t.Fatalf("expected CycloneDX, got %v", bom["bomFormat"])
 	}

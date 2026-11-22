@@ -17,6 +17,38 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
+// zipEntry is one plain file entry for writeZipEntries.
+type zipEntry struct {
+	name string
+	body string
+}
+
+// writeZipEntries builds a zip fixture with plain file entries. Tests that only
+// vary entry names or payloads share this plumbing instead of repeating it.
+func writeZipEntries(t *testing.T, path string, entries ...zipEntry) {
+	t.Helper()
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, entry := range entries {
+		w, err := zw.Create(entry.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(entry.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestInstallRawOfflineAndAtomicReplacement(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "vendor", "tool")
@@ -237,24 +269,7 @@ func TestInstallPreservesUnrelatedLegacyBackupPath(t *testing.T) {
 func TestInstallArchiveWritesAndVerifiesContentIdentity(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create("bin/tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("payload")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, path, zipEntry{name: "bin/tool", body: "payload"})
 
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {
@@ -276,24 +291,7 @@ func TestInstallArchiveWritesAndVerifiesContentIdentity(t *testing.T) {
 func TestInstallArchiveRejectsReservedMetadataEntry(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create(".depengine-local-artifact.sha256")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("user payload")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, path, zipEntry{name: ".depengine-local-artifact.sha256", body: "user payload"})
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {
 		t.Fatal(err)
@@ -308,24 +306,7 @@ func TestInstallZipRejectsWindowsDriveQualifiedEntriesOnEveryHost(t *testing.T) 
 		t.Run(strings.ReplaceAll(entryName, "/", "_"), func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-			if err != nil {
-				t.Fatal(err)
-			}
-			zw := zip.NewWriter(f)
-			w, err := zw.Create(entryName)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := w.Write([]byte("bad")); err != nil {
-				t.Fatal(err)
-			}
-			if err := zw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatal(err)
-			}
+			writeZipEntries(t, archivePath, zipEntry{name: entryName, body: "bad"})
 			resolved, err := localartifact.Resolve(root, "bad.zip", "")
 			if err != nil {
 				t.Fatal(err)
@@ -432,24 +413,7 @@ func TestInstallZipRejectsWindowsSpecialEntriesOnEveryHost(t *testing.T) {
 		t.Run(strings.NewReplacer("/", "_", ":", "_").Replace(entryName), func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-			if err != nil {
-				t.Fatal(err)
-			}
-			zw := zip.NewWriter(f)
-			w, err := zw.Create(entryName)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := w.Write([]byte("bad")); err != nil {
-				t.Fatal(err)
-			}
-			if err := zw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatal(err)
-			}
+			writeZipEntries(t, archivePath, zipEntry{name: entryName, body: "bad"})
 			resolved, err := localartifact.Resolve(root, "bad.zip", "")
 			if err != nil {
 				t.Fatal(err)
@@ -497,48 +461,14 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip empty component alias",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-				if err != nil {
-					t.Fatal(err)
-				}
-				zw := zip.NewWriter(f)
-				w, err := zw.Create("bin//tool")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := w.Write([]byte("x")); err != nil {
-					t.Fatal(err)
-				}
-				if err := zw.Close(); err != nil {
-					t.Fatal(err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
+				writeZipEntries(t, archivePath, zipEntry{name: "bin//tool", body: "x"})
 			},
 		},
 		{
 			name: "zip dot component alias",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-				if err != nil {
-					t.Fatal(err)
-				}
-				zw := zip.NewWriter(f)
-				w, err := zw.Create("bin/./tool")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := w.Write([]byte("x")); err != nil {
-					t.Fatal(err)
-				}
-				if err := zw.Close(); err != nil {
-					t.Fatal(err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
+				writeZipEntries(t, archivePath, zipEntry{name: "bin/./tool", body: "x"})
 			},
 		},
 		{
@@ -576,24 +506,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip parent component",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-				if err != nil {
-					t.Fatal(err)
-				}
-				zw := zip.NewWriter(f)
-				w, err := zw.Create("bin/../tool")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := w.Write([]byte("tool")); err != nil {
-					t.Fatal(err)
-				}
-				if err := zw.Close(); err != nil {
-					t.Fatal(err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
+				writeZipEntries(t, archivePath, zipEntry{name: "bin/../tool", body: "tool"})
 			},
 		},
 	}
@@ -622,24 +535,7 @@ func TestInstallArchiveRejectsReservedMetadataNamesCaseInsensitively(t *testing.
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-			if err != nil {
-				t.Fatal(err)
-			}
-			zw := zip.NewWriter(f)
-			w, err := zw.Create(name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := w.Write([]byte("forged")); err != nil {
-				t.Fatal(err)
-			}
-			if err := zw.Close(); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.Close(); err != nil {
-				t.Fatal(err)
-			}
+			writeZipEntries(t, archivePath, zipEntry{name: name, body: "forged"})
 
 			resolved, err := localartifact.Resolve(root, "bad.zip", "")
 			if err != nil {
@@ -655,24 +551,7 @@ func TestInstallArchiveRejectsReservedMetadataNamesCaseInsensitively(t *testing.
 func TestVerifyArchiveChecksumDetectsInstalledPayloadDrift(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create("bin/tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("original")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, archivePath, zipEntry{name: "bin/tool", body: "original"})
 
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {
@@ -696,24 +575,7 @@ func TestVerifyArchiveChecksumDetectsInstalledPayloadDrift(t *testing.T) {
 func TestInstallArchiveRejectsReservedTreeMetadataEntry(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create(".depengine-local-artifact-tree.sha256")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("user payload")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, path, zipEntry{name: ".depengine-local-artifact-tree.sha256", body: "user payload"})
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {
 		t.Fatal(err)
@@ -756,24 +618,7 @@ func TestInstallRawAlreadySatisfiedDoesNotReplaceDestination(t *testing.T) {
 func TestInstallArchiveAlreadySatisfiedDoesNotReplaceDestination(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create("bin/tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("stable")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, archivePath, zipEntry{name: "bin/tool", body: "stable"})
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {
 		t.Fatal(err)
@@ -836,24 +681,7 @@ func TestInstallArchiveNormalizesAndVerifiesRootMode(t *testing.T) {
 	}
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
-	if err != nil {
-		t.Fatal(err)
-	}
-	zw := zip.NewWriter(f)
-	w, err := zw.Create("bin/tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write([]byte("payload")); err != nil {
-		t.Fatal(err)
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
+	writeZipEntries(t, archivePath, zipEntry{name: "bin/tool", body: "payload"})
 
 	resolved, err := localartifact.Resolve(root, "tool.zip", "")
 	if err != nil {

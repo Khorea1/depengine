@@ -11,25 +11,67 @@ import (
 )
 
 func TestOfficialObservesInstalledPackageSemantically(t *testing.T) {
+	const inventory = "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nNeovim 0.10.4 extras 2026-09-26 11:58:42 Global install, Held package, 64bit\nOther 1.0 main 2026-09-26 11:58:42 Deprecated package, arm64\nBroken 2.0 main 2026-09-26 11:58:42 Install failed\n"
 	for _, tc := range []struct {
-		name   string
-		output string
-		want   InstalledPackage
+		name  string
+		scope string
+		want  InstalledPackage
 	}{
-		{name: "present", output: "Name Version Source Updated\nNeovim 0.10.4 extras 2026-09-26\n", want: InstalledPackage{Present: true, Version: "0.10.4", Bucket: "extras", Scope: "global"}},
-		{name: "absent", output: "Name Version Source Updated\n", want: InstalledPackage{Scope: "user"}},
-		{name: "malformed row", output: "Neovim ???\n", want: InstalledPackage{Present: true, Malformed: true}},
+		{name: "global match", scope: "global", want: InstalledPackage{Present: true, Version: "0.10.4", Bucket: "extras", Scope: "global"}},
+		{name: "different scope is absent", scope: "user"},
+		{name: "all scopes", want: InstalledPackage{Present: true, Version: "0.10.4", Bucket: "extras", Scope: "global"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			runner := &run.FakeRunner{Stdout: tc.output}
-			got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", tc.want.Scope)
+			runner := &run.FakeRunner{Stdout: inventory}
+			got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", tc.scope)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("observation = %+v, want %+v", got, tc.want)
 			}
+			if !reflect.DeepEqual(runner.Calls[0].Args, []string{"list"}) {
+				t.Fatalf("inventory args = %v, want full unscoped list", runner.Calls[0].Args)
+			}
 		})
+	}
+}
+
+func TestOfficialFullInventoryReportsUnrelatedPackageAbsent(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nOther 1.0 main 2026-09-26 11:58:42\n"}
+	got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user")
+	if err != nil || got.Present {
+		t.Fatalf("full inventory missing package = %+v, %v; want absent", got, err)
+	}
+}
+func TestOfficialMarksTargetInstallFailureMalformed(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nNeovim 0.10.4 extras 2026-09-26 11:58:42 Deprecated package, Global install, Install failed, 64bit\n"}
+	got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "global")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := InstalledPackage{Present: true, Malformed: true, Version: "0.10.4", Bucket: "extras", Scope: "global"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("failed install row = %+v, want %+v", got, want)
+	}
+}
+
+func TestOfficialAcceptsOnlyDocumentedEmptyInventoryFailure(t *testing.T) {
+	runner := &run.FakeRunner{ExitCode: 1, Stdout: "There aren't any apps installed.\n"}
+	got, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user")
+	if err != nil || got.Present {
+		t.Fatalf("empty inventory = %+v, %v; want absent", got, err)
+	}
+	runner = &run.FakeRunner{ExitCode: 1, Stderr: "access denied"}
+	if _, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user"); err == nil {
+		t.Fatal("arbitrary exit 1 must not establish absence")
+	}
+}
+
+func TestOfficialRejectsMalformedUnrelatedInstalledRow(t *testing.T) {
+	runner := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nunknown row\n"}
+	if _, err := NewOfficial().ObserveInstalled(context.Background(), runner, "neovim", "user"); err == nil {
+		t.Fatal("malformed unrelated row must not establish complete inventory absence")
 	}
 }
 

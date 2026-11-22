@@ -1,0 +1,7 @@
+recipe_version = 1
+
+[packages.php-cs-fixer]
+method_only = ["composer"]
+
+[packages.php-cs-fixer.composer]
+pkg = "friendsofphp/php-cs-fixer"

@@ -50,7 +50,7 @@ adapter registration, and the final exit code. CLI behavior lives in
 | `internal/scoopruntime` | Scoop-specific runtime operations shared by Windows package execution and bucket source management |
 | `internal/msi` | Windows MSI install/remove lifecycle |
 | `internal/lock` | `depengine.lock` persistence and validation, with bounded legacy v1 resolution |
-| `internal/state` | Installed-tool state and cross-platform file locking |
+| `internal/state` | Installed-tool state, append-only mutation journal, and cross-platform file locking |
 | `internal/validate` | Structural, semantic, and environment validation |
 | `internal/sbom` | CycloneDX and SPDX export |
 
@@ -115,6 +115,32 @@ machine-specific values.
 Project and personal configuration use the same grammar but different roots:
 projects declare `[tools]`; manifests declare `[packages]`. Project values win
 when the two layers conflict.
+
+ADR-008 accepts a catalog layer below the personal manifest: recipes are looked
+up by name and merged catalog → manifest → project, so the project schema still
+wins conflicting fields and a catalog cannot enable `allow_new_tools`. The
+lookup backend, CLI flags and v2 recipe content digests are implemented. The
+layer contract and identity model are in
+[`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md); the
+storage layout and path resolution are in
+[`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md).
+
+Catalog storage is one TOML recipe per name, `<root>/<name>.toml`, with the file
+system as the index. The default root is the platform config directory under
+`depengine/catalog`; `--catalog` (repeatable) and `DEPENGINE_CATALOG` replace
+it, and `--no-catalog` disables lookup. The first root containing a name wins;
+catalog recipes participate only for project-declared names and their
+transitive `requires` closure. Lookup never scans the catalog, and a missing
+default root means no catalog rather than an error.
+
+Catalog lookup rejects executable fields and credential references; shared
+recipes cannot nominate the operator's env-backed tokens. A local schema or
+manifest may still supply authenticated method configuration.
+
+Each lookup retains the recipe bytes privately alongside its canonical digest.
+`Recipe.Specialize` expands host facts from that snapshot rather than rereading
+the path, so replacement or removal cannot mix recipe content with its digest;
+a later lookup observes current content and frozen lock validation detects drift.
 
 ## Install flow
 
@@ -197,8 +223,10 @@ consume that result. Presence alone does not establish satisfaction: known
 identity fields must match the resolved plan. `absent` and `drifted` remain
 distinct; `unknown` means the adapter cannot prove the desired identity, while
 `broken` means observation data or verification is invalid. Upgrade and remove
-fail closed for unknown/broken targets. Remove accepts drift, and a proven
-absent target releases state and ownership without invoking the remover.
+fail closed for unknown/broken targets. Remove and undo also fail closed on
+known drift, because removal projects the resolved (tracked) identity into the
+adapter and may otherwise target a version or package that is not installed. A
+proven absent target releases state and ownership without invoking the remover.
 
 Native dpkg-backed observation (Debian, Mint, and Termux) is owned by
 `internal/native`, with process execution retained in `internal/run.Runner` and

@@ -26,7 +26,7 @@ func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 
 	all, dryRun, force := false, false, false
 	schema, only := "", "tool"
-	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil); err != nil {
+	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, new(bool), executor, nil); err != nil {
 		t.Fatalf("runRemove: %v", err)
 	}
 	if !adapter.called {
@@ -56,7 +56,7 @@ func TestRunRemoveAdapterFailureRetainsState(t *testing.T) {
 
 	all, dryRun, force := false, false, false
 	schema, only := "", "tool"
-	if code := requireExitCode(t, runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil)); code != 1 {
+	if code := requireExitCode(t, runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, new(bool), executor, nil)); code != 1 {
 		t.Fatalf("runRemove exit code = %d, want 1", code)
 	}
 	if !adapter.called {
@@ -80,7 +80,7 @@ func TestRunRemoveDryRunDoesNotInvokeAdapterRemover(t *testing.T) {
 
 	all, dryRun, force := false, true, false
 	schema, only := "", "tool"
-	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil); err != nil {
+	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, new(bool), executor, nil); err != nil {
 		t.Fatalf("runRemove dry-run: %v", err)
 	}
 	if adapter.called {

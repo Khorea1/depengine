@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
@@ -28,31 +28,47 @@ func newValidateCmd() *cobra.Command {
 	validateNoManifest := new(bool)
 	validateCheckEnv := new(bool)
 	validateFormat := new(string)
+	validateJSON := new(bool)
 	validateStrict := new(bool)
+	validateCatalog := new([]string)
+	validateNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "validate",
 		Aliases: []string{"lint"},
 		Short:   ifPT("Validar schema.toml", "Validate schema.toml"),
+		Example: `  depengine validate                     # parse and validate schema.toml
+  depengine validate --strict            # warnings become errors
+  depengine validate --check-env --format json`,
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
+			if err := normalizeOutputFormat(validateFormat, validateJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict, validateCatalog, validateNoCatalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(validateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(validateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(validateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.StringArrayVar(validateCatalog, "catalog", nil, "path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog)")
+	f.BoolVar(validateNoCatalog, "no-catalog", false, "disable the recipe catalog (default: auto-detect)")
 	f.BoolVar(validateCheckEnv, "check-env", false, "check system environment for required tools")
 	f.StringVar(validateFormat, "format", "text", "output format: text or json")
+	f.BoolVar(validateJSON, "json", false, "shorthand for --format=json")
 	f.BoolVar(validateStrict, "strict", false, "treat warnings as errors")
 	return cmd
 }
 
-func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) error {
+func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool, validateCatalog *[]string, validateNoCatalog *bool) error {
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return presentSchemaLoadErrorFor("validate", schemaNotFound(*validateSchema), *validateFormat == "json")
+		}
 		var sce *config.SchemaCodeError
 		if errors.As(err, &sce) && *validateFormat == "json" {
 			out := jsonOutput{
@@ -62,9 +78,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 					Message: sce.Msg,
 				}},
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(out); err != nil {
+			if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 				return exitWithCode(3)
 			}
@@ -84,15 +98,33 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			manifestAuto = true
 		}
 	}
+	catalog, err := catalogFromFlags(*validateCatalog, *validateNoCatalog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
+	var manifest *config.Schema
 	if manifestPath != "" {
-		var count int
-		s, count, err = mergeManifest(s, manifestPath, false)
+		manifest, err = config.ParseManifest(manifestPath, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
 			return exitWithCode(2)
 		}
-		if count > 0 && manifestAuto {
-			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+	}
+	resolution, err := config.ResolveLayers(s, manifest, catalog, nil, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading configuration: %v\n", err)
+		return exitWithCode(2)
+	}
+	s = resolution.Schema
+	// Keep machine output clean even when the default embedded catalog merges
+	// recipes. Stderr is often combined with stdout by CLI consumers.
+	if *validateFormat != "json" {
+		if resolution.ManifestCount > 0 && manifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, resolution.ManifestCount)
+		}
+		if resolution.CatalogCount > 0 {
+			fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(catalog.Sources(), string(os.PathListSeparator)), catalogCountText(resolution.CatalogCount))
 		}
 	}
 	if err := config.ValidateEffectiveIntegrity(s); err != nil {
@@ -104,9 +136,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 					Message: err.Error(),
 				}},
 			}
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(out); err != nil {
+			if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 				return exitWithCode(3)
 			}
@@ -118,6 +148,13 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 
 	knownKinds := exec.RegisteredKinds()
 	result := validate.ValidateSchema(s, knownKinds)
+	for _, warning := range resolution.Warnings {
+		result.Add(validate.ValidationError{
+			Code:    validate.WarnInertTool,
+			Field:   "tools." + warning.Tool,
+			Message: warning.Message,
+		})
+	}
 
 	if *validateCheckEnv {
 		envResult := validate.CheckEnv(ctx, run.OSExecRunner{})
@@ -137,9 +174,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			Errors:   result.Errors,
 			Warnings: result.Warnings,
 		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := writeMachineOutput(os.Stdout, "validate", out); err != nil {
 			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
 			return exitWithCode(3)
 		}
@@ -191,23 +226,37 @@ func newCheckCmd() *cobra.Command {
 	checkJSON := new(bool)
 	checkFormat := new(string)
 	checkLive := new(bool)
+	checkCatalog := new([]string)
+	checkNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
-		Use:     "check <tool>",
-		Short:   ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
-		Long:    ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
+		Use:   "check <tool>",
+		Short: ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
+		Long:  ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
+		Example: `  depengine check nvim                 # compare desired state with the host
+  depengine check nvim --live --json   # probe through the adapter`,
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
+			if err := normalizeOutputFormat(checkFormat, checkJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkFormat, checkLive, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(checkSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(checkManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(checkNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
-	f.BoolVar(checkJSON, "json", false, "JSON output")
-	f.StringVar(checkFormat, "format", "", "output format (json)")
+	addCatalogFlags(cmd, checkCatalog, checkNoCatalog)
+	f.BoolVar(checkJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(checkFormat, "format", "text", "output format: text or json")
 	f.BoolVar(checkLive, "live", false, "check via adapter (may run subprocesses)")
 	return cmd
 }
@@ -220,7 +269,7 @@ type checkOutput struct {
 }
 
 // runCheck reports whether a single tool satisfies its resolved desired state.
-func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) error {
+func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest *bool, checkFormat *string, checkLive *bool, catalog *config.Catalog) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
@@ -231,15 +280,19 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
-	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
+	useJSON := *checkFormat == "json"
+	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return presentSchemaLoadErrorFor("check", err, useJSON)
 	}
+	project.presentWarnings("")
 	*checkSchema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
+	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 
 	tool, ok := s.Tools[toolName]
@@ -247,7 +300,6 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		log.Default.Error("tool not found", "tool", toolName)
 		return exitWithCode(1)
 	}
-	useJSON := *checkJSON || *checkFormat == "json"
 
 	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	checked, checkErr := ex.CheckDesiredState(ctx, tool, clan, *checkLive)
@@ -255,7 +307,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		checked.Verification = plan.VerificationResult{State: plan.StateBroken, Detail: checkErr.Error()}
 	}
 	if useJSON {
-		_ = json.NewEncoder(os.Stdout).Encode(checkOutput{Tool: toolName, Method: checked.Method, Status: checked.Verification.State, Verification: checked.Verification})
+		_ = writeMachineOutput(os.Stdout, "check", checkOutput{Tool: toolName, Method: checked.Method, Status: checked.Verification.State, Verification: checked.Verification})
 	} else if checked.Verification.State == plan.StateSatisfied {
 		newCLIStyle(os.Stderr).ok("%s satisfies desired state (via %s)", toolName, checked.Method)
 	} else {

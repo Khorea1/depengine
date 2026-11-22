@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -1274,5 +1275,148 @@ func TestExecutorCancellationLeavesRecoverableJournal(t *testing.T) {
 	}
 	if len(st.PreparationPlans) != 0 || len(st.PreparationJournals) != 0 {
 		t.Fatalf("reconciled cancelled commit remained active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
+	}
+}
+
+type crashRecoveryAdapter struct {
+	*testMockAdapter
+	effectPath string
+}
+
+func (a *crashRecoveryAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	identity, err := os.ReadFile(a.effectPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if err != nil {
+		return plan.Observation{}, err
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: strings.TrimSpace(string(identity))},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}, nil
+}
+
+func TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall(t *testing.T) {
+	mode := os.Getenv("DEPENGINE_EXEC_CRASH_MODE")
+	if mode != "" {
+		stateHome := os.Getenv("DEPENGINE_EXEC_CRASH_STATE")
+		effectPath := os.Getenv("DEPENGINE_EXEC_CRASH_EFFECT")
+		if stateHome == "" || effectPath == "" {
+			t.Fatal("missing isolated subprocess paths")
+		}
+		t.Setenv("XDG_STATE_HOME", stateHome)
+		adapter := &crashRecoveryAdapter{
+			testMockAdapter: &testMockAdapter{
+				kindValue: "cargo",
+				checkFunc: func(string) bool {
+					_, err := os.Stat(effectPath) // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
+					return err == nil
+				},
+				installFunc: func(string) error {
+					value := "demo\n"
+					if mode == "restart" {
+						value = "replay\n"
+					}
+					f, err := os.OpenFile(effectPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
+					if err != nil {
+						return err
+					}
+					if _, err := f.WriteString(value); err != nil {
+						_ = f.Close()
+						return err
+					}
+					if err := f.Close(); err != nil {
+						return err
+					}
+					if mode == "interrupt" {
+						durable, err := state.LoadFrom(state.DefaultPath())
+						if err != nil {
+							return err
+						}
+						if len(durable.PreparationJournals) != 1 || len(durable.Tools) != 0 {
+							return errors.New("interrupted install did not leave an unresolved commit journal")
+						}
+						for _, journal := range durable.PreparationJournals {
+							if journal.Status != plan.PreparationCommitting {
+								return errors.New("interrupted install journal is not committing")
+							}
+						}
+						os.Exit(0)
+					}
+					return nil
+				},
+			},
+			effectPath: effectPath,
+		}
+		ex := New()
+		WithRunner(&sequenceRunner{})(ex)
+		WithAdapters(adapter)(ex)
+		WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+		if _, err := ex.Execute(context.Background(), sourceBackedSchema(), ""); err != nil {
+			t.Fatal(err)
+		}
+		if mode == "restart" {
+			recovered, err := state.LoadFrom(state.DefaultPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(recovered.PreparationJournals) != 0 || recovered.Tools["demo"].MethodKind != "cargo" {
+				t.Fatalf("restart did not reconcile durable install state: %#v", recovered)
+			}
+		}
+		return
+	}
+
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	effectPath := t.TempDir() + "/effects"
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runChild := func(childMode string) {
+		t.Helper()
+		cmd := exec.Command(testBinary, "-test.run=^TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall$")
+		cmd.Env = append(os.Environ(),
+			"DEPENGINE_EXEC_CRASH_MODE="+childMode,
+			"DEPENGINE_EXEC_CRASH_STATE="+stateHome,
+			"DEPENGINE_EXEC_CRASH_EFFECT="+effectPath,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("executor subprocess %q failed: %v\n%s", childMode, err, output)
+		}
+	}
+
+	runChild("interrupt")
+	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" { // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
+		t.Fatalf("install effect after interrupted process = %q, err=%v", got, err)
+	}
+	beforeRestart, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(beforeRestart.PreparationJournals) != 1 {
+		t.Fatalf("durable state after interrupted install = %#v, want one unresolved preparation", beforeRestart.PreparationJournals)
+	}
+	for key, journal := range beforeRestart.PreparationJournals {
+		if journal.Status != plan.PreparationCommitting {
+			t.Fatalf("durable journal %q status = %q, want committing", key, journal.Status)
+		}
+	}
+	runChild("restart")
+	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" { // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
+		t.Fatalf("install effect after executor recovery = %q, err=%v; want no replay", got, err)
+	}
+	afterRestart, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterRestart.PreparationJournals) != 0 {
+		t.Fatalf("restart left unresolved preparation journals: %#v", afterRestart.PreparationJournals)
+	}
+	if _, ok := afterRestart.Tools["demo"]; !ok {
+		t.Fatalf("restart did not persist reconciled installed tool: %#v", afterRestart.Tools)
 	}
 }

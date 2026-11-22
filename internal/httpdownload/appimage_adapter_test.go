@@ -127,6 +127,7 @@ func TestAppImageAdapterInstallNoURL(t *testing.T) {
 // HTTPAdapter must install the versioned release asset directly under the
 // stable AppImage binary name. FakeRunner forces the Go downloader.
 func TestAppImageAdapterInstallsStableName(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	const body = "fake-appimage-bytes"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body))
@@ -167,6 +168,7 @@ func TestAppImageAdapterInstallsStableName(t *testing.T) {
 }
 
 func TestAppImageAdapterInstallSameName(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("content"))
 	}))
@@ -192,6 +194,7 @@ func TestAppImageAdapterInstallSameName(t *testing.T) {
 // launcher. $HOME is redirected to a tempdir so this never touches the
 // real machine's XDG applications directory.
 func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	fakeHome := t.TempDir()
 	exectest.SetHome(t, fakeHome)
 
@@ -229,6 +232,7 @@ func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 }
 
 func TestAppImageAdapterInstallWithoutDesktopSkipsEntry(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	fakeHome := t.TempDir()
 	exectest.SetHome(t, fakeHome)
 

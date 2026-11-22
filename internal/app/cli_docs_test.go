@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -45,15 +46,45 @@ func TestCLIDocsCoverCommandTree(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"depengine", "depengine check", "depengine completion",
-		"depengine diff", "depengine forget", "depengine graph", "depengine help",
-		"depengine init", "depengine install", "depengine remove", "depengine sbom",
-		"depengine status", "depengine undo", "depengine update", "depengine upgrade",
+		"depengine", "depengine audit", "depengine check", "depengine completion",
+		"depengine diff", "depengine doctor", "depengine explain", "depengine forget", "depengine graph", "depengine help",
+		"depengine import", "depengine init", "depengine install", "depengine remove", "depengine sbom",
+		"depengine status", "depengine tutorial", "depengine undo", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine version", "depengine why",
 	} {
 		if commandDocByPath(normalizeCLI(root), path) == nil {
 			t.Errorf("documented command set does not contain %q", path)
 		}
+	}
+}
+
+func TestCLIDocsRenderCommandExamples(t *testing.T) {
+	setEnglishLocale(t)
+	docs := normalizeCLI(newRootCmd())
+	for _, path := range []string{
+		"depengine audit", "depengine check", "depengine diff", "depengine doctor", "depengine explain", "depengine forget", "depengine graph",
+		"depengine import", "depengine init", "depengine install", "depengine remove",
+		"depengine sbom", "depengine status", "depengine tutorial", "depengine undo", "depengine update",
+		"depengine upgrade", "depengine validate", "depengine why",
+	} {
+		doc := commandDocByPath(docs, path)
+		if doc == nil {
+			t.Fatalf("missing command %q", path)
+		}
+		if doc.Examples == "" {
+			t.Errorf("%q has no Example block", path)
+		}
+	}
+
+	markdown, man, err := generateCLIDocs(newRootCmd())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(markdown, []byte("Examples:\n\n```sh\n  depengine install")) {
+		t.Error("Markdown reference does not render the install example")
+	}
+	if !bytes.Contains(man, []byte("Examples:\n.nf\n  depengine install")) {
+		t.Error("man page does not render the install example")
 	}
 }
 
@@ -63,12 +94,23 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 	cases := map[string][]string{
 		"depengine":         {"help", "version"},
 		"depengine help":    {"help", "man"},
-		"depengine install": {"allow-arbitrary-code", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
-		"depengine check":   {"format", "help", "json", "live", "manifest", "no-manifest", "schema"},
-		"depengine graph":   {"depth", "direction", "format", "help", "manifest", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
-		"depengine remove":  {"all", "dry-run", "force", "help", "only", "schema"},
-		"depengine diff":    {"help", "json", "other"},
-		"depengine sbom":    {"format", "help"},
+		"depengine install": {"allow-arbitrary-code", "bundle", "catalog", "diagnose", "dry-run", "format", "frozen-lockfile", "help", "jobs", "json", "lock", "log-level", "manifest", "no-catalog", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
+		"depengine check":   {"catalog", "format", "help", "json", "live", "manifest", "no-catalog", "no-manifest", "schema"},
+		"depengine doctor":  {"catalog", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "schema"},
+		"depengine import":  {"catalog", "dry-run", "expected-digest", "force", "format", "help", "json"},
+		"depengine graph":   {"catalog", "depth", "direction", "format", "help", "manifest", "no-catalog", "no-manifest", "only", "profile", "schema", "show-inactive", "skip", "view", "width"},
+		"depengine remove":  {"all", "dry-run", "force", "format", "help", "json", "only", "quiet", "schema"},
+		"depengine diff":    {"format", "help", "json", "other"},
+		"depengine sbom":    {"format", "help", "lock"}, "depengine audit": {"catalog", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
+		"depengine explain":       {"format", "help", "json"},
+		"depengine tutorial":      {"format", "help", "json", "keep"},
+		"depengine validate":      {"catalog", "check-env", "format", "help", "json", "manifest", "no-catalog", "no-manifest", "schema", "strict"},
+		"depengine status":        {"catalog", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "orphans", "quiet", "schema"},
+		"depengine upgrade":       {"allow-arbitrary-code", "catalog", "dry-run", "force", "format", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "only", "quiet", "schema", "skip"},
+		"depengine update":        {"catalog", "dry-run", "format", "frozen-lockfile", "help", "json", "lock", "manifest", "no-catalog", "no-manifest", "profile", "prune", "quiet", "schema", "verbose"},
+		"depengine undo":          {"format", "help", "json", "list", "snapshot"},
+		"depengine forget":        {"format", "help", "json"},
+		"depengine bundle export": {"format", "help", "json", "lock", "output"},
 	}
 	for path, want := range cases {
 		doc := commandDocByPath(docs, path)
@@ -105,7 +147,7 @@ func TestCommandAliasesResolveAndAreDocumented(t *testing.T) {
 		{canonical: "install", aliases: []string{"i"}},
 		{canonical: "remove", aliases: []string{"rm", "uninstall"}},
 		{canonical: "status", aliases: []string{"st"}},
-		{canonical: "why", aliases: []string{"explain"}},
+		{canonical: "why", aliases: []string{}},
 		{canonical: "undo", aliases: []string{"rollback"}},
 		{canonical: "update", aliases: []string{"lock"}},
 		{canonical: "validate", aliases: []string{"lint"}},
@@ -223,6 +265,124 @@ func environmentVariableTable(doc string) string {
 	return table.String()
 }
 
+// TestTroubleshootingMessagesExistInSource keeps the troubleshooting index
+// honest: every documented literal must still appear in non-test source, so a
+// renamed diagnostic fails CI instead of sending users to a dead entry.
+func TestTroubleshootingMessagesExistInSource(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/troubleshooting.md")
+	if err != nil {
+		t.Fatalf("read troubleshooting: %v", err)
+	}
+	messages := troubleshootingMessageLiterals(string(doc))
+	if len(messages) < 10 {
+		t.Fatalf("troubleshooting index has %d entries, want at least 10", len(messages))
+	}
+	source, err := internalSource()
+	if err != nil {
+		t.Fatalf("read internal source: %v", err)
+	}
+	for _, message := range messages {
+		if !strings.Contains(source, message) {
+			t.Errorf("troubleshooting documents %q, but no non-test source file contains it", message)
+		}
+	}
+}
+
+// TestExitCodeTablesMatch keeps the published exit-code contract identical in
+// the CLI reference and the troubleshooting index.
+func TestExitCodeTablesMatch(t *testing.T) {
+	reference, err := os.ReadFile(markdownDocsPath)
+	if err != nil {
+		t.Fatalf("read CLI reference: %v", err)
+	}
+	troubleshooting, err := os.ReadFile("../../docs/troubleshooting.md")
+	if err != nil {
+		t.Fatalf("read troubleshooting: %v", err)
+	}
+	got := exitCodeTable(string(reference))
+	want := exitCodeTable(string(troubleshooting))
+	if got == "" {
+		t.Fatal("CLI reference is missing the exit-code table")
+	}
+	if want == "" {
+		t.Fatal("troubleshooting is missing the exit-code table")
+	}
+	if got != want {
+		t.Fatalf("exit-code tables differ\n\nCLI reference:\n%s\ntroubleshooting:\n%s", got, want)
+	}
+}
+
+func troubleshootingMessageLiterals(doc string) []string {
+	const heading = "## Find your message"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		return nil
+	}
+	var messages []string
+	for _, line := range strings.Split(doc[start:], "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "| `")
+		end := strings.Index(rest, "`")
+		if end < 0 {
+			continue
+		}
+		messages = append(messages, rest[:end])
+	}
+	return messages
+}
+
+func exitCodeTable(doc string) string {
+	const heading = "## Exit codes"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		return ""
+	}
+	var table strings.Builder
+	inTable := false
+	for _, line := range strings.Split(doc[start:], "\n") {
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break
+			}
+			continue
+		}
+		inTable = true
+		table.WriteString(line)
+		table.WriteByte('\n')
+	}
+	return table.String()
+}
+
+func internalSource() (string, error) {
+	var paths []string
+	err := filepath.WalkDir("../../internal", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	var source strings.Builder
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path) // #nosec G304 -- paths come from a fixed repository source walk.
+		if readErr != nil {
+			return "", readErr
+		}
+		source.Write(data)
+		source.WriteByte('\n')
+	}
+	return source.String(), nil
+}
+
 func commandDocByPath(docs []cliCommandDoc, path string) *cliCommandDoc {
 	for i := range docs {
 		if docs[i].Path == path {
@@ -248,7 +408,7 @@ func flagDocByName(t *testing.T, command *cliCommandDoc, name string) cliFlagDoc
 
 func setEnglishLocale(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
+	for _, name := range []string{"DEPENGINE_LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
 		t.Setenv(name, "C")
 	}
 }

@@ -2,6 +2,7 @@ package lock
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/plan"
 )
@@ -42,6 +43,33 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+// SetRecipeDigests attaches catalog recipe content digests to a v2 lock. Keys
+// are tool names; schema-only tools are omitted because they have no recipe
+// content to verify. A recipe may also supply a virtual dependency-group tool
+// with no methods, so a digest is not required to have a projection entry.
+func (l *Lock) SetRecipeDigests(digests map[string]string) error {
+	if l == nil {
+		return fmt.Errorf("lock: cannot set recipe digests on nil lock")
+	}
+	if l.Version != CurrentVersion {
+		return fmt.Errorf("lock: recipe digests require lock v%d (found v%d)", CurrentVersion, l.Version)
+	}
+	if len(digests) == 0 {
+		l.RecipeDigest = nil
+		return nil
+	}
+	for name, digest := range digests {
+		if strings.TrimSpace(name) != name || name == "" || strings.ContainsRune(name, '\x00') {
+			return fmt.Errorf("lock: invalid recipe digest tool name %q", name)
+		}
+		if err := validateRecipeDigest(digest); err != nil {
+			return fmt.Errorf("lock: recipe digest for tool %q: %w", name, err)
+		}
+	}
+	l.RecipeDigest = cloneStringMap(digests)
+	return nil
 }
 
 // SetProjection stores the universal plan document and marks the lock as v2.

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -15,19 +14,27 @@ import (
 func newDiffCmd() *cobra.Command {
 	diffOther := new(string)
 	diffJSON := new(bool)
+	diffFormat := new(string)
 
 	cmd := &cobra.Command{
-		Use:     "diff [file1] [file2]",
-		Short:   ifPT("Comparar dois arquivos de estado", "Compare two state files"),
+		Use:   "diff [file1] [file2]",
+		Short: ifPT("Comparar dois arquivos de estado", "Compare two state files"),
+		Example: `  depengine diff state-before.json state-after.json
+  depengine diff state-before.json state-after.json --json`,
 		GroupID: groupInspect,
 		Args:    cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeOutputFormat(diffFormat, diffJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
 			return runDiffContext(cmd.Context(), args, diffOther, diffJSON)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(diffOther, "other", "", "path to other state file (used when no args)")
-	f.BoolVar(diffJSON, "json", false, "output as JSON")
+	f.BoolVar(diffJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(diffFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
@@ -79,7 +86,7 @@ func runDiffContext(ctx context.Context, diffArgs []string, diffOther *string, d
 	items := state.Diff(aState, bState)
 	if len(items) == 0 {
 		if *diffJSON {
-			fmt.Println("[]")
+			_ = writeMachineOutput(os.Stdout, "diff", []state.DiffItem{})
 		} else {
 			fmt.Fprintln(os.Stderr, "No differences found.")
 		}
@@ -87,9 +94,7 @@ func runDiffContext(ctx context.Context, diffArgs []string, diffOther *string, d
 	}
 
 	if *diffJSON {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(items); err != nil {
+		if err := writeMachineOutput(os.Stdout, "diff", items); err != nil {
 			log.Default.Error("encode JSON", "error", err)
 			return exitWithCode(3)
 		}

@@ -106,7 +106,7 @@ func TestValidate_ManifestOverrideMerges(t *testing.T) {
 	if whyCode != 0 {
 		t.Fatalf("expected exit 0, got %d; output:\n%s", whyCode, whyOut)
 	}
-	if !strings.Contains(whyOut, "Methods: source=both") {
+	if !strings.Contains(whyOut, "Methods: origin=both") {
 		t.Errorf("expected merged method provenance, got:\n%s", whyOut)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -83,7 +84,7 @@ func TestWinAdapterCheck(t *testing.T) {
 	tool := &config.Tool{Name: "fd"}
 
 	t.Run("scoop installed", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nfd 10.2.0 main 2026-01-01 10:00:00\n"}
 		a := lookupWinAdapter("scoop")
 		if !a.Check(ctx, fr, tool, mc) {
 			t.Fatal("Check() should be true when scoop list reports the package")
@@ -113,12 +114,52 @@ func TestWinAdapterCheck(t *testing.T) {
 		if len(fr.Calls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 		}
-		want := []string{"list", "--exact", "--limit-output", "fd"}
+		want := []string{"list", "--local-only", "--exact", "--limit-output", "fd"}
 		if fr.Calls[0].Name != "choco" || fmt.Sprint(fr.Calls[0].Args) != fmt.Sprint(want) {
 			t.Fatalf("unexpected choco check call: %s %v", fr.Calls[0].Name, fr.Calls[0].Args)
 		}
 	})
 
+}
+
+// Chocolatey resolves no dynamic artifact, so its dry-run can report the exact
+// install argv. The preview must stay non-executable and carry the elevation
+// decision that install will require.
+func TestChocoResolvePlanPreviewsInstallCommandAndElevation(t *testing.T) {
+	ctx := context.Background()
+	tool := &config.Tool{Name: "ffmpeg"}
+	method := &config.MethodCandidate{Kind: "choco", Config: map[string]any{
+		"pkg": "ffmpeg", "version": "7.0", "source": "community", "architecture": "x86", "prerelease": true,
+	}}
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := lookupWinAdapter("choco").ResolvePlan(ctx, &run.FakeRunner{}, tool, method, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if len(resolved.Operations) != 1 {
+		t.Fatalf("operations = %d, want 1", len(resolved.Operations))
+	}
+	op := resolved.Operations[0]
+	want := []string{"choco", "install", "ffmpeg", "--version", "7.0", "--source", "community", "--forcex86", "--pre", "-y"}
+	if !slices.Equal(op.Preview, want) {
+		t.Fatalf("preview = %v, want %v", op.Preview, want)
+	}
+	if op.Elevation != plan.ElevationRequired {
+		t.Fatalf("elevation = %q, want required", op.Elevation)
+	}
+	if op.Command != nil || op.ArbitraryCode {
+		t.Fatalf("preview leaked into executable intent: %+v", op)
+	}
+	lines := operationPreviewLines(resolved)
+	if len(lines) != 1 || !strings.Contains(lines[0], "elevation: required") {
+		t.Fatalf("preview lines = %v, want one line with elevation", lines)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatalf("ValidateResolution() error = %v", err)
+	}
 }
 
 func TestWinAdapterObservePreservesExactVersionDrift(t *testing.T) {
@@ -144,7 +185,7 @@ func TestScoopObservePreservesVersionSourceAndScope(t *testing.T) {
 	}}
 	observation, err := lookupWinAdapter("scoop").Observe(
 		context.Background(),
-		&run.FakeRunner{Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"},
+		&run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nfd 10.2.0 main 2026-01-01 10:00:00 Global install\n"},
 		&config.Tool{Name: "fd"},
 		method,
 	)
@@ -163,7 +204,7 @@ func TestScoopObserveReportsExactVersionDrift(t *testing.T) {
 	}}
 	observation, err := lookupWinAdapter("scoop").Observe(
 		context.Background(),
-		&run.FakeRunner{Stdout: "git 2.52.0 main 2026-01-01 10:00:00\n"},
+		&run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\ngit 2.52.0 main 2026-01-01 10:00:00 Global install\n"},
 		&config.Tool{Name: "git"}, method,
 	)
 	if err != nil {
@@ -510,6 +551,9 @@ func TestChocoExactVersion(t *testing.T) {
 		if !lookupWinAdapter("choco").Check(ctx, fr, tool, mc) {
 			t.Fatal("Check() should accept matching exact version")
 		}
+		if !slices.Equal(fr.Calls[0].Args, []string{"list", "--local-only", "--exact", "--limit-output", "neovim"}) {
+			t.Fatalf("inventory args = %v; must be explicitly local-only", fr.Calls[0].Args)
+		}
 		fr.Stdout = "neovim|0.10.3\n"
 		if lookupWinAdapter("choco").Check(ctx, fr, tool, mc) {
 			t.Fatal("Check() should reject a different installed version")
@@ -527,15 +571,22 @@ func TestChocoInstalledVersion(t *testing.T) {
 	if got != "0.10.4" {
 		t.Fatalf("InstalledVersion=%q want 0.10.4", got)
 	}
+	if !slices.Equal(fr.Calls[0].Args, []string{"list", "--local-only", "--exact", "--limit-output", "neovim"}) {
+		t.Fatalf("InstalledVersion args = %v; must be local-only", fr.Calls[0].Args)
+	}
 }
 
 func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testing.T) {
+	const scoopInventory = "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\n"
 	for _, tc := range []struct {
-		kind      string
-		malformed string
+		kind               string
+		absent             string
+		malformed          string
+		malformedUnrelated string
+		malformedState     plan.PresenceState
 	}{
-		{kind: "choco", malformed: "neovim|\n"},
-		{kind: "scoop", malformed: "neovim\n"},
+		{kind: "choco", absent: "", malformed: "neovim|\n", malformedUnrelated: "unparsed row\n", malformedState: plan.PresenceBroken},
+		{kind: "scoop", absent: scoopInventory, malformed: scoopInventory + "neovim invalid\n", malformedUnrelated: scoopInventory + "unknown row\n", malformedState: plan.PresenceUnknown},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			adapter := lookupWinAdapter(tc.kind)
@@ -546,16 +597,38 @@ func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testin
 				runner *run.FakeRunner
 				want   plan.PresenceState
 			}{
-				{"failed", &run.FakeRunner{Err: context.DeadlineExceeded, ExitCode: 1}, plan.PresenceUnknown},
-				{"missing", &run.FakeRunner{Stdout: "other 1.0 main\n"}, plan.PresenceAbsent},
-				{"malformed", &run.FakeRunner{Stdout: tc.malformed}, plan.PresenceBroken},
+				{"probe error", &run.FakeRunner{Err: context.DeadlineExceeded, ExitCode: 1}, plan.PresenceUnknown},
+				{"completed nonzero", &run.FakeRunner{ExitCode: 1, Stderr: "access denied"}, plan.PresenceUnknown},
+				{"valid complete absence", &run.FakeRunner{Stdout: tc.absent}, plan.PresenceAbsent},
+				{"malformed target", &run.FakeRunner{Stdout: tc.malformed}, tc.malformedState},
+				{"malformed unrelated row", &run.FakeRunner{Stdout: tc.malformedUnrelated}, tc.malformedState},
 			} {
 				t.Run(probe.name, func(t *testing.T) {
 					got := adapter.observeInstalled(context.Background(), probe.runner, tool, method)
 					if got.Presence != probe.want {
 						t.Fatalf("presence = %q, want %q", got.Presence, probe.want)
 					}
+					if len(probe.runner.Calls) != 1 {
+						t.Fatalf("inventory invocations = %d, want one without remote fallback", len(probe.runner.Calls))
+					}
 				})
+			}
+		})
+	}
+}
+
+func TestWindowsObserverWaitFailuresStayUnknownWithoutRetry(t *testing.T) {
+	for _, kind := range []string{"scoop", "choco"} {
+		t.Run(kind, func(t *testing.T) {
+			runner := &run.FakeRunner{WaitErr: fmt.Errorf("incomplete child output")}
+			adapter := lookupWinAdapter(kind)
+			method := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim"}}
+			observation := adapter.observeInstalled(context.Background(), runner, &config.Tool{Name: "neovim"}, method)
+			if observation.Presence != plan.PresenceUnknown {
+				t.Fatalf("observeInstalled() = %#v, want unknown", observation)
+			}
+			if len(runner.Calls) != 1 {
+				t.Fatalf("inventory invocations = %d, want one after incomplete output", len(runner.Calls))
 			}
 		})
 	}
@@ -624,20 +697,20 @@ func TestScoopTypedIdentityAndDesiredState(t *testing.T) {
 		t.Fatalf("install args = %v, want %v", install.Calls[0].Args, wantInstall)
 	}
 
-	check := &run.FakeRunner{Stdout: "git 2.53.0.2 main 2026-03-26 11:58:42\n"}
+	check := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\ngit 2.53.0.2 main 2026-03-26 11:58:42 Global install\n"}
 	if !a.Check(context.Background(), check, tool, mc) {
 		t.Fatal("Check should accept matching version/source")
 	}
-	if !slices.Equal(check.Calls[0].Args, []string{"list", "git", "--global"}) {
-		t.Fatalf("check args = %v", check.Calls[0].Args)
+	if !slices.Equal(check.Calls[0].Args, []string{"list"}) {
+		t.Fatalf("check args = %v, want complete inventory without fake scope flag", check.Calls[0].Args)
 	}
 
-	drift := &run.FakeRunner{Stdout: "git 2.52.0 main 2026-03-26 11:58:42\n"}
+	drift := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\ngit 2.52.0 main 2026-03-26 11:58:42 Global install\n"}
 	if a.Check(context.Background(), drift, tool, mc) {
 		t.Fatal("Check should reject version drift")
 	}
 
-	sourceDrift := &run.FakeRunner{Stdout: "git 2.53.0.2 extras 2026-03-26 11:58:42\n"}
+	sourceDrift := &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\ngit 2.53.0.2 extras 2026-03-26 11:58:42 Global install\n"}
 	if a.Check(context.Background(), sourceDrift, tool, mc) {
 		t.Fatal("Check should reject bucket drift")
 	}
@@ -653,7 +726,7 @@ func TestScoopTypedIdentityAndDesiredState(t *testing.T) {
 
 func TestScoopInstalledVersion(t *testing.T) {
 	a := lookupWinAdapter("scoop")
-	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}, &config.Tool{Name: "fd"}, &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}})
+	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: "Installed apps:\nName Version Source Updated Info\n---- ------- ------ ------- ----\nfd 10.2.0 main 2026-01-01 10:00:00\n"}, &config.Tool{Name: "fd"}, &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}})
 	if err != nil {
 		t.Fatalf("InstalledVersion: %v", err)
 	}

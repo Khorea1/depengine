@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,30 +76,47 @@ func relativeTime(t time.Time) string {
 func newUndoCmd() *cobra.Command {
 	undoList := new(bool)
 	undoSpecific := new(string)
+	undoJSON := new(bool)
+	undoFormat := new(string)
 
 	cmd := &cobra.Command{
 		Use:     "undo",
 		Aliases: []string{"rollback"},
 		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
+		Long:    ifPT("Reverte para um snapshot anterior do estado. A remoção de ferramentas adicionadas depois do snapshot verifica o alvo registrado antes de agir; observações drifted, unknown ou broken preservam o state e falham.", "Revert to a previous state snapshot. Removing tools added after the snapshot verifies the recorded target first; drifted, unknown or broken observations preserve state and fail."),
+		Example: `  depengine undo --list                # list available snapshots
+  depengine undo --snapshot <path>     # restore one snapshot`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUndo(cmd.Context(), undoList, undoSpecific)
+			if err := normalizeOutputFormat(undoFormat, undoJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runUndo(cmd.Context(), undoList, undoSpecific, undoJSON)
 		},
 	}
 	f := cmd.Flags()
 	f.BoolVar(undoList, "list", false, "list available snapshots")
 	f.StringVar(undoSpecific, "snapshot", "", "revert to specific snapshot file path")
+	f.BoolVar(undoJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(undoFormat, "format", "text", "output format: text or json")
 	return cmd
 }
 
 // runUndo reverts to a previous state snapshot. Thin orchestrator over the
 // phase helpers below: list/target-selection → load → diff → remove →
 // restore/report. Every exit code matches the pre-split behavior.
-func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
+func runUndo(ctx context.Context, undoList *bool, undoSpecific *string, undoJSON *bool) error {
 	if *undoList {
-		return runUndoList()
+		return runUndoList(*undoJSON)
 	}
+
+	unlockMutations, err := holdHostMutations(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
 
 	snapPath, err := resolveUndoSnapshotPath(*undoSpecific)
 	if err != nil {
@@ -124,7 +143,18 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		// removed after the snapshot exist in snapState but not in curState;
 		// restoring snapState.Tools would reintroduce phantom entries.
 		log.Default.Info("nothing to undo (no tools were added since snapshot)")
+		if *undoJSON {
+			return writeUndoReport(snapPath, []string{}, []string{})
+		}
 		return nil
+	}
+
+	// The global v5 state does not track project claims. Never treat a
+	// snapshot from a different schema (or an altered shared entry) as
+	// authorization to remove packages from the current host.
+	if err := validateUndoSnapshot(curState, snapState); err != nil {
+		log.Default.Error("unsafe undo", "error", err)
+		return exitWithCode(3)
 	}
 
 	facts := gatherUndoFacts()
@@ -136,15 +166,53 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
 	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
-	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
+	saveErr := finalizeUndo(ls, curState, snapState, toRemove, succeeded, hadFailure)
+	requested := make(map[string]bool, len(toRemove))
+	for _, name := range toRemove {
+		requested[name] = true
+	}
+	recordRemoveJournal("undo", nil, succeeded, requested, originalTools)
+	if *undoJSON && (saveErr == nil || hadFailure) {
+		if err := writeUndoReport(snapPath, sortedBoolKeys(succeeded), missingStringKeys(toRemove, succeeded)); err != nil {
+			return exitWithCode(3)
+		}
+	}
+	return saveErr
+}
+
+// undoMachineReport is the `undo --format json` payload for an executed undo.
+type undoMachineReport struct {
+	Snapshot string   `json:"snapshot"`
+	Removed  []string `json:"removed"`
+	Failed   []string `json:"failed"`
+}
+
+func writeUndoReport(snapshot string, removed, failed []string) error {
+	return writeMachineOutput(os.Stdout, "undo", undoMachineReport{Snapshot: snapshot, Removed: removed, Failed: failed})
+}
+
+// missingStringKeys returns the sorted names present in want and absent from
+// done, so a machine consumer can retry exactly the failed removals.
+func missingStringKeys(want []string, done map[string]bool) []string {
+	missing := make([]string, 0, len(want))
+	for _, name := range want {
+		if !done[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 // runUndoList prints available snapshots newest-first.
-func runUndoList() error {
+func runUndoList(jsonOut bool) error {
 	snapshots, err := state.ListSnapshots()
 	if err != nil {
 		log.Default.Error("list snapshots", "error", err)
 		return exitWithCode(3)
+	}
+	if jsonOut {
+		return writeUndoListReport(snapshots)
 	}
 	if len(snapshots) == 0 {
 		fmt.Fprintln(os.Stderr, "No snapshots available.")
@@ -165,6 +233,35 @@ func runUndoList() error {
 			c.dim(fmt.Sprintf("(%s)", plural(s.ToolCount, "tool"))))
 	}
 	return nil
+}
+
+// undoListMachineReport is the `undo --list --format json` payload. Snapshots
+// keep the newest-first order the text view uses, so index N in the report is
+// the index accepted by --snapshot.
+type undoListMachineReport struct {
+	Snapshots []undoSnapshotEntry `json:"snapshots"`
+}
+
+type undoSnapshotEntry struct {
+	Index     int    `json:"index"`
+	Path      string `json:"path"`
+	Timestamp string `json:"timestamp"`
+	Age       string `json:"age"`
+	Tools     int    `json:"tools"`
+}
+
+func writeUndoListReport(snapshots []state.SnapshotInfo) error {
+	report := undoListMachineReport{Snapshots: make([]undoSnapshotEntry, 0, len(snapshots))}
+	for i, s := range snapshots {
+		report.Snapshots = append(report.Snapshots, undoSnapshotEntry{
+			Index:     i + 1,
+			Path:      s.Path,
+			Timestamp: s.Timestamp.UTC().Format(time.RFC3339),
+			Age:       relativeTime(s.Timestamp),
+			Tools:     s.ToolCount,
+		})
+	}
+	return writeMachineOutput(os.Stdout, "undo", report)
 }
 
 // selectUndoSnapshotPath resolves a --snapshot spec against an already-listed
@@ -220,6 +317,39 @@ func diffUndoTools(curTools, snapTools map[string]state.ToolState) []string {
 		}
 	}
 	return toRemove
+}
+
+// validateUndoSnapshot rejects detectable cross-schema and stale snapshots
+// before any adapter probe or removal. SchemaPath is only the last writer,
+// not per-tool ownership: passing this check does not establish exclusive
+// ownership and is not a substitute for project claims.
+func validateUndoSnapshot(current, snapshot *state.State) error {
+	if current == nil || snapshot == nil {
+		return fmt.Errorf("missing current or snapshot state")
+	}
+	if snapshot.SchemaPath != "" {
+		if current.SchemaPath == "" || filepath.Clean(current.SchemaPath) != filepath.Clean(snapshot.SchemaPath) {
+			return fmt.Errorf("snapshot schema %q differs from current state schema %q; undo requires project ownership evidence", snapshot.SchemaPath, current.SchemaPath)
+		}
+	} else if len(snapshot.Tools) > 0 && current.SchemaPath != "" {
+		return fmt.Errorf("snapshot has no schema identity but current state references %q; undo cannot establish ownership", current.SchemaPath)
+	}
+
+	// Undo only removes additions. It cannot restore an earlier version or
+	// identity of a shared entry, and must not replace its tracked metadata.
+	shared := make([]string, 0, len(snapshot.Tools))
+	for name := range snapshot.Tools {
+		if _, present := current.Tools[name]; present {
+			shared = append(shared, name)
+		}
+	}
+	sort.Strings(shared)
+	for _, name := range shared {
+		if !reflect.DeepEqual(snapshot.Tools[name], current.Tools[name]) {
+			return fmt.Errorf("tool %q changed since snapshot; undo cannot safely revert shared state", name)
+		}
+	}
+	return nil
 }
 
 // resolveUndoMethodKind returns the adapter kind for a tracked tool,
@@ -299,14 +429,14 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 			log.Default.Info("tracked target already absent during undo", "tool", name)
 			succeeded[name] = true
 			continue
-		case plan.StateSatisfied, plan.StateDrifted:
+		case plan.StateSatisfied:
 			if !adapter.CanRemove() {
 				log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 				hadFailure = true
 				continue
 			}
-		case plan.StateUnknown, plan.StateBroken:
-			log.Default.Error("cannot safely remove target during undo", "tool", name, "state", verification.State, "detail", verification.Detail)
+		case plan.StateDrifted, plan.StateUnknown, plan.StateBroken:
+			log.Default.Error("cannot safely remove target during undo with unverified identity or presence; if it changed outside depengine, run 'depengine forget <tool>' and clean up manually", "tool", name, "state", verification.State, "detail", verification.Detail)
 			hadFailure = true
 			continue
 		default:
@@ -330,23 +460,13 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 	return originalTools, succeeded, hadFailure
 }
 
-// mergeUndoTools restores tool state after removal: on full success the
-// snapshot tools win outright; on partial failure the snapshot tools are kept
-// and tools whose removal failed are re-added from the pre-removal copy, so
-// failed tools stay tracked for retry. Pure: no I/O.
-func mergeUndoTools(curState, snapState *state.State, toRemove []string, succeeded map[string]bool, originalTools map[string]state.ToolState, hadFailure bool) {
-	if !hadFailure {
-		curState.Tools = snapState.Tools
-		return
-	}
-	// Preserve snapshot tools and re-add tools that failed removal.
-	curState.Tools = make(map[string]state.ToolState, len(snapState.Tools)+len(toRemove))
-	for k, v := range snapState.Tools {
-		curState.Tools[k] = v
-	}
+// mergeUndoTools only releases additions actually removed by undo. Restoring
+// the snapshot's whole Tools map would resurrect records for tools removed
+// after the snapshot and overwrite newer observations of shared entries.
+func mergeUndoTools(curState *state.State, toRemove []string, succeeded map[string]bool) {
 	for _, name := range toRemove {
-		if !succeeded[name] {
-			curState.Tools[name] = originalTools[name]
+		if succeeded[name] {
+			delete(curState.Tools, name)
 		}
 	}
 }
@@ -354,12 +474,26 @@ func mergeUndoTools(curState, snapState *state.State, toRemove []string, succeed
 // finalizeUndo merges removal results into state (resource release),
 // persists, and reports. Exit 3 on save failure, exit 1 when any removal
 // failed, nil on full success.
-func finalizeUndo(ls *state.LockedState, curState, snapState *state.State, toRemove []string, originalTools map[string]state.ToolState, succeeded map[string]bool, hadFailure bool) error {
+func finalizeUndo(ls *state.LockedState, curState, snapState *state.State, toRemove []string, succeeded map[string]bool, hadFailure bool) error {
 	if hadFailure {
 		log.Default.Error("undo: some removals failed — saving partial state")
 	}
 
-	mergeUndoTools(curState, snapState, toRemove, succeeded, originalTools, hadFailure)
+	// Undo uninstalls the tool, so its dependent claims must go with it. The
+	// now-zero-ref resources stay recorded: undo has no authority to delete
+	// host resources it did not verify as safe to remove.
+	for _, name := range toRemove {
+		if !succeeded[name] {
+			continue
+		}
+		release, err := plan.ReleaseDependentResources(curState.OwnedResources, name)
+		if err != nil {
+			log.Default.Error("release owned resources after undo", "tool", name, "error", err)
+			return exitWithCode(3)
+		}
+		curState.OwnedResources = release.Updated
+	}
+	mergeUndoTools(curState, toRemove, succeeded)
 	curState.SchemaPath = snapState.SchemaPath
 	curState.SchemaModifiedAt = snapState.SchemaModifiedAt
 

@@ -104,39 +104,73 @@ func (a *ContainerAdapter) Check(ctx context.Context, rn run.Runner, _ *config.T
 func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform string) (present bool, unknown string) {
 	if platform != "" {
 		res := rn.Run(ctx, manager, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}", reference)
-		if res.Err != nil {
-			return false, "container: inspect platform: " + res.Err.Error()
+		if probeSucceeded(res) {
+			observed, normalizeErr := containerref.NormalizePlatform(strings.TrimSpace(string(res.Stdout)))
+			if normalizeErr != nil {
+				return false, "container: inspect platform: " + normalizeErr.Error()
+			}
+			return observed == platform, ""
 		}
-		if res.WaitErr != nil {
-			return false, "container: inspect platform output: " + res.WaitErr.Error()
+		if res.Err != nil || res.WaitErr != nil {
+			return false, probeExecutionFailure("inspect platform", res)
 		}
-		if res.ExitCode != 0 {
-			return false, ""
-		}
-		observed, normalizeErr := containerref.NormalizePlatform(strings.TrimSpace(string(res.Stdout)))
-		if normalizeErr != nil {
-			return false, "container: inspect platform: " + normalizeErr.Error()
-		}
-		return observed == platform, ""
+		return imageInventory(ctx, rn, manager, reference, probeExecutionFailure("inspect platform", res))
 	}
 	if strings.Contains(reference, "@") {
 		res := rn.Run(ctx, manager, "image", "inspect", reference)
-		if res.Err != nil {
-			return false, "container: inspect image: " + res.Err.Error()
+		if probeSucceeded(res) {
+			return true, ""
 		}
-		return res.Err == nil && res.ExitCode == 0, ""
+		if res.Err != nil || res.WaitErr != nil {
+			return false, probeExecutionFailure("inspect image", res)
+		}
+		return imageInventory(ctx, rn, manager, reference, probeExecutionFailure("inspect image", res))
 	}
 	res := rn.Run(ctx, manager, "images", "-q", reference)
-	if res.Err != nil {
-		return false, "container: list images: " + res.Err.Error()
-	}
-	if res.ExitCode != 0 {
-		return false, ""
-	}
-	if res.WaitErr != nil {
-		return false, "container: list images output: " + res.WaitErr.Error()
+	if reason := probeExecutionFailure("list images", res); reason != "" {
+		return false, reason
 	}
 	return strings.TrimSpace(string(res.Stdout)) != "", ""
+}
+
+func imageInventory(ctx context.Context, rn run.Runner, manager, reference, inspectFailure string) (bool, string) {
+	if source, digest, pinned := strings.Cut(reference, "@"); pinned {
+		res := rn.Run(ctx, manager, "images", "--digests", "--format", "{{.Digest}}", source)
+		if reason := probeExecutionFailure("list image digests", res); reason != "" {
+			return false, reason
+		}
+		for listed := range strings.Lines(string(res.Stdout)) {
+			if strings.TrimSpace(listed) == digest {
+				return false, inspectFailure
+			}
+		}
+		return false, ""
+	}
+	res := rn.Run(ctx, manager, "images", "-q", reference)
+	if reason := probeExecutionFailure("list images", res); reason != "" {
+		return false, reason
+	}
+	if strings.TrimSpace(string(res.Stdout)) == "" {
+		return false, ""
+	}
+	return false, inspectFailure
+}
+
+func probeExecutionFailure(action string, res run.Result) string {
+	if res.Err != nil {
+		return "container: " + action + ": " + res.Err.Error()
+	}
+	if res.WaitErr != nil {
+		return "container: " + action + " output: " + res.WaitErr.Error()
+	}
+	if res.ExitCode != 0 {
+		return fmt.Sprintf("container: %s: command exited with status %d", action, res.ExitCode)
+	}
+	return ""
+}
+
+func probeSucceeded(res run.Result) bool {
+	return res.Err == nil && res.WaitErr == nil && res.ExitCode == 0
 }
 
 // Install pulls the image via `<manager> pull <reference>`.

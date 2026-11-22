@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.gh]
+method_only = ["native", "aur", "go"]
+
+[packages.gh.native]
+pkg = "gh"
+pkg_overrides = { emerge = "dev-vcs/gh", winget = "GitHub.cli" }
+
+[packages.gh.aur]
+pkg = "github-cli"
+
+[packages.gh.go]
+pkg = "github.com/cli/cli/v2/cmd/gh"

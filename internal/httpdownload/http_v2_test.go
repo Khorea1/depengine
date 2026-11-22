@@ -278,6 +278,7 @@ func TestHTTPAdapterV2ObservationReconciles(t *testing.T) {
 // end: ResolvePlan projects the concrete URL without downloading, and
 // InstallResolved consumes exactly that URL.
 func TestHTTPAdapterV2ResolveInstallRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	ctx := context.Background()
 	adapter := NewHTTPAdapter()
 

@@ -99,7 +99,6 @@ func TestListSnapshotsOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create two snapshots.
 	info1, err := SaveSnapshot()
 	if err != nil {
 		t.Fatal(err)

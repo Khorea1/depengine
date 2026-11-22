@@ -2,11 +2,15 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/Khorea1/depengine/internal/bundle"
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/container"
 	"github.com/Khorea1/depengine/internal/ecosystem"
@@ -33,38 +37,56 @@ func newInstallCmd() *cobra.Command {
 	installDryRun := new(bool)
 	installVerbose := new(bool)
 	installJSON := new(bool)
+	installFormat := new(string)
 	installOnly := new(string)
 	installSkip := new(string)
 	installProfile := new(string)
 	installFrozen := new(bool)
+	installBundle := new(string)
+	installLock := new(string)
 	installDiagnose := new(bool)
 	installLogLevel := new(string)
 	installSortBy := new(string)
 	installJobs := new(int)
 	installAllowArbitrary := new(bool)
 	installQuiet := new(bool)
+	installCatalog := new([]string)
+	installNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "install",
 		Aliases: []string{"i"},
 		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
+		Example: `  depengine install                          # install every tool declared in schema.toml
+  depengine install --only nvim              # one tool plus its dependencies
+  depengine install --dry-run --sort-by name # preview the plan without mutating
+  depengine install --frozen-lockfile        # reproducible install from depengine.lock
+  depengine install --allow-arbitrary-code   # run pre_install/post_install hooks`,
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
-			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+			if err := normalizeOutputFormat(installFormat, installJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(installSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, installCatalog, installNoCatalog)
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
 	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
-	f.BoolVar(installJSON, "json", false, "JSON output")
+	f.BoolVar(installJSON, "json", false, "shorthand for --format=json")
+	f.StringVar(installFormat, "format", "text", "output format: text or json")
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock is missing, detectably stale, or lacks a supported required pin")
+	f.StringVar(installBundle, "bundle", "", "install locked artifacts from a local frozen artifact bundle")
+	f.StringVar(installLock, "lock", "", "lockfile to read and update (default: derived from schema path)")
 	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + detailed report")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
@@ -102,11 +124,13 @@ type installPlan struct {
 	allowCode    bool
 	quiet        bool
 	lockDocument *plan.LockDocument
+	lockPath     string
+	bundle       string
 }
 
 // collectInstallPlan resolves flags into an installPlan plus the logger.
 // Returns an ExitError(2) when --sort-by is invalid.
-func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
+func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen *bool, installBundle *string, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
 	lg := log.Default
 	p := installPlan{
 		schema:       *installSchema,
@@ -125,6 +149,7 @@ func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *stri
 		jobs:         *installJobs,
 		allowCode:    *installAllowArbitrary,
 		quiet:        *installQuiet,
+		bundle:       *installBundle,
 	}
 
 	if p.diagnose {
@@ -243,9 +268,12 @@ func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *pla
 // legacy resolution. Missing or v1 locks retain the compatibility resolver
 // and persistence path; update is the promotion point to v2.
 func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger, rn run.Runner) (*lock.Lock, error) {
-	lk, err := loadLockfile(p.schema, s, p.frozen, lg)
+	lk, err := loadLockfile(p.schema, s, p.frozen, lg, p.lockPath)
 	if err != nil {
 		return nil, err
+	}
+	if p.bundle != "" && (!p.frozen || lk == nil || lk.Version != lock.CurrentVersion) {
+		return nil, fmt.Errorf("--bundle requires a current v2 frozen lockfile")
 	}
 	if lk != nil && lk.Version == lock.CurrentVersion {
 		if _, err := lk.ProjectionDocument(); err != nil {
@@ -277,6 +305,46 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 	return lk, nil
 }
 
+// validateInstallBundle opens the exported directory, verifies every payload
+// and returns the payload paths keyed by the locked artifact identity that the
+// HTTP adapter will request during execution.
+func validateInstallBundle(root string, document plan.LockDocument) (map[string]string, error) {
+	expected, err := bundle.ArtifactEntries(document)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := bundle.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) != len(expected) {
+		return nil, fmt.Errorf("bundle entries do not exactly match the selected frozen lock projection")
+	}
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve bundle path: %w", err)
+	}
+	payloads := make(map[string]string, len(entries))
+	available := make(map[string]bundle.Entry, len(entries))
+	for _, entry := range entries {
+		key := httpdownload.BundleArtifactKey(entry.Tool, entry.Method, entry.URL, entry.Checksum)
+		available[key] = entry
+	}
+	for _, want := range expected {
+		key := httpdownload.BundleArtifactKey(want.Tool, want.Method, want.URL, want.Checksum)
+		got, ok := available[key]
+		if !ok {
+			return nil, fmt.Errorf("bundle is missing or mismatches locked artifact %s/%s", want.Tool, want.Method)
+		}
+		payloadPath := filepath.Join(absoluteRoot, filepath.FromSlash(got.Payload))
+		payloads[key] = payloadPath
+		if want.Method == "android" || want.Method == "appimage" {
+			payloads[httpdownload.BundleArtifactKey(want.Tool, "http", want.URL, want.Checksum)] = payloadPath
+		}
+	}
+	return payloads, nil
+}
+
 // installOutputMode selects the report rendering path. Pure.
 func installOutputMode(json, quiet, verbose bool) string {
 	if json {
@@ -295,7 +363,7 @@ func installOutputMode(json, quiet, verbose bool) string {
 func renderInstallReport(report *exec.ExecReport, p installPlan, cs *cliStyle) {
 	switch installOutputMode(p.json, p.quiet, p.verbose) {
 	case "json":
-		fmt.Println(report.JSON())
+		_ = writeMachineOutput(os.Stdout, "install", json.RawMessage(report.JSON()))
 	case "detail":
 		fmt.Fprint(os.Stderr, report.Detail())
 	default:
@@ -313,6 +381,20 @@ func shouldShareInstallHint(report *exec.ExecReport, dryRun bool) bool {
 	return report.Failed == 0 && report.Success > 0 && !dryRun
 }
 
+// installNextStepHint returns the one follow-up that moves a successful
+// install toward a reproducible lock. A legacy-only lock cannot pin mutable
+// or catalog artifacts, so update -- not another install -- is the next step.
+// Pure.
+func installNextStepHint(p installPlan, lk *lock.Lock, report *exec.ExecReport) string {
+	if !shouldShareInstallHint(report, p.dryRun) {
+		return ""
+	}
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		return ""
+	}
+	return "run 'depengine update' to pin exact identities in depengine.lock"
+}
+
 // installExitForReport maps a finished report to the process exit. Pure.
 func installExitForReport(report *exec.ExecReport) error {
 	if report.Failed > 0 {
@@ -328,7 +410,15 @@ func installExitForReport(report *exec.ExecReport) error {
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
 		if !p.frozen && (lk == nil || lk.Version != lock.CurrentVersion) {
-			saveResolvedLegacyInstallLock(lockPath, lk, lg, p.diagnose)
+			if names := lock.CatalogToolNames(s); len(names) > 0 {
+				lg.Warn(
+					"not writing lock v1 for catalog-sourced tools",
+					"tools", strings.Join(names, ", "),
+					"hint", "run 'depengine update' without --profile to write a complete v2 projection",
+				)
+			} else {
+				saveResolvedLegacyInstallLock(lockPath, lk, lg, p.diagnose)
+			}
 		}
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
@@ -344,6 +434,10 @@ func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPla
 		fmt.Fprintln(os.Stderr, cs.dim("  git add schema.toml depengine.lock && git commit"))
 	}
 
+	if hint := installNextStepHint(p, lk, report); hint != "" {
+		printNextStep(cs, p.quiet, p.json, hint)
+	}
+
 	return installExitForReport(report)
 }
 
@@ -354,8 +448,13 @@ func shouldWarnDeprecatedVerbose(cmd *cobra.Command) bool {
 // runInstall installs tools from schema.toml. Thin orchestrator over the
 // phase helpers above — flag resolution, header, executor build, lock,
 // execute, render, finish.
-func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
-	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen *bool, installBundle *string, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
+	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installBundle, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+	selectedLock, _ := cmd.Flags().GetString("lock")
+	p.lockPath = selectedLock
+	if p.bundle != "" && !p.frozen {
+		return fmt.Errorf("--bundle requires --frozen-lockfile")
+	}
 
 	ctx := cmd.Context()
 
@@ -363,18 +462,25 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		return err
 	}
 
-	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true})
+	catalog, err := catalogFromCommand(cmd)
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
-			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			return exitWithCode(1)
-		}
-		lg.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		lg.Error("resolve catalog", "error", err)
+		return exitWithCode(2)
 	}
+
+	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true, Catalog: catalog})
+	if err != nil {
+		return presentSchemaLoadErrorFor("install", err, p.json)
+	}
+	project.presentWarnings("")
 	p.schema = project.SchemaPath
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
+
+	// Reject selectors before any run header or execution: a typo used to
+	// fall through to an empty plan and exit 0.
+	if err := validateToolSelectors(s, p.only, p.skip, p.profile); err != nil {
+		return err
+	}
 
 	if shouldWarnDeprecatedVerbose(cmd) {
 		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")
@@ -385,6 +491,9 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	// is this a dry run" before any per-tool output starts scrolling by.
 	cs := newCLIStyle(os.Stderr)
 	printInstallHeader(cs, p, s, clan, facts, manifestCount)
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
+	}
 
 	schemaFile, err := os.Stat(p.schema)
 	if err != nil {
@@ -399,7 +508,23 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
 	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
 
-	lockPath := lock.DefaultPath(p.schema)
+	lockPath := lock.Path(p.schema, p.lockPath)
+	unlockMutations, err := holdHostMutations(ctx, p.dryRun)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
+	// A non-dry-run install can persist a legacy v1 lock after executing.
+	// Keep its initial lock read and final Save in the same per-file transaction
+	// as update, even if the installation itself takes time.
+	if !p.dryRun {
+		txn, err := lock.AcquireTransaction(ctx, lockPath)
+		if err != nil {
+			return fmt.Errorf("acquire install lock transaction: %w", err)
+		}
+		defer func() { _ = txn.Close() }()
+	}
 	lk, err := resolveInstallLock(ctx, p, s, lg, run.OSExecRunner{})
 	if err != nil {
 		return err
@@ -411,6 +536,33 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		}
 		p.lockDocument = &document
 		exec.WithLockDocument(document)(ex)
+		if p.bundle != "" {
+			payloads, err := validateInstallBundle(p.bundle, document)
+			if err != nil {
+				return fmt.Errorf("validate offline bundle: %w", err)
+			}
+			for _, entry := range document.Entries {
+				hasDownload := false
+				for _, artifact := range entry.Identity.Artifacts {
+					if artifact.URL != "" {
+						hasDownload = true
+						break
+					}
+				}
+				if !hasDownload {
+					continue
+				}
+				switch entry.Candidate.Method {
+				case "http", "android", "appimage", "github":
+				default:
+					return fmt.Errorf("--bundle cannot safely execute download method %q for tool %q", entry.Candidate.Method, entry.Tool.Name)
+				}
+			}
+			if len(payloads) == 0 {
+				return fmt.Errorf("--bundle has no locked downloadable artifacts")
+			}
+			ctx = httpdownload.WithBundlePayloads(ctx, payloads)
+		}
 	}
 
 	if !p.dryRun {
@@ -428,12 +580,18 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	if err != nil {
 		if report != nil {
 			renderInstallReport(report, p, cs)
+			if !p.dryRun {
+				recordInstallJournal(report, s)
+			}
 		}
 		lg.Error("execute failed", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
 
 	renderInstallReport(report, p, cs)
+	if !p.dryRun {
+		recordInstallJournal(report, s)
+	}
 
 	return finishInstallRun(ctx, report, p, s, lockPath, lk, lg, cs)
 }

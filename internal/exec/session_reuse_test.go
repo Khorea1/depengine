@@ -197,23 +197,12 @@ func TestExecuteRejectsChangedLazyDependencyWithoutTrackedReplacementState(t *te
 			}
 			continue
 		}
-		if report.Failed != 2 || report.Success != 0 || len(report.Tools) != 2 {
-			t.Fatalf("changed-identity report = %+v, want both dependency and consumer blocked", report)
-		}
-		var helper, consumer *ToolResult
-		for i := range report.Tools {
-			switch report.Tools[i].Tool {
-			case "shared-helper":
-				helper = &report.Tools[i]
-			case "consumer":
-				consumer = &report.Tools[i]
-			}
-		}
-		if helper == nil || helper.Status != StatusFailed {
-			t.Fatalf("changed-identity helper = %+v, want fail-closed replacement without discovery snapshot", helper)
-		}
-		if consumer == nil || consumer.Status != StatusFailed {
-			t.Fatalf("dependent consumer = %+v, want blocked after helper replacement rejection", consumer)
+		// Fail before a lazy helper is installed when an upgrade has no
+		// immutable target for the replacement journal.
+		if report.Failed != 1 || report.Success != 0 || len(report.Tools) != 1 ||
+			report.Tools[0].Tool != "consumer" || report.Tools[0].Status != StatusFailed ||
+			!strings.Contains(report.Tools[0].Error, "cannot be journaled safely") {
+			t.Fatalf("changed-identity report = %+v, want consumer blocked before helper mutation", report)
 		}
 	}
 

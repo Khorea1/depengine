@@ -81,6 +81,35 @@ func TestNixParseProfileListBothLayouts(t *testing.T) {
 	}
 }
 
+func TestNixRejectsMissingProfileElements(t *testing.T) {
+	for _, document := range []string{
+		`{}`,
+		`{"version":3}`,
+		`{"version":3,"elements":null}`,
+	} {
+		t.Run(document, func(t *testing.T) {
+			if _, err := parseNixProfileList([]byte(document)); err == nil {
+				t.Fatal("parseNixProfileList() accepted a missing profile inventory")
+			}
+			rn := newNixRunner(document)
+			tool, method := nixMethod(map[string]any{"pkg": "hello"})
+			adapter := NewNixAdapter()
+			if observed, err := adapter.Observe(context.Background(), rn, tool, method); err == nil {
+				t.Fatalf("Observe() = %+v; expected an error, not absence", observed)
+			}
+			if err := adapter.Remove(context.Background(), rn, tool, method); err == nil {
+				t.Fatal("Remove() must refuse an unknown inventory")
+			}
+			if adapter.Check(context.Background(), rn, tool, method) {
+				t.Fatal("Check() must not claim a match on an unknown inventory")
+			}
+			if mutations := rn.mutations(); len(mutations) != 0 {
+				t.Fatalf("unexpected mutations: %q", mutations)
+			}
+		})
+	}
+}
+
 func TestNixObserveMatchesSourceAndAttribute(t *testing.T) {
 	cases := []struct {
 		name string

@@ -1,0 +1,65 @@
+recipe_version = 1
+
+# Reusable, declarative subset of the dotfiles' Neovim install methods.
+# Local editor plugins (for example codex-acp) are not upstream requirements.
+[packages.nvim]
+method_only = ["native", "aur", "flatpak", "snap", "appimage", "github"]
+
+[packages.nvim.native]
+pkg_overrides = { apk = "neovim", apt = "neovim", brew = "neovim", choco = "neovim", dnf = "neovim", emerge = "app-editors/neovim", pacman = "neovim", pkg = "neovim", pkg_add = "neovim", port = "neovim", scoop = "neovim", winget = "Neovim.Neovim", xbps = "neovim", yum = "neovim", zypper = "neovim" }
+
+[packages.nvim.aur]
+pkg = "neovim-nightly-bin"
+when = { distro_family = ["arch"] }
+
+[packages.nvim.flatpak]
+pkg = "io.neovim.nvim"
+remote = "flathub"
+
+[packages.nvim.snap]
+pkg = "nvim"
+confinement = "classic"
+
+# The AppImage and platform archives are pinned to v0.12.6 so the recipe keeps a
+# literal SHA-256. Bump the tag, URLs/assets and checksums together.
+[packages.nvim.appimage-linux-x64]
+kind = "appimage"
+url = "https://github.com/neovim/neovim/releases/download/v0.12.6/nvim-linux-x86_64.appimage"
+checksum = "sha256:b644d034746aed32f4e918be9fc6147408ce4ecd360fedd7130da543c35f29fb"
+binary = "nvim"
+desktop = true
+scope = "user"
+when = { os = ["linux"], arch = ["x86_64"] }
+
+[packages.nvim.github-linux-arm64]
+kind = "github"
+repo = "neovim/neovim"
+release = "v0.12.6"
+asset = "nvim-linux-arm64.tar.gz"
+checksum = "sha256:8f1f64a0bdb97247034038c3823c6cbad5bdf9ecd5751b85494b71c3ee04c815"
+scope = "user"
+strip_components = 1
+entrypoints = { nvim = "bin/nvim" }
+when = { os = ["linux"], arch = ["arm64"] }
+
+[packages.nvim.github-macos-x64]
+kind = "github"
+repo = "neovim/neovim"
+release = "v0.12.6"
+asset = "nvim-macos-x86_64.tar.gz"
+checksum = "sha256:481424f1dbc85f637d57e47d27d042aa9c883e5a4fe9ee64fc4ee9573b221998"
+scope = "user"
+strip_components = 1
+entrypoints = { nvim = "bin/nvim" }
+when = { os = ["darwin"], arch = ["x86_64"] }
+
+[packages.nvim.github-macos-arm64]
+kind = "github"
+repo = "neovim/neovim"
+release = "v0.12.6"
+asset = "nvim-macos-arm64.tar.gz"
+checksum = "sha256:1dbd148222b051ba6c307c4d17a318ed083df018a4f6a5a0ce46955ffc9ab87b"
+scope = "user"
+strip_components = 1
+entrypoints = { nvim = "bin/nvim" }
+when = { os = ["darwin"], arch = ["arm64"] }

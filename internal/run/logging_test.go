@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -160,5 +161,54 @@ func TestLoggingRunnerPreservesBlockedExecutionPolicy(t *testing.T) {
 	lr := NewLoggingRunner(BlockedRunner{Reason: "dry-run"}, log.NewTestLogger(t).Logger)
 	if ExecutionAllowed(lr) {
 		t.Fatal("LoggingRunner hid blocked execution policy")
+	}
+}
+
+func TestLoggingRunnerKeepsCommandMetadataAcrossExecutionModes(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	runner := NewLoggingRunner(&FakeRunner{}, logger).WithContext(Context{Tool: "demo", Method: "native"})
+
+	runner.RunInDir(context.Background(), "/workspace", "fetch", "--token", "private")
+	pipe, err := runner.OpenStdoutPipe(context.Background(), "download", "--token", "private")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, pipe.Reader); err != nil {
+		t.Fatal(err)
+	}
+	if result := pipe.Wait(); result.Err != nil {
+		t.Fatal(result.Err)
+	}
+
+	records := make(map[string]map[string]any)
+	for _, line := range bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n")) {
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("invalid log record %q: %v", line, err)
+		}
+		records[record["msg"].(string)] = record
+	}
+	for _, msg := range []string{"run", "run ok", "run stream", "run stream ok"} {
+		record, ok := records[msg]
+		if !ok {
+			t.Fatalf("missing %q log: %s", msg, output.String())
+		}
+		if record["tool"] != "demo" || record["method"] != "native" || record["args"] != "--token ***" {
+			t.Errorf("%q metadata = %v", msg, record)
+		}
+		if strings.HasPrefix(msg, "run stream") {
+			if record["cmd"] != "download" || record["dir"] != nil {
+				t.Errorf("%q stream context = %v", msg, record)
+			}
+		} else if record["cmd"] != "fetch" || record["dir"] != "/workspace" {
+			t.Errorf("%q working directory context = %v", msg, record)
+		}
+		if strings.HasSuffix(msg, "ok") && (record["exit"] != float64(0) || record["duration"] == nil) {
+			t.Errorf("%q result metadata = %v", msg, record)
+		}
+	}
+	if strings.Contains(output.String(), "private") {
+		t.Fatalf("credential leaked in logs: %s", output.String())
 	}
 }

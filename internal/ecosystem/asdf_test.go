@@ -42,8 +42,8 @@ func TestAsdfAdapterAvailableMissing(t *testing.T) {
 func TestAsdfAdapterCheck(t *testing.T) {
 	t.Parallel()
 	// Both LookPath (which) and asdf list return ExitCode=0,
-	// and stdout contains the package name → Check passes.
-	fr := &run.FakeRunner{Stdout: "nodejs\n18.0.0\n", ExitCode: 0}
+	// and stdout contains one installed version → Check passes.
+	fr := &run.FakeRunner{Stdout: "18.0.0\n", ExitCode: 0}
 
 	a := &AsdfAdapter{}
 	tool, mc := asdfTool("nodejs", "nodejs")
@@ -224,7 +224,7 @@ func TestAsdfAdapterCanRemove(t *testing.T) {
 
 func TestAsdfAdapterRemove(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	fr := &run.FakeRunner{ExitCode: 0, Stdout: "  18.0.0\n", LookPaths: map[string]bool{"asdf": true, "mise": false}}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}
@@ -250,7 +250,7 @@ func TestAsdfAdapterRemoveWithoutConfiguredVersion(t *testing.T) {
 	t.Parallel()
 	// No version in config: removal resolves the single observed installed
 	// version instead of failing, so a default-version install can be removed.
-	fr := &run.FakeRunner{Stdout: "  18.0.0\n", ExitCode: 0}
+	fr := &run.FakeRunner{Stdout: "  18.0.0\n", ExitCode: 0, LookPaths: map[string]bool{"asdf": true, "mise": false}}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}
@@ -284,7 +284,7 @@ func TestAsdfAdapterRemoveUsesObservedMiseBackend(t *testing.T) {
 
 func TestAsdfAdapterRemoveLatestConfigResolvesInstalledVersion(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{Stdout: "  20.17.0\n", ExitCode: 0}
+	fr := &run.FakeRunner{Stdout: "  20.17.0\n", ExitCode: 0, LookPaths: map[string]bool{"asdf": true, "mise": false}}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}
@@ -302,7 +302,7 @@ func TestAsdfAdapterRemoveLatestConfigResolvesInstalledVersion(t *testing.T) {
 
 func TestAsdfAdapterRemoveAmbiguousInstalledVersions(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{Stdout: "  18.0.0\n  20.17.0\n", ExitCode: 0}
+	fr := &run.FakeRunner{Stdout: "  18.0.0\n  20.17.0\n", ExitCode: 0, LookPaths: map[string]bool{"asdf": true, "mise": false}}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}
@@ -315,7 +315,7 @@ func TestAsdfAdapterRemoveAmbiguousInstalledVersions(t *testing.T) {
 
 func TestAsdfAdapterRemoveNoInstalledVersion(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{Stdout: "", ExitCode: 0}
+	fr := &run.FakeRunner{Stdout: "", ExitCode: 0, LookPaths: map[string]bool{"asdf": true, "mise": false}}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}

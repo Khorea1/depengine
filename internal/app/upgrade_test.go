@@ -110,7 +110,8 @@ func main() {}
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		res := (run.OSExecRunner{}).RunInDir(context.Background(), buildDir, "go", "build", "-o", path, "golang.org/x/tools/cmd/stringer")
+		// This temporary module uses a local replacement, not the parent module's vendor directory.
+		res := (run.OSExecRunner{}).RunInDir(context.Background(), buildDir, "go", "build", "-mod=mod", "-o", path, "golang.org/x/tools/cmd/stringer")
 		if err := run.CheckResult(res, "go build fake upgrade binary"); err != nil {
 			t.Fatalf("build fake upgrade binary %s: %v", name, err)
 		}
@@ -417,20 +418,30 @@ func TestUpgradeJSONOutput(t *testing.T) {
 	if jsonStart < 0 {
 		t.Fatalf("no JSON in output: %s", out)
 	}
-	var result map[string]any
+	var result struct {
+		Version int    `json:"version"`
+		Command string `json:"command"`
+		Data    struct {
+			Upgraded int `json:"upgraded"`
+			Results  []struct {
+				Status string `json:"status"`
+			} `json:"results"`
+		} `json:"data"`
+	}
 	if err := json.Unmarshal([]byte(out[jsonStart:]), &result); err != nil {
 		t.Fatalf("invalid JSON output: %v (raw: %s)", err, out)
 	}
-	if result["upgraded"].(float64) != 0 {
-		t.Fatalf("upgraded = %v, want 0 (dry-run)", result["upgraded"])
+	if result.Version != 1 || result.Command != "upgrade" {
+		t.Fatalf("envelope = v%d %q, want v1 upgrade", result.Version, result.Command)
 	}
-	results := result["results"].([]any)
-	if len(results) != 1 {
-		t.Fatalf("results length = %d, want 1", len(results))
+	if result.Data.Upgraded != 0 {
+		t.Fatalf("upgraded = %v, want 0 (dry-run)", result.Data.Upgraded)
 	}
-	r := results[0].(map[string]any)
-	if r["status"] != "would_upgrade" {
-		t.Fatalf("status = %v, want would_upgrade", r["status"])
+	if len(result.Data.Results) != 1 {
+		t.Fatalf("results length = %d, want 1", len(result.Data.Results))
+	}
+	if got := result.Data.Results[0].Status; got != "would_upgrade" {
+		t.Fatalf("status = %v, want would_upgrade", got)
 	}
 }
 
@@ -461,7 +472,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"[tools.httptool]\n" +
 		// Literal string (single quotes): Windows paths carry backslashes,
 		// which are escapes in TOML basic strings.
-		"http = {url = \"" + downloadServer.URL + "/tool.bin\", checksum = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", extract_to = '" + installDir + "'}\n"
+		"http = {url = \"" + downloadServer.URL + "/tool.bin\", checksum = \"sha256:cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4\", extract_to = '" + installDir + "'}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}

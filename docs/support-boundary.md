@@ -13,6 +13,28 @@ Package-manager and ecosystem adapters use their native concepts. File and
 archive adapters track concrete paths, checksums, and entrypoints so depengine
 can tell what it owns and remove it safely.
 
+For HTTP and GitHub **raw file** installations with a literal checksum and a
+known destination (`extract_to` or a scoped placement), the observation path
+now hashes the installed file against the **resolved artifact checksum** before
+reporting it present. A mismatch is `broken` and prevents `already` from
+rewriting the global state; if the file location is only inferred from `PATH`,
+a pinned raw payload is `unknown` rather than assumed satisfied. Without a
+literal checksum, presence-only behavior is retained. An `*:auto` checksum
+is not a stable installed-file pin until concrete resolution supplies one.
+Archive checksums apply to the downloaded archive, **not** to an extracted
+binary: presence and the archive ownership marker alone cannot prove the
+original archive's bytes or per-project ownership. These checks do not
+implement a cross-project claim ledger, prove the publisher's identity, or
+serialize independent schemas mutating the same physical resource.
+
+For HTTP methods with a known file destination, `Observe` distinguishes a
+missing target (`absent`) from an inaccessible or uninspectable target
+(`unknown`). A dangling or unresolvable symlink occupying the final target is
+`broken`, not `absent`. This applies even when the artifact has no literal
+checksum. These results prevent an unsafe install fallback but do not provide
+physical ownership evidence; archive entrypoints and PATH-only methods still
+have their own, less complete observation boundaries.
+
 The npm, pnpm, Bun, and Yarn adapters accept scoped registry package names. They
 also accept npm alias specs such as `omp@npm:@oh-my-pi/pi-coding-agent`; install
 keeps the alias spec, while presence, exact-version checks, and removal use the
@@ -22,9 +44,40 @@ Hooks, build commands, opaque vendor installers, and similar escape hatches are
 less observable. depengine cannot infer complete ownership, rollback behavior,
 or desired state from an arbitrary command.
 
+Installer scripts are outside the managed method model. `http` and `github`
+download payloads but never execute them, so a `.sh`, `.ps1`, `.bat`, or
+similar installer-script URL is rejected before planning. Declare a native
+package or the underlying managed artifact instead. Running such a script from
+a hook remains possible only with the explicit arbitrary-code authorization,
+but it provides no observation or removal semantics.
+
 ## Reproducibility
 
 New `depengine.lock` files use format v2; existing v1 locks remain readable.
+`schema.toml` uses `depengine.lock`, while other schema filenames use
+`<schema-filename>.lock` (for example `desktop.toml.lock`) to avoid accidental
+writes across unrelated schemas in the same directory. All schema-aware lock
+consumers accept `--lock` for an explicit alternate path. The default is based
+on the **lexical filename**; symlink aliases are not automatically collapsed.
+Legacy `depengine.lock` files produced from alternate schemas are not
+implicitly migrated or adopted. Rename or regenerate them only after verifying
+their origin; `--frozen-lockfile` fails closed when the selected lock is missing.
+`update` and non-dry-run `install` take an exclusive, OS-backed transaction
+lock for the **selected lockfile** before reading it and keep that lock across
+resolution, execution when applicable, and final persistence. Competing writers
+through the same path wait (and respect context cancellation), rather than
+merging stale reads or overwriting one another. A persistent sidecar named
+`.<lockfile-name>.depengine-txn` lives beside the lockfile; it must **not** be
+removed while depengine may be running, since unlinking a held advisory lock
+can split synchronization. OS locks release automatically after process exit,
+including crashes. The sidecar contains no secrets and may be Git-ignored.
+Directory symlink aliases are canonicalized for synchronization; a selected
+lockfile that is itself a symlink is rejected for write transactions. Pure
+readers still rely on atomic lockfile replacement and do not acquire this
+transaction lock. This protocol does **not** arbitrate distinct lockfiles,
+external processes modifying a lock without the protocol, or conflicting
+physical installations across projects; those require separate global
+ownership/transaction rules.
 When producing a v2 lock, `depengine update` resolves selected install candidates
 through the executor's read-only `AdapterV2` plan resolution, then projects
 credential-free immutable identities into an adapter-neutral `LockDocument`.
@@ -39,22 +92,37 @@ and identify update drift; they do not supply concrete resolved identity.
 Lock v1 continues to use its method pins through the bounded legacy
 resolver/application path and remains readable.
 
-A Git revision in a v2 lock is exactly comparable only when the installation
-retains its checkout: `extract_to` points at the clone root (the default or
-root artifact) and `managed_paths` is not active. Non-root artifacts,
-managed-path outputs, and binary-only installs remain presence-only because
-they cannot identify the installed commit. During v2 upgrade discovery, a
-locked Git target with a concrete revision that cannot be observed is reported
-as a terminal failure instead of being classified as up to date from presence
-alone; retained checkouts continue to compare their actual HEAD.
+`depengine update --prune` explicitly removes stale legacy pins, method/source
+identity hashes, and recipe digests for tool names no longer present in the
+**full effective schema**, including tools from the manifest and catalog.
+It does not treat tools omitted by `--profile` as deleted. This only cleans
+lockfile metadata; it does not uninstall software, change the global host
+state, assign physical ownership, or modify the authoritative v2 projection.
+Without `--prune`, existing lockfile compatibility retention is unchanged.
+Combine `--prune --dry-run` to preview without writing; JSON output includes
+`pruned_tools` only when obsolete tool names were identified.
+
+A Git revision in a v2 lock is exactly comparable when the installation
+retains its checkout (`extract_to` points at the clone root, the default or
+root artifact, and `managed_paths` is not active). Additionally, a binary-only
+Go build installed at an explicitly declared `extract_to` + `binary` path can
+be compared by reading the executable's embedded **clean** VCS stamp
+(`vcs.revision`, `vcs.modified=false`). A stamped commit is informational, not
+a cryptographic proof of publisher identity. Unstamped or dirty Go builds,
+non-Go binaries, and other non-root artifacts remain presence-only. During v2
+upgrade discovery, a locked Git target with a revision that cannot be observed
+is reported as a terminal failure rather than presumed up to date.
 
 ### Legacy lock v1 lifecycle
 
 Lock v1 is compatibility-only. New capabilities must not extend its selector
 model. A whole-schema update migrates a readable v1 lock only when it can prove
-complete v2 install-closure coverage. If any selected tool lacks an immutable identity, the
-update fails closed and preserves the existing lock; a profiled update may
-preserve v1 when it cannot prove a complete projection.
+complete v2 install-closure coverage. When the only tools that lack an immutable
+identity are native methods, the update refreshes and keeps the v1 lock and
+warns which tools blocked v2; it never writes a partial v2 projection. Any
+other unpinnable method, or an existing v2 lock that would have to be
+downgraded, remains a hard failure. A profiled update may preserve v1 when it
+cannot prove a complete projection.
 
 The legacy writer/preservation path can be removed once every profiled update
 either produces a complete v2 projection or fails and requires a whole-schema
@@ -68,16 +136,50 @@ do not migrate. A whole-schema `depengine update` is an explicit resolution
 operation; any future format-only migration must be representation-only.
 
 Generation is all-or-nothing. A whole-schema `update` writes v2 only when every
-non-virtual tool has an immutable resolved identity. If a manager cannot expose a
-stable version, revision, digest, checksummed artifact, or required Git-backed
-source revision, `update` fails with `immutable lock identity unavailable` and
-writes no partial v2 projection; an existing v1 lock remains unchanged. Plain
-native package names and package-presence checks do not provide an immutable
-version. Native packages are v2-lockable only when a manager-specific resolver
-can return a concrete identity that its install path can replay. This closes
-silent mutable re-resolution without pretending unsupported managers are
-reproducible. Lock v1 remains readable with its method-specific behavior; a
-whole-schema update migrates it only when complete v2 coverage can be proven.
+non-virtual tool has an immutable resolved identity. If a non-native manager
+cannot expose a stable version, revision, digest, checksummed artifact, or
+required Git-backed source revision, `update` fails with `immutable lock
+identity unavailable` and writes no partial v2 projection. If the only
+unpinnable tools are native methods, `update` falls back to the legacy v1
+format, reports which tools blocked v2, and leaves the v2 projection absent; it
+never downgrades an existing v2 lock. Plain native package names and
+package-presence checks do not provide an immutable version. Native packages
+are v2-lockable only when a manager-specific resolver can return a concrete
+identity that its install path can replay. This closes silent mutable
+re-resolution without pretending unsupported managers are reproducible, while
+keeping `update` usable for native-only schemas. Lock v1 remains readable with
+its method-specific behavior; a whole-schema update migrates it only when
+complete v2 coverage can be proven.
+
+### Catalog recipe content identity (lock v2)
+
+A tool whose recipe comes from the catalog (including a virtual
+dependency-group recipe with no methods) also pins the recipe's canonical
+content digest in the v2 lock (`recipe_digest`, keyed by tool name). The digest
+is computed from the recipe TOML document before host placeholders are
+expanded: the document is decoded into a map, encoded as JSON with sorted keys,
+and hashed with SHA-256. Comments, whitespace and key order do not affect it,
+and the same recipe yields the same digest on every host. Every field is
+covered, including fields that never reach the resolved plan (`extract_to`,
+`link_dir`, `entrypoints`), so a changed URL, checksum or layout is detected even
+when the method sequence and source identity are unchanged.
+
+Frozen validation fails closed when a catalog-sourced tool has no stored digest,
+when the stored digest differs from the current recipe, or when a tool the lock
+pinned as catalog-sourced no longer resolves from a catalog. A catalog revision
+may be recorded as a retrieval hint, but it is never the verification: the
+digest verifies, the revision retrieves. Catalog-sourced tools are rejected
+against a v1 lock, and an install with no lock does not write a v1 lock for
+them; run a whole-schema `depengine update` without `--profile` to write the v2
+projection. On an existing v2 lock, a `--profile`
+update re-resolves a retained entry when its recipe digest changed, so new
+content is adopted explicitly instead of being silently retained. Lock v1 is
+unchanged and carries no `recipe_digest` field.
+
+`depengine import` previews that same canonical digest and writes the recipe
+as authored, so the identity shown before writing is the identity the v2 lock
+pins. Import also enforces the integrity floor for downloaded artifacts; the
+lock's frozen validation still fails closed on a changed recipe.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.
@@ -217,7 +319,8 @@ Desired-state checks reconcile the resolved plan with the adapter's reported
 identity. `unknown` means depengine lacks authoritative observations for one or
 more desired fields; it does not mean the target is absent. `broken` means the
 observation is invalid or verification failed. Destructive upgrade and remove
-operations stop for either state.
+operations stop for either state. Remove and undo also stop on known `drifted`
+identity, because the projected removal target would no longer match the host.
 
 ## Package sources
 
@@ -241,6 +344,38 @@ same verification rule.
 For containers, `source` is the repository name, including an optional registry
 host. Tags and digests are separate fields.
 
+## Offline artifact bundles
+
+`depengine bundle export --lock <path> --output <directory>` exports eligible
+artifact payloads referenced by a readable v2 lock. The default lock path is
+`depengine.lock`; the output path is required and must not already exist.
+Export currently supports locked HTTP/GitHub artifacts with a URL and a
+literal `sha256:<hex>` checksum. Export downloads each payload with a default
+4 GiB per-artifact limit (overridable via `DEPENGINE_DOWNLOAD_MAX_BYTES`) and
+verifies its bytes against the lock before writing the payload and manifest.
+If an artifact has no fixed SHA-256 checksum, export fails instead of guessing
+or computing a trust-on-first-use pin. Signature-backed artifacts are
+unsupported and cause export to fail; the bundle does not carry signature
+sidecars or signing keys, and does not perform signature verification.
+
+To consume an exported directory, run
+`depengine install --frozen-lockfile --bundle <directory>`. Bundle installation
+requires a readable current v2 lock. It validates the bundle against the locked
+artifact identities and checksums used by the install; invalid, missing, or
+mismatched payload entries fail before execution. The lock and project schema
+remain required.
+
+This feature is an artifact-payload cache for that supported subset, not a
+complete offline installation mode. It does not bundle dependency graphs,
+package-manager metadata or repositories, resolution results beyond the
+locked artifact identities, or other network-dependent inputs. Language and
+system package managers may still contact registries or repositories and may
+resolve or fetch transitive dependencies independently. Frozen-lockfile
+validation rejects detectable drift and missing supported pins, but cannot
+make unrepresented external state immutable. Do not treat a bundle as a
+guarantee that installation or resolution will succeed without network access,
+nor as a substitute for signature verification or upstream trust.
+
 ## What depengine cannot promise
 
 depengine cannot make an external package manager transactional, give it
@@ -250,3 +385,33 @@ version syntax, or prove that an upstream package is trustworthy.
 New method options should be represented by validated fields with defined
 runtime behavior. Generic argument bags are avoided because they hide details
 depengine needs for checks, removal, locks, and dry runs.
+
+## Global state across schemas and undo
+
+Lockfiles are independent per schema, but the v5 installation state is global
+per user. It currently records tools by logical name, not per-project claims.
+Separate `schema.toml` and `desktop.toml` lockfiles therefore do **not**
+prove that their requested global installations can coexist. Two names may
+address one physical executable, while one name may be requested by multiple
+projects with incompatible versions. The last-written `schema_path` in the
+state file is diagnostic metadata, **not** proof of ownership of each tool.
+
+`undo` removes only additions relative to a snapshot; it cannot restore
+previous tool versions. Before any removal it now rejects a snapshot whose
+recorded schema differs from the current state's recorded schema, a legacy
+snapshot containing tools without schema provenance, or shared tool entries
+whose recorded identity changed since the snapshot. On success it removes only
+the newly added entries whose physical removal completed, releases their
+shared-resource claims (retaining any zero-ref records, since undo does not
+verify host cleanup), and does not resurrect entries independently removed
+since the snapshot. An empty snapshot without schema provenance remains
+accepted to preserve first-install undo.
+
+This is a **partial safety barrier**, not project isolation: a single
+`schema_path` cannot reveal every intervening schema, unknown or inherited
+ownership, and a snapshot from an empty global state cannot prove exclusivity.
+Do not use `undo` or `remove --all` as a project-scoped cleanup mechanism on
+shared hosts. Proper isolation requires a host-local claim ledger keyed by
+schema identity and verified physical resources, plus transaction-level
+serialization across writers. Until that exists, prefer scoped removal with
+explicit verification and review of the observed target.

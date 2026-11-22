@@ -17,6 +17,11 @@ cd "$snapshot"
 
 echo "pre-commit: checking gofmt"
 scripts/check-gofmt.sh
+# Offline dependency bundles are ignored by Git, but staged-tree build/vet
+# still need the same vendor tree as the checkout.
+if [ -d "$root/vendor" ] && [ ! -e "$snapshot/vendor" ]; then
+	cp -R "$root/vendor" "$snapshot/vendor"
+fi
 echo "pre-commit: building staged tree"
 go build ./...
 echo "pre-commit: vetting staged tree"

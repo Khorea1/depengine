@@ -240,12 +240,11 @@ var managers = map[string]Manager{
 	// silent (they only print structured results).
 	//
 	// `winget list --id {pkg} --exact` and `winget show --id {pkg}
-	// --exact` are both read-only queries (no privilege, no state
-	// change) that fail with a nonzero exit code when nothing matches
-	// ("No package found matching input criteria" /
-	// APPINSTALLER_CLI_ERROR_NOT_FOUND-class codes) — that's what makes
-	// them usable as CheckCmd/SearchCmd under this package's exit-code
-	// contract (see the SearchCmd field doc). `show` is the id-lookup
+	// --exact` are read-only queries (no privilege or state change).
+	// A list query reports no matches with HRESULT 0x8A150014
+	// (APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND); other nonzero
+	// results do not establish absence and must not be treated as such.
+	// `show` is the id-lookup
 	// counterpart of `list`: it queries the configured source(s)
 	// instead of the local install DB, which is exactly the "does this
 	// exist at all" query CheckAvailable needs, and unlike `search` it
@@ -516,7 +515,6 @@ func IsNativeManagerName(name string) bool {
 	if nativeManagerNames[name] {
 		return true
 	}
-	// Check managerNameToClan binary-name aliases.
 	if _, ok := managerNameToClan[name]; ok {
 		return true
 	}

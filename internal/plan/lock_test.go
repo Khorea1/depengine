@@ -232,6 +232,39 @@ func TestBuildLockDocumentIsDeterministicAndAllOrNothing(t *testing.T) {
 	}
 }
 
+func TestBuildLockDocumentReportsEveryUnavailableTool(t *testing.T) {
+	plans := []plan.ResolvedInstallPlan{
+		plan.New("zsh", "native", true),
+		plan.New("fish", "pacman", true),
+		githubArtifactPlan(),
+	}
+	_, err := plan.BuildLockDocument(plans)
+	if !errors.Is(err, plan.ErrLockUnavailable) {
+		t.Fatalf("BuildLockDocument() error = %v, want ErrLockUnavailable", err)
+	}
+	var unavailable *plan.LockUnavailableToolsError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("BuildLockDocument() error = %T, want *LockUnavailableToolsError", err)
+	}
+	if len(unavailable.Tools) != 2 {
+		t.Fatalf("unavailable tools = %#v, want 2", unavailable.Tools)
+	}
+	if unavailable.Tools[0].Tool != "fish" || unavailable.Tools[0].Method != "pacman" {
+		t.Fatalf("unavailable[0] = %#v, want fish/pacman", unavailable.Tools[0])
+	}
+	if unavailable.Tools[1].Tool != "zsh" || unavailable.Tools[1].Method != "native" {
+		t.Fatalf("unavailable[1] = %#v, want zsh/native", unavailable.Tools[1])
+	}
+	for _, tool := range unavailable.Tools {
+		if tool.Reason == "" {
+			t.Fatalf("unavailable tool %#v has no reason", tool)
+		}
+	}
+	if !strings.Contains(err.Error(), "fish/pacman") || !strings.Contains(err.Error(), "zsh/native") {
+		t.Fatalf("BuildLockDocument() error = %q, want both tools", err)
+	}
+}
+
 func TestLockDocumentEntryForToolReturnsCloneAndMissingResult(t *testing.T) {
 	p := githubArtifactPlan()
 	p.Sources = []plan.SourceReference{{
@@ -493,7 +526,13 @@ func TestVerifyResolvedPlanAgainstLockRejectsGitAndArtifactIdentityDrift(t *test
 	changedArtifact.Artifacts = append([]plan.Artifact(nil), artifactPlan.Artifacts...)
 	changedArtifact.Artifacts[0].Checksum = "sha256:" + strings.Repeat("b", 64)
 	if err := plan.VerifyResolvedPlanAgainstLock(artifactLock, changedArtifact); !errors.Is(err, plan.ErrLockMismatch) {
-		t.Fatalf("artifact re-resolution error = %v, want ErrLockMismatch", err)
+		t.Fatalf("artifact checksum re-resolution error = %v, want ErrLockMismatch", err)
+	}
+	changedArtifactURL := artifactPlan
+	changedArtifactURL.Artifacts = append([]plan.Artifact(nil), artifactPlan.Artifacts...)
+	changedArtifactURL.Artifacts[0].URL = "https://example.test/other-tool.tar.gz"
+	if err := plan.VerifyResolvedPlanAgainstLock(artifactLock, changedArtifactURL); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("artifact URL re-resolution error = %v, want ErrLockMismatch", err)
 	}
 }
 
@@ -1342,6 +1381,7 @@ func TestLockDocumentEntryForPlanRejectsChangedIntent(t *testing.T) {
 		}},
 		{name: "source", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Source = "other-repo" }},
 		{name: "architecture", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Architecture = "arm64" }},
+		{name: "scope", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Scope = string(plan.ScopeSystem) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

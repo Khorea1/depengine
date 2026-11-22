@@ -2,25 +2,48 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 
 // newForgetCmd builds `depengine forget`.
 func newForgetCmd() *cobra.Command {
-	return &cobra.Command{
+	forgetJSON := new(bool)
+	forgetFormat := new(string)
+	cmd := &cobra.Command{
 		Use:     "forget <tool>",
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
+		Long:    ifPT("Remove o rastreamento da ferramenta; o sistema não é alterado. Para um nome não rastreado, libera reivindicações pendentes de recursos compartilhados e descarta um registro de ownership de pré-requisito com zero referências; recusa enquanto ferramentas rastreadas ainda exigirem o pré-requisito.", "Drop the tool's tracking; the system is untouched. For an untracked name, releases dangling shared-resource claims and drops a zero-reference prerequisite ownership record; refuses while tracked tools still require the prerequisite."),
+		Example: `  depengine forget nvim   # drop install state; the system is untouched`,
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runForgetContext(cmd.Context(), args[0])
+			if err := normalizeOutputFormat(forgetFormat, forgetJSON); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runForgetContext(cmd.Context(), args[0], *forgetJSON)
 		},
 	}
+	cmd.Flags().BoolVar(forgetJSON, "json", false, "shorthand for --format=json")
+	cmd.Flags().StringVar(forgetFormat, "format", "text", "output format: text or json")
+	return cmd
 }
 
-func runForgetContext(ctx context.Context, toolName string) error {
+func runForgetContext(ctx context.Context, toolName string, jsonOut bool) error {
+	unlockMutations, err := holdHostMutations(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer unlockMutations()
+
 	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
@@ -29,16 +52,99 @@ func runForgetContext(ctx context.Context, toolName string) error {
 	defer func() { _ = ls.Close() }()
 	st := ls.State()
 	if _, ok := st.Tools[toolName]; !ok {
-		log.Default.Error("tool not found in state", "tool", toolName)
-		return exitWithCode(1)
+		if err := forgetUntrackedTool(st, toolName); err != nil {
+			log.Default.Error("forget", "tool", toolName, "error", err)
+			return exitWithCode(1)
+		}
+	} else {
+		// Forget drops tracking, not host resources. Release the tool's claims so
+		// a shared source or prerequisite can reach zero references; the zero-ref
+		// record itself is retained because nothing was uninstalled.
+		release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
+		if err != nil {
+			log.Default.Error("release owned resources", "tool", toolName, "error", err)
+			return exitWithCode(1)
+		}
+		st.OwnedResources = release.Updated
+		if resource, err := plan.PrerequisiteResource(toolName); err == nil {
+			for _, owned := range st.OwnedResources {
+				if owned.Resource == resource && owned.RefCount() > 0 {
+					log.Default.Warn("forgetting a prerequisite still required by tracked tools; its ownership record is retained", "tool", toolName, "dependents", strings.Join(owned.Dependents, ","))
+					break
+				}
+			}
+		}
+		delete(st.Tools, toolName)
 	}
-
-	delete(st.Tools, toolName)
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state", "error", err)
 		return exitWithCode(3)
 	}
 
 	log.Default.Info("forgotten", "tool", toolName)
+	if jsonOut {
+		if err := writeMachineOutput(os.Stdout, "forget", map[string]string{"tool": toolName}); err != nil {
+			return exitWithCode(3)
+		}
+	}
+	return nil
+}
+
+// forgetUntrackedTool clears ownership claims for a name that has no tracked
+// tool state: dangling dependent references from older state files and a
+// zero-reference prerequisite record for the same name. It refuses while
+// tracked tools still require the prerequisite and never touches the host.
+func forgetUntrackedTool(st *state.State, toolName string) error {
+	referenced := false
+	for _, owned := range st.OwnedResources {
+		for _, dependent := range owned.Dependents {
+			if dependent == toolName {
+				referenced = true
+				break
+			}
+		}
+		if referenced {
+			break
+		}
+	}
+
+	resource, resourceErr := plan.PrerequisiteResource(toolName)
+	orphanRecord := false
+	if resourceErr == nil {
+		for _, owned := range st.OwnedResources {
+			if owned.Resource != resource {
+				continue
+			}
+			if owned.Ownership != plan.OwnershipDepengine {
+				return errors.New("ownership is not depengine-managed")
+			}
+			if owned.RefCount() != 0 {
+				return fmt.Errorf("prerequisite is still required by tracked tools: %s", strings.Join(owned.Dependents, ","))
+			}
+			orphanRecord = true
+			break
+		}
+	}
+	if !referenced && !orphanRecord {
+		return errors.New("tool not found in state")
+	}
+
+	if referenced {
+		release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
+		if err != nil {
+			return err
+		}
+		st.OwnedResources = release.Updated
+	}
+	if orphanRecord {
+		next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
+			Updated:   st.OwnedResources,
+			Removable: []plan.ResourceIdentity{resource},
+		}, resource)
+		if err != nil {
+			return err
+		}
+		st.OwnedResources = next
+	}
 	return nil
 }

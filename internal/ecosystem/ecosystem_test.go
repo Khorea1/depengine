@@ -604,7 +604,7 @@ func TestGoBinaryNamePrefersCmdElement(t *testing.T) {
 // fails — the import path is not a PATH entry).
 func TestGoAdapterCheckUsesDerivedBinaryName(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	fr := &run.FakeRunner{ExitCode: 0, Stdout: "\tpath\tgolang.org/x/tools/cmd/stringer\n\tmod\tgolang.org/x/tools\tv1.0.0\n"}
 	adapter := NewGoAdapter()
 	tool := &config.Tool{Name: "gostr"}
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "golang.org/x/tools/cmd/stringer"}}
@@ -612,9 +612,14 @@ func TestGoAdapterCheckUsesDerivedBinaryName(t *testing.T) {
 	if !adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("Check should report installed when the derived binary exists")
 	}
-	last := fr.Calls[len(fr.Calls)-1]
-	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
-		t.Fatalf("Check lookup = %v %v, want stringer", last.Name, last.Args)
+	found := false
+	for _, call := range fr.Calls {
+		if call.Name == "which" && len(call.Args) == 1 && call.Args[0] == "stringer" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Check lookups = %#v, want stringer", fr.Calls)
 	}
 }
 
@@ -888,11 +893,11 @@ func TestSnapStructuredChannelAndTrackingCheck(t *testing.T) {
 	})
 
 	t.Run("check verifies tracking channel", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0, Stdout: "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 2.0/candidate/hotfix vendor -\n"}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "name: demo-snap\ntracking: 2.0/candidate/hotfix\n"}
 		if !adapter.Check(context.Background(), fr, tool, mc) {
 			t.Fatal("Check should accept matching tracking channel")
 		}
-		fr.Stdout = "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 latest/stable vendor -\n"
+		fr.Stdout = "name: demo-snap\ntracking: latest/stable\n"
 		if adapter.Check(context.Background(), fr, tool, mc) {
 			t.Fatal("Check should reject a different tracking channel")
 		}
@@ -900,7 +905,7 @@ func TestSnapStructuredChannelAndTrackingCheck(t *testing.T) {
 
 	t.Run("risk shorthand verifies implicit latest track", func(t *testing.T) {
 		short := &config.MethodCandidate{Config: map[string]any{"pkg": "demo-snap", "channel": "beta"}}
-		fr := &run.FakeRunner{ExitCode: 0, Stdout: "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 latest/beta vendor -\n"}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "name: demo-snap\ntracking: latest/beta\n"}
 		if !adapter.Check(context.Background(), fr, tool, short) {
 			t.Fatal("risk shorthand should match latest/beta tracking")
 		}

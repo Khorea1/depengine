@@ -247,8 +247,8 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, rc *runContex
 // exhaustion it sets the final status from the attempts that were made.
 //
 // Each candidate flows through the attempt pipeline in order: static
-// gating, adapter availability, concrete-plan resolution, already-installed
-// check, source preparation with availability gates, then commit+install.
+// gating, adapter availability, concrete-plan resolution, replacement safety
+// preflight, source preparation and availability, then verification and commit.
 // See candidateAttempt and the phase methods in attempt.go.
 func (ex *Executor) tryMethods(toolCtx context.Context, rc *runContext, tool *config.Tool, result *ToolResult, toolStart time.Time) {
 	ex.tryMethodsWithResolution(toolCtx, rc, tool, result, toolStart, nil)
@@ -326,6 +326,7 @@ func (ex *Executor) attemptMethod(toolCtx context.Context, rc *runContext, tool 
 		ex.gateStaticIntent,
 		ex.gateAdapterAvailable,
 		ex.resolveConcretePlan,
+		ex.gateUnpinnableReplacement,
 		ex.selectCandidateForTransition,
 		ex.gateAlreadyInstalled,
 		ex.runCandidatePreinstall,
