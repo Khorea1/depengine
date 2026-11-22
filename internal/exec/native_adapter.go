@@ -859,7 +859,7 @@ const wingetNoApplicationsFound uint32 = 0x8A150014
 
 func observeWingetInventory(res run.Result, pkg string, includeVersion bool) plan.Observation {
 	if res.ExitCode != 0 {
-		if uint32(res.ExitCode) == wingetNoApplicationsFound {
+		if uint32(res.ExitCode) == wingetNoApplicationsFound { // #nosec G115 -- WinGet HRESULTs arrive as signed exit statuses and are compared as uint32 by design.
 			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: fmt.Sprintf("WinGet inventory query exited with code %d", res.ExitCode)}

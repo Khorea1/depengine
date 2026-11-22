@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.fzf]
+method_only = ["native", "aur", "go"]
+
+[packages.fzf.native]
+pkg = "fzf"
+pkg_overrides = { emerge = "app-shells/fzf", winget = "junegunn.fzf" }
+
+[packages.fzf.aur]
+pkg = "fzf"
+
+[packages.fzf.go]
+pkg = "github.com/junegunn/fzf"

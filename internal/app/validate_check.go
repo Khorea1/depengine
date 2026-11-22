@@ -98,7 +98,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			manifestAuto = true
 		}
 	}
-	roots, err := config.ResolveCatalogRoots(*validateCatalog, *validateNoCatalog)
+	catalog, err := catalogFromFlags(*validateCatalog, *validateNoCatalog)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
@@ -111,17 +111,21 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			return exitWithCode(2)
 		}
 	}
-	resolution, err := config.ResolveLayers(s, manifest, config.NewCatalog(roots, validateCatalogRecipe), nil, false)
+	resolution, err := config.ResolveLayers(s, manifest, catalog, nil, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading configuration: %v\n", err)
 		return exitWithCode(2)
 	}
 	s = resolution.Schema
-	if resolution.ManifestCount > 0 && manifestAuto {
-		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, resolution.ManifestCount)
-	}
-	if resolution.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(roots, string(os.PathListSeparator)), resolution.CatalogCount)
+	// Keep machine output clean even when the default embedded catalog merges
+	// recipes. Stderr is often combined with stdout by CLI consumers.
+	if *validateFormat != "json" {
+		if resolution.ManifestCount > 0 && manifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, resolution.ManifestCount)
+		}
+		if resolution.CatalogCount > 0 {
+			fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(catalog.Sources(), string(os.PathListSeparator)), catalogCountText(resolution.CatalogCount))
+		}
 	}
 	if err := config.ValidateEffectiveIntegrity(s); err != nil {
 		if *validateFormat == "json" {
@@ -288,7 +292,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if project.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 
 	tool, ok := s.Tools[toolName]

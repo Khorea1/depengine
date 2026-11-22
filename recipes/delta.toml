@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.delta]
+method_only = ["native", "aur", "cargo"]
+
+[packages.delta.native]
+pkg = "delta"
+pkg_overrides = { apt = "git-delta", port = "git-delta", winget = "dandavison.delta" }
+
+[packages.delta.aur]
+pkg = "git-delta"
+
+[packages.delta.cargo]
+pkg = "git-delta"

@@ -25,9 +25,18 @@ func catalogFromCommand(cmd *cobra.Command) (*config.Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read --no-catalog: %w", err)
 	}
+	return catalogFromFlags(roots, noCatalog)
+}
+
+// catalogFromFlags resolves catalog roots and applies the builtin policy. It is
+// shared by commands that parse their own flag values instead of a command.
+func catalogFromFlags(roots []string, noCatalog bool) (*config.Catalog, error) {
 	resolved, err := config.ResolveCatalogRoots(roots, noCatalog)
 	if err != nil {
 		return nil, err
 	}
-	return config.NewCatalog(resolved, validateCatalogRecipe), nil
+	if noCatalog {
+		return config.NewCatalog(nil, validateCatalogRecipe), nil
+	}
+	return config.NewCatalogWithBuiltins(resolved, validateCatalogRecipe), nil
 }

@@ -192,6 +192,21 @@ Examples:
   depengine sbom \-\-format spdx
 .fi
 .TP
+.B "depengine self [flags]"
+Manage the depengine executable itself
+.TP
+.B "depengine self update [flags]"
+Rebuild depengine from a Git checkout and atomically replace the running executable. Cloning and building happen in a temporary directory; the previous binary is replaced only after the new build compiles and answers 'version'. Use \-\-check to compare the running revision with the remote without installing, and \-\-dry\-run to resolve the source without building.
+.PP
+Examples:
+.nf
+  depengine self update
+  depengine self update \-\-check
+  depengine self update \-\-ref master \-\-bin\-dir "$HOME/.local/bin"
+  depengine self update \-\-recipe recipes/depengine.toml.example \-\-dry\-run
+  depengine self update \-\-dry\-run \-\-format json
+.fi
+.TP
 .B "depengine status [flags]"
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 Aliases: st.
@@ -679,6 +694,38 @@ help for sbom Scope: local. Default: false.
 .TP
 .B "\-\-lock <string>"
 lockfile to read for missing versions (default: derived from recorded schema) Scope: local. Default: .
+.SS "depengine self flags"
+.TP
+.B "\-h, \-\-help"
+help for self Scope: local. Default: false.
+.SS "depengine self update flags"
+.TP
+.B "\-\-bin\-dir <string>"
+destination directory (default: the running executable's directory) Scope: local. Default: .
+.TP
+.B "\-\-check"
+compare revisions without building; exits 1 when an update is available Scope: local. Default: false.
+.TP
+.B "\-\-dry\-run"
+resolve the source without building or replacing Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for update Scope: local. Default: false.
+.TP
+.B "\-\-json"
+shorthand for \-\-format=json Scope: local. Default: false.
+.TP
+.B "\-\-recipe <string>"
+project\-schema fragment declaring the git method (default: embedded recipe) Scope: local. Default: .
+.TP
+.B "\-\-ref <string>"
+branch, tag, or commit to build (default: remote default branch) Scope: local. Default: .
+.TP
+.B "\-\-repo <string>"
+Git source repository (default: the recipe's source) Scope: local. Default: .
 .SS "depengine status flags"
 .TP
 .B "\-\-catalog <stringArray>"

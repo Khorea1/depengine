@@ -22,10 +22,10 @@ func TestMutationLockRejectsLinkedFilesWithoutTouchingVictim(t *testing.T) {
 				t.Fatal(err)
 			}
 			victim := filepath.Join(dir, "unrelated-file")
-			if err := os.WriteFile(victim, []byte("important"), 0644); err != nil {
+			if err := os.WriteFile(victim, []byte("important"), 0644); err != nil { // #nosec G306 -- fixture intentionally uses a permissive mode to prove the lock does not rewrite it.
 				t.Fatal(err)
 			}
-			if err := os.Chmod(victim, 0644); err != nil {
+			if err := os.Chmod(victim, 0644); err != nil { // #nosec G302 -- fixture intentionally uses a permissive mode to prove the lock does not rewrite it.
 				t.Fatal(err)
 			}
 			var err error
@@ -52,7 +52,7 @@ func TestMutationLockRejectsLinkedFilesWithoutTouchingVictim(t *testing.T) {
 			if info.Mode().Perm() != 0644 {
 				t.Fatalf("linked lock changed unrelated file permissions: %04o", info.Mode().Perm())
 			}
-			data, err := os.ReadFile(victim)
+			data, err := os.ReadFile(victim) // #nosec G304 -- victim is a test-owned temporary path.
 			if err != nil || string(data) != "important" {
 				t.Fatalf("linked lock modified unrelated file: data=%q err=%v", data, err)
 			}
@@ -64,7 +64,7 @@ func TestMutationLockRejectsNonregularFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", dir)
 	lockPath := DefaultPath() + ".mutations.lock"
-	if err := os.MkdirAll(lockPath, 0755); err != nil {
+	if err := os.MkdirAll(lockPath, 0755); err != nil { // #nosec G301 -- the fixture must be a traversable directory at the lock path.
 		t.Fatal(err)
 	}
 	lock, err := LockMutationsContext(context.Background())
@@ -105,7 +105,7 @@ func TestUserHostMutationLockRejectsSymlinkWithoutTouchingVictim(t *testing.T) {
 		t.Fatal(err)
 	}
 	victim := filepath.Join(t.TempDir(), "unrelated-file")
-	if err := os.WriteFile(victim, []byte("important"), 0644); err != nil {
+	if err := os.WriteFile(victim, []byte("important"), 0644); err != nil { // #nosec G306 -- fixture intentionally uses a permissive mode to prove the lock does not rewrite it.
 		t.Fatal(err)
 	}
 	if err := os.Symlink(victim, filepath.Join(root, "host.mutations.lock")); err != nil {
@@ -119,7 +119,7 @@ func TestUserHostMutationLockRejectsSymlinkWithoutTouchingVictim(t *testing.T) {
 	if err == nil {
 		t.Fatal("per-user host lock symlink accepted without error")
 	}
-	data, err := os.ReadFile(victim)
+	data, err := os.ReadFile(victim) // #nosec G304 -- victim is a test-owned temporary path.
 	if err != nil || string(data) != "important" {
 		t.Fatalf("symlink victim changed: data=%q err=%v", data, err)
 	}

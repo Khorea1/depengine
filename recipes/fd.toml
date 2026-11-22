@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.fd]
+method_only = ["native", "aur", "cargo"]
+
+[packages.fd.native]
+pkg = "fd"
+pkg_overrides = { apt = "fd-find", emerge = "sys-apps/fd", winget = "sharkdp.fd" }
+
+[packages.fd.aur]
+pkg = "fd"
+
+[packages.fd.cargo]
+pkg = "fd-find"

@@ -202,6 +202,14 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 
 Revision-aware verification is available when `extract_to` retains the clone root (the default or root artifact) and `managed_paths` is not active: depengine observes the checkout's actual HEAD commit. If that declared checkout exists but its Git metadata or HEAD cannot be verified, observation is broken rather than silently treated as absence. For a single installed binary with `extract_to` and `binary`, **clean Go builds** with embedded `vcs.revision` and `vcs.modified=false` also expose the installed commit, even after the temporary clone is removed. Set `-buildvcs=true` in `go build` to require VCS stamping. Unstamped, modified or non-Go binaries retain presence-only semantics. The revision is not a signature or proof of the remote publisher's identity; other non-root and managed-path artifacts remain presence-only.
 
+On upgrade, a Git method detaches its tracked target to a sibling
+`<target>.depengine-old` path before building the replacement. A failed build,
+install, or verification restores the old target; a successful replacement
+removes the backup after the new state is durable. `managed_paths` entries are
+detached individually. Windows keeps the ordinary remove-then-install path
+because a running executable cannot be renamed there. Single-file Git artifacts
+are staged and renamed atomically instead of deleting the destination first.
+
 For example, set `secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }`
 on a Git method that clones a private HTTPS repository. depengine passes the
 token only through the Git child process environment. It is absent from argv,
@@ -1358,9 +1366,13 @@ metadata under `intent` plus `candidate`/`candidate_known` ordinals.
 
 ## Catalog recipes
 
-A catalog is an optional, user-owned layer of reusable recipes below the
-personal manifest. Each recipe is one file at `<catalog-root>/<name>.toml`; the
-file system is the index, so a lookup never scans the directory.
+A catalog is an optional layer of reusable recipes below the personal manifest.
+User recipes live at `<catalog-root>/<name>.toml`; the file system is the index,
+so a lookup never scans the directory. The binary also embeds a read-only
+fallback for `golang`. The public Git checkout has an opt-in library under
+[`recipes/`](../recipes/README.md), including `nvim`.
+They use the same parser, declarative/integrity validator, canonical digest,
+lock v2 identity and provenance as recipes on disk.
 
 Default root:
 
@@ -1370,8 +1382,63 @@ Default root:
 - Windows: `%AppData%\depengine\catalog`.
 
 `--catalog <dir>` (repeatable) and `DEPENGINE_CATALOG` (a path list) replace the
-default roots; `--no-catalog` disables the layer. The first root containing a
-name wins; roots are not field-merged.
+default **filesystem** roots; the embedded fallback remains last. `--no-catalog`
+disables both filesystem and embedded recipes. The first filesystem root
+containing a name wins; roots are not field-merged. A broken user recipe is an
+error, never a reason to fall back to the embedded version. In `why --fields`,
+embedded recipes show `root: builtin`, `root_index: -1` in JSON and a logical
+`builtin:builtin_recipes/<name>.toml` path. `doctor` lists the embedded source
+as `builtin (embedded, present)`.
+
+The binary fallback remains deliberately small:
+
+- `golang`: native aliases, Arch AUR, and Go 1.27.4 Linux amd64 with a pinned
+  SHA-256. Other HTTP variants remain manifest-local until hashes are verified.
+
+`recipes/depengine.toml.example` is a project-schema fragment, not a catalog
+recipe. Catalog recipes reject command fields such as `build`, so a source
+build cannot be imported or looked up from `recipes/*.toml`. The binary embeds
+that self-update recipe and consumes it directly:
+
+```sh
+depengine self update          # rebuild from the embedded recipe and swap atomically
+depengine self update --check  # exit 1 when the running revision is behind
+```
+
+`self update` resolves the recipe's source and the requested revision, then
+clones, builds, verifies the new executable, and replaces the running binary
+with a same-directory atomic rename. `{version}` in the recipe's build command
+receives the resolved revision or tag. A failed clone or build leaves the
+previous executable untouched. It refuses to replace a running executable on
+Windows. `--ref` pins a branch, tag, or commit; `--bin-dir` selects the
+destination; `--repo` overrides the recipe source; `--recipe <path>` loads a
+different project-schema fragment with the same single `[tools.depengine]` git
+method. The command does not write project state or a lockfile.
+
+The Git-versioned library covers the portable method families: native, AUR,
+Cargo, Go, npm/pnpm/Bun, pipx/uv, RubyGems, Composer, Flatpak, Snap, AppImage,
+GitHub Releases and HTTP artifacts. `golang.toml` is also embedded; every other
+recipe, including `nvim.toml`, is opt-in. Release-artifact recipes pin an
+explicit release and a literal SHA-256. From a repository checkout use:
+
+```sh
+depengine import recipes/nvim.toml --dry-run
+depengine import recipes/nvim.toml
+# Alternatively choose the entire checkout directory explicitly:
+depengine validate --catalog "$(pwd)/recipes"
+```
+
+A repository checkout is not automatically consulted. `import` reads a local
+file and copies it to a user catalog; it does not fetch a remote URL or verify
+publisher identity. Pin the Git revision and review the TOML before importing.
+The optional `--expected-digest` verifies a separately trusted canonical
+recipe digest. When `--catalog` points at a directory, it replaces the default
+filesystem roots but still leaves embedded fallback last.
+
+These shipped recipes can change in later binary versions. The lock v2 recipe
+digest will detect changed content; run a whole-schema `depengine update`
+when intentionally adopting the new recipe. A declaration with no matching
+recipe still behaves as before.
 
 A recipe uses the personal-manifest grammar with `recipe_version` instead of
 `schema_version` and exactly one entry under `[packages]`:

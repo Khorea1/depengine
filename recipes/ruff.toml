@@ -1,0 +1,10 @@
+recipe_version = 1
+
+[packages.ruff]
+method_only = ["pipx", "uv"]
+
+[packages.ruff.pipx]
+pkg = "ruff"
+
+[packages.ruff.uv]
+pkg = "ruff"

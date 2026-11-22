@@ -16,7 +16,7 @@ import (
 
 func sourceFixtureCommand(t *testing.T, dir, program string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command(program, args...)
+	cmd := exec.Command(program, args...) // #nosec G204 -- test helper runs fixture commands from controlled arguments.
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -81,7 +81,7 @@ func TestGitBinaryOnlyInstallObservesGoBuildRevision(t *testing.T) {
 	}
 
 	// An arbitrary non-Go executable keeps legacy presence-only semantics.
-	if err := os.WriteFile(filepath.Join(dir, binary), []byte("not a Go binary"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, binary), []byte("not a Go binary"), 0o755); err != nil { // #nosec G306 -- fixture executable requires owner execute permission.
 		t.Fatal(err)
 	}
 	observation, err = adapter.Observe(ctx, run.OSExecRunner{}, tool, method)
@@ -114,7 +114,7 @@ func TestGitBinaryObservationRejectsSymlink(t *testing.T) {
 
 func TestGitBinaryObservationPreservesValidSymlinkPresence(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "actual"), []byte("not a Go binary"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "actual"), []byte("not a Go binary"), 0o755); err != nil { // #nosec G306 -- fixture executable requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.Symlink("actual", filepath.Join(dir, "tool")); err != nil {

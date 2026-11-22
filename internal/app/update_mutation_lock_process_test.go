@@ -61,7 +61,7 @@ func TestUpdateSerializesLockRefreshWithHostMutationAcrossProcesses(t *testing.T
 
 	child := func(mode string) {
 		t.Helper()
-		cmd := osexec.Command(os.Args[0], "-test.run=^TestUpdateMutationLockProcessHelper$")
+		cmd := osexec.Command(os.Args[0], "-test.run=^TestUpdateMutationLockProcessHelper$") // #nosec G204,G702 -- fixed test helper entry point.
 		cmd.Env = append(os.Environ(), "DEPENGINE_UPDATE_MUTATION_CHILD="+mode, "DEPENGINE_UPDATE_MUTATION_SCHEMA="+schemaPath)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("update child %s: %v\n%s", mode, err, output)

@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.httpie]
+method_only = ["native", "pipx", "uv"]
+
+[packages.httpie.native]
+pkg = "httpie"
+pkg_overrides = { winget = "httpie.httpie" }
+
+[packages.httpie.pipx]
+pkg = "httpie"
+
+[packages.httpie.uv]
+pkg = "httpie"

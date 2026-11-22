@@ -492,7 +492,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	cs := newCLIStyle(os.Stderr)
 	printInstallHeader(cs, p, s, clan, facts, manifestCount)
 	if project.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 
 	schemaFile, err := os.Stat(p.schema)

@@ -92,6 +92,7 @@ func newRootCmd() *cobra.Command {
 		newGraphCmd(),
 		newDiffCmd(),
 		newUpdateCmd(),
+		newSelfCmd(),
 		newSBOMCmd(),
 		newVersionCmd(),
 		newBundleCmd(),

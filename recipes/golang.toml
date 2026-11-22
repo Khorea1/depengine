@@ -1,0 +1,22 @@
+recipe_version = 1
+
+# Native packages and a checksum-pinned Go distribution from the dotfiles.
+# Other HTTP platforms are omitted until their checksums are verified.
+[packages.golang]
+method_only = ["native", "aur", "http"]
+
+[packages.golang.native]
+pkg_overrides = { apk = "go", apt = "golang-go", brew = "go", choco = "golang", dnf = "golang", emerge = "dev-lang/go", pacman = "go", pkg = "go", pkg_add = "go", port = "go", scoop = "go", winget = "GoLang.Go", xbps = "go", yum = "golang", zypper = "go" }
+
+[packages.golang.aur]
+pkg = "go-bin"
+when = { distro_family = ["arch"] }
+
+[packages.golang.http-linux-x64]
+kind = "http"
+url = "https://go.dev/dl/go1.27.4.linux-amd64.tar.gz"
+checksum = "sha256:7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840"
+scope = "user"
+strip_components = 1
+entrypoints = { go = "bin/go", gofmt = "bin/gofmt" }
+when = { os = ["linux"], arch = ["x86_64"] }

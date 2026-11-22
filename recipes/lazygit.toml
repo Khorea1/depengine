@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.lazygit]
+method_only = ["native", "aur", "go"]
+
+[packages.lazygit.native]
+pkg = "lazygit"
+pkg_overrides = { winget = "JesseDuffield.lazygit" }
+
+[packages.lazygit.aur]
+pkg = "lazygit"
+
+[packages.lazygit.go]
+pkg = "github.com/jesseduffield/lazygit"

@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.yq]
+method_only = ["native", "aur", "go"]
+
+[packages.yq.native]
+pkg = "yq"
+pkg_overrides = { winget = "MikeFarah.yq" }
+
+[packages.yq.aur]
+pkg = "yq"
+
+[packages.yq.go]
+pkg = "github.com/mikefarah/yq/v4"

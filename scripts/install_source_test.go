@@ -12,7 +12,7 @@ import (
 
 func bootstrapCommand(t *testing.T, dir, tool string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command(tool, args...)
+	cmd := exec.Command(tool, args...) // #nosec G204,G702 -- test helper runs fixture commands from controlled arguments.
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -46,7 +46,7 @@ func main() { fmt.Println("fixture-version") }
 
 	binDir := filepath.Join(t.TempDir(), "with spaces", "bin")
 	install := func(args ...string) (string, error) {
-		cmd := exec.Command("sh", append([]string{"install-source.sh", "--source", src, "--bin-dir", binDir}, args...)...)
+		cmd := exec.Command("sh", append([]string{"install-source.sh", "--source", src, "--bin-dir", binDir}, args...)...) // #nosec G204,G702 -- fixed script with test-owned paths and arguments.
 		cmd.Dir = "."
 		out, err := cmd.CombinedOutput()
 		return strings.TrimSpace(string(out)), err
@@ -55,7 +55,7 @@ func main() { fmt.Println("fixture-version") }
 		t.Fatalf("bootstrap failed: %v\n%s", err, output)
 	}
 	bin := filepath.Join(binDir, "depengine")
-	previous, err := os.ReadFile(bin)
+	previous, err := os.ReadFile(bin) // #nosec G304 -- bin is a test-owned temporary path.
 	if err != nil || len(previous) == 0 {
 		t.Fatalf("installed executable unavailable: %v", err)
 	}
@@ -71,7 +71,7 @@ func main() { fmt.Println("fixture-version") }
 	if output, err := install(); err == nil || !strings.Contains(output, "previous executable was preserved") {
 		t.Fatalf("broken source build should fail without modifying old executable: %v\n%s", err, output)
 	}
-	unchanged, err := os.ReadFile(bin)
+	unchanged, err := os.ReadFile(bin) // #nosec G304 -- bin is a test-owned temporary path.
 	if err != nil || !bytes.Equal(unchanged, previous) {
 		t.Fatalf("old executable damaged after build failure: %v", err)
 	}

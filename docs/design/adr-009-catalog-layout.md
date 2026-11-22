@@ -344,3 +344,46 @@ separate change.
 - `dep-ixd.8` applies the integrity floor at import.
 - `dep-ixd.13` measures a real corpus and may reopen project catalogs or the
   name grammar with evidence.
+
+## Extension: read-only embedded fallback (2026-11-21)
+
+Subsequent to this user-owned catalog decision, the binary embeds a minimal
+maintainer-curated fallback (`golang`). This is a **fallback source**, not a
+project-owned catalog and not an implicit import. Lookup order remains the
+ordered filesystem roots first, followed by the embedded recipe files. CLI
+`--catalog`/`DEPENGINE_CATALOG` still replace the filesystem roots only;
+`--no-catalog` disables all lookup, including embedded recipes.
+
+The embedded entry has origin `root = "builtin"`, `root_index = -1`, and logical
+path `builtin:builtin_recipes/<name>.toml`. It obeys the same declarative,
+integrity, and canonical digest gates as user recipes. The binary never lists
+embedded files while resolving project tools: name lookup uses an embedded FS
+path directly. Replacing the binary may change a recipe digest, which v2 locks
+must detect rather than silently adopting a different recipe. The original
+user-root precedence, name grammar and fail-closed behavior are unchanged.
+`doctor` reports the embedded source as `builtin (embedded, present)`.
+
+The depengine executable is not a catalog recipe. A source build needs a
+command-typed `build` field, which catalog lookup and import reject, so the
+binary cannot be embedded or imported as declarative data. Self-management is a
+first-class `depengine self update` command instead, driven by a non-importable
+project-schema recipe embedded in the binary; `recipes/depengine.toml.example`
+is its public copy, and `--recipe` can load another copy. Embedding a
+release-based recipe would advertise an install that has no published artifact.
+
+## Extension: Git-versioned, opt-in recipe library (2026-11-21)
+
+The repository exposes independent `recipes/<name>.toml` files for review,
+contribution, importing with the existing `depengine import <file>` command,
+or explicitly choosing with `--catalog <absolute-repo-recipes-dir>`. This
+changes neither the default user catalog root nor the decision to omit
+implicit project catalogs. The Git checkout is a publication source, not a
+new lookup backend or a silently trusted remote registry.
+
+The public library is the source of truth for the embedded `golang` recipe;
+tests ensure the canonical digest and bytes match. `nvim` remains a public
+recipe only, not a built-in dependency policy. `depengine` is neither public
+recipe data nor an embedded default: `self update` builds it from source and
+swaps the executable atomically, and the generic Git upgrade path quarantines a
+tracked target until the replacement builds and verifies. Runtime availability
+of a future release artifact is therefore not implied by recipe validation.

@@ -123,7 +123,7 @@ func TestUpdatePruneDryRunDoesNotWrite(t *testing.T) {
 	if err := lock.Save(lockPath, old); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(lockPath)
+	before, err := os.ReadFile(lockPath) // #nosec G304 -- lockPath is derived from a test-owned schema directory.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestUpdatePruneDryRunDoesNotWrite(t *testing.T) {
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.ReadFile(lockPath)
+	after, err := os.ReadFile(lockPath) // #nosec G304 -- lockPath is derived from a test-owned schema directory.
 	if err != nil {
 		t.Fatal(err)
 	}

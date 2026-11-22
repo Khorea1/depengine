@@ -787,6 +787,7 @@ func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 					return fmt.Errorf("git: remove managed path %s: %w", path, runErr)
 				}
 			}
+			removeReplacementBackup(path)
 		}
 		return nil
 	}
@@ -804,6 +805,7 @@ func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 			if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
 				return fmt.Errorf("git: remove binary %s: %w", target, err)
 			}
+			removeReplacementBackup(target)
 			return nil
 		}
 		return fmt.Errorf("git: cannot remove: %s is a shared directory and binary is not configured", extractTo)
@@ -813,6 +815,7 @@ func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	if err := os.RemoveAll(extractTo); err != nil {
 		return fmt.Errorf("git: remove directory %s: %w", extractTo, err)
 	}
+	removeReplacementBackup(extractTo)
 
 	return nil
 }

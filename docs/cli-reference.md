@@ -412,6 +412,40 @@ Examples:
 | `-h, --help` | local | `false` | help for sbom |
 | `--lock <string>` | local | `` | lockfile to read for missing versions (default: derived from recorded schema) |
 
+## `depengine self [flags]`
+
+Manage the depengine executable itself
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for self |
+
+## `depengine self update [flags]`
+
+Rebuild depengine from a Git checkout and atomically replace the running executable. Cloning and building happen in a temporary directory; the previous binary is replaced only after the new build compiles and answers 'version'. Use --check to compare the running revision with the remote without installing, and --dry-run to resolve the source without building.
+
+Examples:
+
+```sh
+  depengine self update
+  depengine self update --check
+  depengine self update --ref master --bin-dir "$HOME/.local/bin"
+  depengine self update --recipe recipes/depengine.toml.example --dry-run
+  depengine self update --dry-run --format json
+```
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--bin-dir <string>` | local | `` | destination directory (default: the running executable's directory) |
+| `--check` | local | `false` | compare revisions without building; exits 1 when an update is available |
+| `--dry-run` | local | `false` | resolve the source without building or replacing |
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for update |
+| `--json` | local | `false` | shorthand for --format=json |
+| `--recipe <string>` | local | `` | project-schema fragment declaring the git method (default: embedded recipe) |
+| `--ref <string>` | local | `` | branch, tag, or commit to build (default: remote default branch) |
+| `--repo <string>` | local | `` | Git source repository (default: the recipe's source) |
+
 ## `depengine status [flags]`
 
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.

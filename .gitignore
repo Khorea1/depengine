@@ -8,7 +8,7 @@ depengine.exe
 vendor/
 
 # Schema / manifest
-depengine.toml
+/depengine.toml
 schema.toml
 # Root schemas are operator-local; their generated lock is not repository truth.
 /depengine.lock

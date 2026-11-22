@@ -60,8 +60,9 @@ The script clones a temporary checkout, builds using the checkout's `go.mod`,
 checks that the result starts, and stages a new executable in the destination
 directory before an atomic rename. Build/clone failures leave the existing
 executable in place. It does **not** register the bootstrap in depengine's
-managed state or provide cross-platform transactional self-upgrade. Put the
-chosen destination on `PATH`; avoid running unreviewed remote scripts as root.
+managed state; use `depengine self update` afterwards for atomic Unix upgrades.
+Windows replacement remains manual. Put the chosen destination on `PATH`; avoid
+running unreviewed remote scripts as root.
 
 Version-suffixed module installation such as
 `go install github.com/Khorea1/depengine@vX.Y.Z` is **not** a supported
@@ -70,8 +71,29 @@ for transitive `gopkg.in` sources, and the Go tool rejects `go install
 pkg@version` when the providing module contains `replace` directives. Use a
 published release artifact or build from a checkout instead.
 
-After bootstrapping, a depengine source checkout can be declared as an **ordinary
-Git method**, without a special `self` command:
+After bootstrapping, update the executable from source with the built-in
+self-update path:
+
+```sh
+depengine self update          # rebuild from upstream and swap atomically
+depengine self update --check  # exit 1 when the running revision is behind
+```
+
+`self update` is driven by its own project-schema recipe. The binary embeds
+that recipe and [`recipes/depengine.toml.example`](recipes/depengine.toml.example)
+is its public, inspectable copy. The command resolves the source and revision,
+expands `{version}` in the recipe's build command, clones and builds in a
+temporary directory, verifies that the result answers `version`, and then
+replaces the running executable with a same-directory atomic rename. A failed
+clone or build leaves the previous executable untouched. It requires `git` and
+a Go toolchain, and it refuses to replace a running executable on Windows. Use
+`--ref` to pin a branch, tag, or commit, `--bin-dir` to choose the destination,
+`--repo` to build from a fork, and `--recipe <path>` to load a different
+single-tool git recipe. It does not write project state or a lockfile; run
+`depengine update` afterwards if a project pins the binary.
+
+The same recipe is usable as a normal project-schema fragment when a project
+must track the binary:
 
 ```toml
 schema_version = 1
@@ -81,18 +103,20 @@ method_only = ["git"]
 
 [tools.depengine.git]
 url = "https://github.com/Khorea1/depengine.git"
-branch = "master"
-build = { run = ["go", "build", "-buildvcs=true", "-o", "depengine", "."] }
+depth = 1
+build = { run = ["go", "build", "-buildvcs=true", "-trimpath", "-o", "depengine", "."] }
 artifact = "depengine"
 extract_to = "~/.local/bin"
 binary = "depengine"
 ```
 
-The Git adapter now verifies the installed revision from the clean Go build's
-VCS stamp. **Do not use this recipe to upgrade the running depengine binary yet**:
-the generic upgrade replacement still removes the previous installation before
-building the replacement. The standalone bootstrap above stages the replacement
-safely, but transactional managed self-upgrade remains separate follow-up work.
+The Git adapter verifies the installed revision from the clean Go build's VCS
+stamp. Upgrading a tracked Git tool detaches the old target to a sibling
+`.depengine-old` path, builds and verifies the replacement, and only then
+removes the backup; a failed build or install restores the old target. Windows
+keeps the ordinary remove-then-install behavior for tracked upgrades, and
+`self update` refuses to replace a running executable there; use the release
+artifact or the bootstrap script instead.
 
 ## Quick start
 
@@ -128,13 +152,37 @@ every supported method, see the [`schema.toml` reference](docs/schema-reference.
 
 ## Schema, manifest, and catalog
 
-depengine can merge three layers:
+depengine merges project, personal manifest and catalog layers. The binary
+ships a small read-only fallback for `golang` only. Community recipes, including
+Neovim, live in the Git-versioned [`recipes/`](recipes/) directory and require
+explicit import or `--catalog` selection. The library covers the portable method
+families (`native`, `aur`, `cargo`, `go`, `npm`/`pnpm`/`bun`, `pipx`/`uv`,
+`gem`, `composer`, `flatpak`, `snap`, `appimage`, `github` and `http`), and every
+recipe avoids duplicate method entries.
+
+```toml
+schema_version = 1
+[tools]
+golang = {}
+```
+
+The Go recipe includes native/AUR candidates and a checksum-pinned Linux amd64
+archive. The depengine executable is **not** a catalog recipe: catalog recipes
+must stay declarative, and `import`/lookup reject command fields such as
+`build`. Use [`depengine self update`](#installing-depengine), which consumes
+its own embedded recipe (public copy:
+[`recipes/depengine.toml.example`](recipes/depengine.toml.example)), to install
+or update the binary from source.
+
+depengine can merge these layers:
 
 | Layer | Purpose | Commit it? |
 |---|---|---|
 | `schema.toml` | Project dependencies and project-owned install rules | Yes |
 | `~/.config/depengine/manifest.toml` | Personal recipes and machine defaults | No |
 | `<config dir>/depengine/catalog/<name>.toml` | Reusable user-owned recipes, looked up by name | No |
+| `recipes/*.toml` | Public Git-versioned recipe library (opt-in, importable) | Yes |
+| Binary-embedded fallback catalog | Only `golang` (no automatic Neovim recipe) | Shipped with binary |
 
 Project values win when layers set the same field; the personal manifest
 overrides catalog recipes. By default, tools that exist only in the personal
@@ -149,8 +197,9 @@ schema declares and for their transitive `requires`.
 The catalog defaults to `$XDG_CONFIG_HOME/depengine/catalog` on Linux,
 `~/Library/Application Support/depengine/catalog` on macOS, and
 `%AppData%\depengine\catalog` on Windows. Use `--catalog` (repeatable) or
-`DEPENGINE_CATALOG` to replace the roots, and `--no-catalog` to disable the
-layer. Lock v2 pins each catalog recipe's content digest, so
+`DEPENGINE_CATALOG` to replace the filesystem roots; the embedded fallback
+still participates. Use `--no-catalog` to disable both. Lock v2 pins each
+catalog recipe's content digest, so
 `--frozen-lockfile` fails when a recipe changes; catalog-sourced tools require
 a v2 lock, written by a whole-schema `depengine update`.
 
@@ -159,6 +208,26 @@ first catalog root. It rejects hooks, command-typed fields and plans that
 require arbitrary code, requires a checksum for downloaded artifacts, and flags
 `sha256:auto` as trust-on-first-use. The preview shows the recipe digest that a
 v2 lock will pin. Import does not verify the recipe's origin.
+
+The repository publishes a [versioned recipe library](recipes/README.md). From
+an existing depengine source checkout, review and import a recipe with:
+
+```sh
+depengine import recipes/nvim.toml --dry-run
+depengine import recipes/nvim.toml
+# Or use the checkout as a catalog without copying its files:
+depengine validate --catalog "$(pwd)/recipes"
+```
+
+The Git directory is **not** an automatic catalog source. An import copies a
+reviewed file into the user catalog; `--catalog` selects a directory explicitly.
+Neovim is deliberately not embedded and has to be opted into this way. A
+`[tools.nvim]` declaration without an imported/personal recipe uses only its
+project/manifest methods and ordinary native inference, not a hidden embedded
+recipe. Git recipe updates require an explicit re-import or working-tree update.
+Self-management uses `depengine self update` and its own project-schema recipe
+rather than a catalog recipe because source builds are executable and catalog
+recipes stay declarative.
 
 See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) and
 [catalog recipes](docs/schema-reference.md#catalog-recipes) for the field-level
@@ -180,6 +249,7 @@ behavior.
 | `depengine remove <tool>` | Remove a tool |
 | `depengine forget <tool>` | Remove a tool from state without uninstalling it |
 | `depengine update` | Resolve lockable mutable references and write `depengine.lock` |
+| `depengine self update` | Rebuild and atomically replace the running executable from source |
 | `depengine upgrade` | Upgrade using the lockfile where supported |
 | `depengine graph` | Show tool dependencies |
 | `depengine undo` | Restore a previous install snapshot |

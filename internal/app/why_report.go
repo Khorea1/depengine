@@ -249,7 +249,11 @@ func formatProvenanceValue(field string, value any) string {
 // renderWhyAudit writes the human audit sections behind `why --fields`.
 func renderWhyAudit(w io.Writer, report *whyReport) {
 	if report.Recipe != nil {
-		_, _ = fmt.Fprintf(w, "Recipe: %s (layer %s, root #%d)\n", report.Recipe.Name, report.Recipe.Layer, report.Recipe.RootIndex)
+		if report.Recipe.RootIndex < 0 {
+			_, _ = fmt.Fprintf(w, "Recipe: %s (layer %s, %s)\n", report.Recipe.Name, report.Recipe.Layer, report.Recipe.Root)
+		} else {
+			_, _ = fmt.Fprintf(w, "Recipe: %s (layer %s, root #%d)\n", report.Recipe.Name, report.Recipe.Layer, report.Recipe.RootIndex)
+		}
 		_, _ = fmt.Fprintf(w, "  root:   %s\n", report.Recipe.Root)
 		_, _ = fmt.Fprintf(w, "  path:   %s\n", report.Recipe.Path)
 		_, _ = fmt.Fprintf(w, "  digest: %s\n", report.Recipe.Digest)

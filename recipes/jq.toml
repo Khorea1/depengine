@@ -1,0 +1,11 @@
+recipe_version = 1
+
+[packages.jq]
+method_only = ["native", "aur"]
+
+[packages.jq.native]
+pkg = "jq"
+pkg_overrides = { emerge = "app-misc/jq", winget = "jqlang.jq" }
+
+[packages.jq.aur]
+pkg = "jq"

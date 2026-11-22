@@ -69,7 +69,7 @@ func TestMutationLockSerializesProcessesAndReleases(t *testing.T) {
 
 	child := func(mode string) {
 		t.Helper()
-		cmd := exec.Command(os.Args[0], "-test.run=^TestMutationLockChild$")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestMutationLockChild$") // #nosec G204,G702 -- fixed test helper entry point.
 		cmd.Env = append(os.Environ(), "DEPENGINE_MUTATION_LOCK_CHILD="+mode)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -107,7 +107,7 @@ func TestMutationLockSerializesDistinctStateRootsForSameUser(t *testing.T) {
 
 	child := func(mode string) {
 		t.Helper()
-		cmd := exec.Command(os.Args[0], "-test.run=^TestMutationLockChild$")
+		cmd := exec.Command(os.Args[0], "-test.run=^TestMutationLockChild$") // #nosec G204,G702 -- fixed test helper entry point.
 		cmd.Env = append(os.Environ(),
 			"XDG_STATE_HOME="+secondRoot,
 			"DEPENGINE_MUTATION_LOCK_CHILD="+mode)

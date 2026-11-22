@@ -28,6 +28,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -36,6 +37,12 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+// ErrQuarantineUnsupported tells the executor to fall back to the adapter's
+// ordinary removal path. It is not a failure: adapters that cannot detach a
+// tracked target safely (for example a shared system prefix without a concrete
+// binary, or Windows while the target is running) return it explicitly.
+var ErrQuarantineUnsupported = errors.New("replacement quarantine unsupported")
+
 // AdapterV2 is the plan-aware adapter seam: the single contract every method
 // backend (native, cargo, git, http, …) implements. The executor is generic —
 // it only knows this interface and never imports adapter packages directly.
@@ -43,9 +50,10 @@ import (
 // Every adapter provides plan resolution (ResolvePlan), presence observation
 // (Observe), resolved-plan execution (InstallResolved), removal
 // (Remove/CanRemove), repository availability (CheckAvailable), and host
-// compatibility (CheckHostCompatibility). There are no optional capability
-// interfaces: uniformity is what lets dry-run, why, and install agree on
-// one resolution path per candidate.
+// compatibility (CheckHostCompatibility). The core contract has no optional
+// methods; adapters may additionally implement narrow capability interfaces
+// such as ElevationRequirer and ReplacementQuarantiner when the executor can
+// use a safer or more precise behavior.
 type AdapterV2 interface {
 	Kind() string
 	Available(ctx context.Context, rn run.Runner) bool
@@ -92,6 +100,18 @@ type ElevationRequirer interface {
 type RemovalElevationRequirer interface {
 	AdapterV2
 	RequiresRemovalElevation(tool *config.Tool, mc *config.MethodCandidate) bool
+}
+
+// ReplacementQuarantiner is an optional capability for upgrades that must not
+// destroy the tracked installation before the replacement is verified. The
+// adapter detaches the old target (usually by renaming it aside) and returns
+// commit and rollback callbacks. The executor persists the removal boundary
+// before calling it and rolls back on any failure before the new state is
+// committed. Returning ErrQuarantineUnsupported selects the ordinary
+// Remove-then-install path.
+type ReplacementQuarantiner interface {
+	AdapterV2
+	QuarantineForReplacement(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (commit func() error, rollback func() error, err error)
 }
 
 // checkAvailable consults the adapter's CheckAvailable. Adapters that

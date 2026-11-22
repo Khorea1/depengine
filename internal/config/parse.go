@@ -144,6 +144,14 @@ func ParseRecipeBytes(path string, raw []byte, m map[string]string) (*Schema, er
 	return parseDocumentBytes(path, raw, m, "packages", "recipe_version", true)
 }
 
+// ParseProjectSchemaBytes is ParseProjectSchema over already-read bytes. It
+// lets an embedded project-schema fragment (for example the self-update
+// recipe) go through the same strict parser as a file without requiring a
+// temporary checkout.
+func ParseProjectSchemaBytes(path string, raw []byte, m map[string]string) (*Schema, error) {
+	return parseDocumentBytes(path, raw, m, "tools", "schema_version", false)
+}
+
 // parseDocument loads, decodes and normalizes a depengine TOML document. It produces a
 // flat Schema where the three declaration shapes (simple list, inline table,
 // full [tools.X] block) all collapse into Tool + MethodCandidate pairs. The

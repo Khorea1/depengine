@@ -2,11 +2,14 @@ package config
 
 import (
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -23,7 +26,11 @@ const (
 	catalogDirName   = "depengine"
 	catalogSubdir    = "catalog"
 	catalogExtension = ".toml"
+	builtinRootName  = "builtin"
 )
+
+//go:embed builtin_recipes/*.toml
+var builtinRecipes embed.FS
 
 var (
 	// ErrRecipeNotFound means the name is valid but no catalog root contains a
@@ -82,6 +89,7 @@ type RecipeValidator func(*Schema) error
 // wins; roots are not field-merged.
 type Catalog struct {
 	roots    []string
+	builtin  bool
 	validate RecipeValidator
 }
 
@@ -95,6 +103,35 @@ func NewCatalog(roots []string, validator ...RecipeValidator) *Catalog {
 		c.validate = validator[0]
 	}
 	return c
+}
+
+// NewCatalogWithBuiltins appends the packaged, read-only recipes as the final
+// lookup source. It does not change the priority of operator-selected roots.
+// Callers implementing --no-catalog should use NewCatalog(nil, validator).
+func NewCatalogWithBuiltins(roots []string, validator ...RecipeValidator) *Catalog {
+	c := NewCatalog(roots, validator...)
+	c.builtin = true
+	return c
+}
+
+// HasSources reports whether lookup can resolve recipes from any source.
+func (c *Catalog) HasSources() bool {
+	return c != nil && (len(c.roots) > 0 || c.builtin)
+}
+
+// HasBuiltin reports whether the packaged recipes are an active lookup source.
+func (c *Catalog) HasBuiltin() bool {
+	return c != nil && c.builtin
+}
+
+// Sources returns the operator roots followed by the logical builtin source.
+// Roots continues to return only physical directories.
+func (c *Catalog) Sources() []string {
+	roots := c.Roots()
+	if c.HasBuiltin() {
+		roots = append(roots, builtinRootName)
+	}
+	return roots
 }
 
 // Roots returns a copy of the ordered roots.
@@ -148,50 +185,76 @@ func (c *Catalog) Lookup(name string) (*Recipe, error) {
 	if err := ValidateCatalogName(name); err != nil {
 		return nil, &CatalogError{Err: fmt.Errorf("%w: %w", ErrRecipeNotAddressable, err)}
 	}
-	if c == nil || len(c.roots) == 0 {
+	if !c.HasSources() {
 		return nil, &CatalogError{Err: fmt.Errorf("%w: %q", ErrRecipeNotFound, name)}
 	}
 	for i, root := range c.roots {
-		path := filepath.Join(root, name+catalogExtension)
-		info, err := os.Lstat(path)
+		recipePath := filepath.Join(root, name+catalogExtension)
+		info, err := os.Lstat(recipePath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): stat %s: %w", i, root, path, err)}
+			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): stat %s: %w", i, root, recipePath, err)}
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s is a symlink; catalog recipes must be regular files", i, root, path)}
+			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s is a symlink; catalog recipes must be regular files", i, root, recipePath)}
 		}
 		if !info.Mode().IsRegular() {
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s is not a regular file", i, root, path)}
+			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s is not a regular file", i, root, recipePath)}
 		}
-		raw, err := os.ReadFile(path) // #nosec G304 -- path is <validated root>/<validated name>.toml.
+		raw, err := os.ReadFile(recipePath) // #nosec G304 -- path is <validated root>/<validated name>.toml.
 		if err != nil {
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): read %s: %w", i, root, path, err)}
+			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): read %s: %w", i, root, recipePath, err)}
 		}
-		s, err := ParseRecipeBytes(path, raw, nil)
-		if err != nil {
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): %w", i, root, err)}
-		}
-		if _, ok := s.Tools[name]; !ok {
-			return nil, &CatalogError{Err: fmt.Errorf(
-				"root %d (%s): recipe %s declares %q, not %q; file name and recipe name must match",
-				i, root, path, singleToolName(s), name,
-			)}
-		}
-		if c.validate != nil {
-			if err := c.validate(s); err != nil {
-				return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s: %w", i, root, path, err)}
-			}
-		}
-		digest, err := canonicalRecipeDigest(raw)
-		if err != nil {
-			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): %w", i, root, err)}
-		}
-		return &Recipe{Name: name, Path: path, RootIndex: i, Schema: s, Digest: digest, validate: c.validate, snapshot: raw}, nil
+		return c.parseRecipe(name, recipePath, i, root, raw)
 	}
-	return nil, &CatalogError{Err: fmt.Errorf("%w: %q (roots: %s)", ErrRecipeNotFound, name, strings.Join(c.roots, string(os.PathListSeparator)))}
+	if c.builtin {
+		file := path.Join("builtin_recipes", name+catalogExtension)
+		raw, err := fs.ReadFile(builtinRecipes, file)
+		if err == nil {
+			return c.parseRecipe(name, builtinRootName+":"+file, -1, builtinRootName, raw)
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, &CatalogError{Err: fmt.Errorf("builtin recipe %s: %w", file, err)}
+		}
+	}
+	return nil, &CatalogError{Err: fmt.Errorf("%w: %q (sources: %s)", ErrRecipeNotFound, name, strings.Join(c.Sources(), string(os.PathListSeparator)))}
+}
+
+// parseRecipe applies exactly the same parsing, validation, and digest policy
+// to embedded and on-disk content. No trust shortcut exists for builtin data.
+func (c *Catalog) parseRecipe(name, file string, index int, root string, raw []byte) (*Recipe, error) {
+	source := catalogSourceLabel(index, root)
+	s, err := ParseRecipeBytes(file, raw, nil)
+	if err != nil {
+		return nil, &CatalogError{Err: fmt.Errorf("%s: %w", source, err)}
+	}
+	if _, ok := s.Tools[name]; !ok {
+		return nil, &CatalogError{Err: fmt.Errorf(
+			"%s: recipe %s declares %q, not %q; file name and recipe name must match",
+			source, file, singleToolName(s), name,
+		)}
+	}
+	if c.validate != nil {
+		if err := c.validate(s); err != nil {
+			return nil, &CatalogError{Err: fmt.Errorf("%s: recipe %s: %w", source, file, err)}
+		}
+	}
+	digest, err := canonicalRecipeDigest(raw)
+	if err != nil {
+		return nil, &CatalogError{Err: fmt.Errorf("%s: %w", source, err)}
+	}
+	return &Recipe{Name: name, Path: file, RootIndex: index, Schema: s, Digest: digest, validate: c.validate, snapshot: raw}, nil
+}
+
+// catalogSourceLabel names a recipe source in diagnostics. The embedded source
+// is logical, so it has no root index or filesystem path.
+func catalogSourceLabel(index int, root string) string {
+	if index < 0 {
+		return root
+	}
+	return fmt.Sprintf("root %d (%s)", index, root)
 }
 
 func singleToolName(s *Schema) string {
@@ -356,7 +419,7 @@ func ResolveLayers(schema, manifest *Schema, cat *Catalog, facts map[string]stri
 	}
 	var catalogRoots []string
 	if cat != nil {
-		catalogRoots = cat.Roots()
+		catalogRoots = cat.Sources()
 	}
 	return &LayerResolution{
 		Schema:        merged,
@@ -370,7 +433,7 @@ func ResolveLayers(schema, manifest *Schema, cat *Catalog, facts map[string]stri
 // no dependencies. Such a tool is a no-op: it has neither a local definition
 // nor a catalog recipe to supply one, so the project author most likely meant
 // to install it.
-func inertToolWarnings(declared, merged *Schema, catalogRoots []string) []LayerWarning {
+func inertToolWarnings(declared, merged *Schema, catalogSources []string) []LayerWarning {
 	if declared == nil || merged == nil {
 		return nil
 	}
@@ -390,8 +453,8 @@ func inertToolWarnings(declared, merged *Schema, catalogRoots []string) []LayerW
 		if len(tool.MethodOnly) > 0 {
 			message = fmt.Sprintf("tool %q restricts methods to %s but declares none", name, strings.Join(tool.MethodOnly, ", "))
 		}
-		if len(catalogRoots) > 0 {
-			message += fmt.Sprintf("; no catalog recipe supplied it (roots: %s)", strings.Join(catalogRoots, string(os.PathListSeparator)))
+		if len(catalogSources) > 0 {
+			message += fmt.Sprintf("; no catalog recipe supplied it (sources: %s)", strings.Join(catalogSources, ", "))
 		}
 		message += ". Add a method, a requires, or a catalog recipe."
 		warnings = append(warnings, LayerWarning{Tool: name, Message: message})
@@ -400,7 +463,7 @@ func inertToolWarnings(declared, merged *Schema, catalogRoots []string) []LayerW
 }
 
 func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[string]string) (*Schema, int, error) {
-	if cat == nil || len(cat.Roots()) == 0 {
+	if !cat.HasSources() {
 		return nil, 0, nil
 	}
 
@@ -501,6 +564,9 @@ func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[strin
 func catalogRoot(cat *Catalog, index int) string {
 	if cat == nil {
 		return ""
+	}
+	if index == -1 && cat.builtin {
+		return builtinRootName
 	}
 	roots := cat.Roots()
 	if index < 0 || index >= len(roots) {

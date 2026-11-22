@@ -26,6 +26,18 @@ Prefer immutable identities when available: checksums, container digests, and
 Git commits are easier to replay and audit than branches, tags, channels, or
 mutable URLs.
 
+## Self-update
+
+`depengine self update` clones and builds the repository named by its recipe,
+so it compiles code from that source and must be treated as executing it. The
+embedded recipe is the default; `--recipe <path>` substitutes another
+project-schema fragment and is exactly as trusted as that file. Use the default
+HTTPS upstream or a repository you trust, and pin `--ref` to a tag or commit
+when reproducibility matters. The command verifies that the new binary answers
+`version` and swaps it atomically, but it does not verify a signature, SBOM, or
+publisher identity. A local path or `file://` source is accepted for development
+and is exactly as trusted as that directory.
+
 ## Catalog imports
 
 A catalog recipe is declarative, not automatically safe. `depengine import`

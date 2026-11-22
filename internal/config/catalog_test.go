@@ -21,6 +21,38 @@ func writeRecipe(t *testing.T, root, name, body string) string {
 	return path
 }
 
+func TestCatalogBuiltinSourceContract(t *testing.T) {
+	cat := NewCatalogWithBuiltins([]string{"/one"})
+	if !cat.HasBuiltin() {
+		t.Fatal("builtin source not reported")
+	}
+	if got := strings.Join(cat.Sources(), ","); got != "/one,builtin" {
+		t.Fatalf("Sources = %q", got)
+	}
+	if got := catalogSourceLabel(-1, builtinRootName); got != builtinRootName {
+		t.Fatalf("builtin label = %q", got)
+	}
+	if got := catalogSourceLabel(0, "/one"); got != "root 0 (/one)" {
+		t.Fatalf("root label = %q", got)
+	}
+}
+
+func TestCatalogSourcesReturnsCopyAndNilIsSafe(t *testing.T) {
+	var nilCatalog *Catalog
+	if nilCatalog.HasSources() || nilCatalog.HasBuiltin() || len(nilCatalog.Sources()) != 0 {
+		t.Fatal("nil catalog must expose no sources")
+	}
+	cat := NewCatalogWithBuiltins([]string{"/one"})
+	sources := cat.Sources()
+	sources[0] = "/mutated"
+	if got := cat.Sources()[0]; got != "/one" {
+		t.Fatalf("Sources result aliases internal roots: %q", got)
+	}
+	if got := cat.Roots()[0]; got != "/one" {
+		t.Fatalf("Roots = %q", got)
+	}
+}
+
 func TestValidateCatalogName(t *testing.T) {
 	valid := []string{
 		"a", "foo", "Foo", "foo-bar", "foo_bar", "foo.bar", "foo+bar",

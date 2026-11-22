@@ -137,7 +137,7 @@ func TestHostMutationProcessHelper(t *testing.T) {
 
 func mutationTestProcess(t *testing.T, mode, root string) (*osexec.Cmd, *bytes.Buffer) {
 	t.Helper()
-	cmd := osexec.Command(os.Args[0], "-test.run=^TestHostMutationProcessHelper$")
+	cmd := osexec.Command(os.Args[0], "-test.run=^TestHostMutationProcessHelper$") // #nosec G204,G702 -- fixed test helper entry point.
 	cmd.Env = append(os.Environ(), "DEPENGINE_HOST_MUTATION_TEST_CHILD="+mode, "DEPENGINE_HOST_MUTATION_TEST_DIR="+root)
 	output := &bytes.Buffer{}
 	cmd.Stdout, cmd.Stderr = output, output

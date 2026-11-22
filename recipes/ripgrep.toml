@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.ripgrep]
+method_only = ["native", "aur", "cargo"]
+
+[packages.ripgrep.native]
+pkg = "ripgrep"
+pkg_overrides = { emerge = "sys-apps/ripgrep", winget = "BurntSushi.ripgrep.MSVC" }
+
+[packages.ripgrep.aur]
+pkg = "ripgrep"
+
+[packages.ripgrep.cargo]
+pkg = "ripgrep"

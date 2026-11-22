@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -65,6 +66,38 @@ func TestDoctorAcceptsValidSchema(t *testing.T) {
 	}
 	if report.Lock.Present {
 		t.Fatal("lock reported as present for a schema without depengine.lock")
+	}
+}
+
+func TestDoctorReportsEmbeddedCatalog(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
+	t.Setenv("DEPENGINE_MANIFEST", "")
+	opts := doctorOptions{
+		schemaPath:     filepath.Join(dir, "missing.toml"),
+		schemaExplicit: true,
+		noManifest:     true,
+		catalog:        config.NewCatalogWithBuiltins(nil, validateCatalogRecipe),
+	}
+	report := buildDoctorReport(context.Background(), &run.FakeRunner{}, opts)
+	if len(report.Layers.Catalog) != 1 {
+		t.Fatalf("catalog layers = %+v, want the embedded source", report.Layers.Catalog)
+	}
+	layer := report.Layers.Catalog[0]
+	if layer.Path != "builtin" || !layer.Present || layer.Origin != "embedded" {
+		t.Fatalf("embedded layer = %+v", layer)
+	}
+	var buf bytes.Buffer
+	writeDoctorText(&buf, report)
+	if !strings.Contains(buf.String(), "builtin (embedded, present)") {
+		t.Fatalf("doctor text missing embedded source:\n%s", buf.String())
+	}
+
+	opts.catalog = config.NewCatalog(nil, validateCatalogRecipe)
+	opts.noCatalog = true
+	report = buildDoctorReport(context.Background(), &run.FakeRunner{}, opts)
+	if len(report.Layers.Catalog) != 1 || report.Layers.Catalog[0].Origin != "disabled" {
+		t.Fatalf("disabled catalog layers = %+v", report.Layers.Catalog)
 	}
 }
 

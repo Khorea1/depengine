@@ -102,7 +102,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if project.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 
 	// Keep requested metadata for the complete effective schema before filtering.
@@ -132,7 +132,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 
 	lockPath := lock.Path(*updateSchema, *updateLock)
 	if *updateFrozen {
-		if _, err := os.Stat(lockPath); err != nil {
+		if _, err := os.Stat(lockPath); err != nil { // #nosec G703 -- lockPath is derived from the validated schema path.
 			lg.Error("frozen-lockfile: lockfile not found", "path", lockPath)
 			return exitWithCode(2)
 		}

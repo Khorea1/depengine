@@ -519,7 +519,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if project.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 
 	unlockMutations, err := holdHostMutations(ctx, opts.dryRun)

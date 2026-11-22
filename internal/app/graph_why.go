@@ -119,7 +119,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
 	}
 	if project.CatalogCount > 0 {
-		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 	}
 	// The historical `--only` closure keeps its schema-level filtering. Any
 	// other direction or depth slices the complete typed IR instead, because

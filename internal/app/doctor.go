@@ -286,6 +286,9 @@ func doctorLayersAndLock(opts doctorOptions, factMap map[string]string, report *
 			abs, present := absoluteDir(root)
 			layers.Catalog = append(layers.Catalog, doctorLayer{Path: abs, Present: present, Origin: origin})
 		}
+		if catalog.HasBuiltin() {
+			layers.Catalog = append(layers.Catalog, doctorLayer{Path: "builtin", Present: true, Origin: "embedded"})
+		}
 	}
 
 	// Schema diagnosis runs only when the file exists. It mirrors the validate

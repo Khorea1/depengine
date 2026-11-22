@@ -151,7 +151,7 @@ func resolveSchemaFilePath(input string) (string, error) {
 		return "", schemaNotFound("schema.toml")
 	}
 	candidate := input
-	info, err := os.Stat(candidate)
+	info, err := os.Stat(candidate) // #nosec G703 -- resolving the operator-supplied schema path is the function's purpose.
 	if err == nil && info.IsDir() {
 		candidate = filepath.Join(candidate, "schema.toml")
 	}
@@ -160,7 +160,7 @@ func resolveSchemaFilePath(input string) (string, error) {
 		return "", err
 	}
 	abs = filepath.Clean(abs)
-	info, err = os.Stat(abs)
+	info, err = os.Stat(abs) // #nosec G703 -- the operator-selected schema path is the function's input.
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", schemaNotFound(candidate)
@@ -235,7 +235,7 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		ManifestPath:  opts.ManifestPath,
 		ManifestCount: resolution.ManifestCount,
 		ManifestAuto:  opts.ManifestAuto,
-		CatalogRoots:  opts.Catalog.Roots(),
+		CatalogRoots:  opts.Catalog.Sources(),
 		CatalogCount:  resolution.CatalogCount,
 		Warnings:      resolution.Warnings,
 	}, nil
@@ -655,6 +655,14 @@ func hasLockableMutableSelectors(s *config.Schema) bool {
 		}
 	}
 	return false
+}
+
+// catalogCountText formats the catalog layer's recipe count for diagnostics.
+func catalogCountText(n int) string {
+	if n == 1 {
+		return "1 recipe"
+	}
+	return fmt.Sprintf("%d recipes", n)
 }
 
 func hasLatestPlaceholders(s *config.Schema) bool {

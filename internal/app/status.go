@@ -185,7 +185,7 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
 		}
 		if !quiet && project.CatalogCount > 0 {
-			fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+			fmt.Fprintf(os.Stderr, "  catalog: %s (%s)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), catalogCountText(project.CatalogCount))
 		}
 	}
 

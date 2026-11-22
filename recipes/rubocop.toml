@@ -1,0 +1,7 @@
+recipe_version = 1
+
+[packages.rubocop]
+method_only = ["gem"]
+
+[packages.rubocop.gem]
+pkg = "rubocop"
