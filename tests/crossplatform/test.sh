@@ -41,7 +41,7 @@ echo "Testing install command..."
 $BIN install --schema "$SCHEMA" --dry-run --allow-arbitrary-code
 # Real native-manager install of a single tool (mutates the container).
 $BIN install --schema "$SCHEMA" --only zsh
-$BIN install --schema "$SCHEMA" --skip kitty --dry-run --allow-arbitrary-code
+$BIN install --schema "$SCHEMA" --skip zsh --dry-run --allow-arbitrary-code
 
 echo "Testing check command..."
 $BIN check --schema "$SCHEMA" zsh
