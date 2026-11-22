@@ -13,7 +13,10 @@ run_validate() {
     output=$1
     shift
     set +e
-    "$BIN" validate --no-manifest --format json "$@" >"$output" 2>&1
+    # These fixtures exercise parser/validator diagnostics, not catalog
+    # lookup. Disable the catalog so a dangling dependency reaches the
+    # validator as E_DANGLING_REF instead of failing catalog resolution first.
+    "$BIN" validate --no-manifest --no-catalog --format json "$@" >"$output" 2>&1
     status=$?
     set -e
     return "$status"

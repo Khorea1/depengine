@@ -77,8 +77,12 @@ func TestResolveTargetPreservesSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target != real {
-		t.Fatalf("target = %q, want %q", target, real)
+	resolvedReal, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != resolvedReal {
+		t.Fatalf("target = %q, want %q", target, resolvedReal)
 	}
 }
 
