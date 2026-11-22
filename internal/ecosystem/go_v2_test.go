@@ -254,8 +254,8 @@ func TestGoAdapterV2InspectsGOBINTargetBeforePATH(t *testing.T) {
 	gobin := resolveTempPath(t, t.TempDir())
 	t.Setenv("PATH", pathDir)
 	t.Setenv("GOBIN", gobin)
-	pathBinary := filepath.Join(pathDir, "realbin")
-	gobinBinary := filepath.Join(gobin, "realbin")
+	pathBinary := goFixturePath(pathDir, "realbin")
+	gobinBinary := goFixturePath(gobin, "realbin")
 	for _, binary := range []string{pathBinary, gobinBinary} {
 		if err := os.WriteFile(binary, []byte("fixture"), 0o700); err != nil { // #nosec G306 -- the fixture must be executable to test PATH lookup.
 			t.Fatal(err)
