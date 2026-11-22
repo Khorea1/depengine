@@ -1,0 +1,10 @@
+recipe_version = 1
+
+[packages.black]
+method_only = ["pipx", "uv"]
+
+[packages.black.pipx]
+pkg = "black"
+
+[packages.black.uv]
+pkg = "black"

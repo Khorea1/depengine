@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.bottom]
+method_only = ["native", "aur", "cargo"]
+
+[packages.bottom.native]
+pkg = "bottom"
+pkg_overrides = { emerge = "sys-process/bottom", winget = "Clement.bottom" }
+
+[packages.bottom.aur]
+pkg = "bottom"
+
+[packages.bottom.cargo]
+pkg = "bottom"

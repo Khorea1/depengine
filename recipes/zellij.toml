@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.zellij]
+method_only = ["native", "aur", "cargo"]
+
+[packages.zellij.native]
+pkg = "zellij"
+pkg_overrides = { emerge = "app-misc/zellij", winget = "Zellij.Zellij" }
+
+[packages.zellij.aur]
+pkg = "zellij"
+
+[packages.zellij.cargo]
+pkg = "zellij"

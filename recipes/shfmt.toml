@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.shfmt]
+method_only = ["native", "aur", "go"]
+
+[packages.shfmt.native]
+pkg = "shfmt"
+pkg_overrides = { emerge = "app-shells/shfmt", winget = "mvdan.shfmt" }
+
+[packages.shfmt.aur]
+pkg = "shfmt"
+
+[packages.shfmt.go]
+pkg = "mvdan.cc/sh/v3/cmd/shfmt"

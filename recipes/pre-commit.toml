@@ -1,0 +1,10 @@
+recipe_version = 1
+
+[packages.pre-commit]
+method_only = ["pipx", "uv"]
+
+[packages.pre-commit.pipx]
+pkg = "pre-commit"
+
+[packages.pre-commit.uv]
+pkg = "pre-commit"

@@ -1,0 +1,14 @@
+recipe_version = 1
+
+[packages.hyperfine]
+method_only = ["native", "aur", "cargo"]
+
+[packages.hyperfine.native]
+pkg = "hyperfine"
+pkg_overrides = { emerge = "app-benchmarks/hyperfine", winget = "sharkdp.hyperfine" }
+
+[packages.hyperfine.aur]
+pkg = "hyperfine"
+
+[packages.hyperfine.cargo]
+pkg = "hyperfine"
