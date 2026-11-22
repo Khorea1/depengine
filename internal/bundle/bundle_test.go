@@ -14,6 +14,18 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
+// evalTempDir resolves the platform temp root so bundle path validation does
+// not reject a symlinked ancestor such as macOS /var -> /private/var.
+func evalTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	return resolved
+}
+
 func TestExportAndOpenVerifiesLockedPayload(t *testing.T) {
 	payload := []byte("locked artifact")
 	digest := sha256.Sum256(payload)
@@ -30,7 +42,7 @@ func TestExportAndOpenVerifiesLockedPayload(t *testing.T) {
 			Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{{URL: server.URL + "/demo", Checksum: checksum}}},
 		},
 	}}
-	root := filepath.Join(t.TempDir(), "bundle")
+	root := filepath.Join(evalTempDir(t), "bundle")
 	if err := Export(root, doc); err != nil {
 		t.Fatal(err)
 	}

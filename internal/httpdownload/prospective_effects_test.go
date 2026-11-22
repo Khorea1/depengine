@@ -18,6 +18,7 @@ func TestHTTPProspectiveEffectsIdentifiesAbsentAndPresentRawTarget(t *testing.T)
 	if err := os.MkdirAll(installRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	installRoot = resolveTestPath(t, installRoot)
 	tool := &config.Tool{Name: "sample"}
 	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{
 		"extract_to": installRoot, "binary": "sample", "url": "https://stale.example/archive.tar.gz",

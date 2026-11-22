@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -63,7 +64,7 @@ func TestMutationLockSerializesProcessesAndReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	lockPath := filepath.Join(dir, "depengine", "state.json.mutations.lock")
-	if fi, err := os.Stat(lockPath); err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm() != 0600 {
+	if fi, err := os.Stat(lockPath); err != nil || !fi.Mode().IsRegular() || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0600) {
 		t.Fatalf("mutation lock not an owner-only regular file: %v, %v", fi, err)
 	}
 

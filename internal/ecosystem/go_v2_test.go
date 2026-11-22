@@ -240,9 +240,18 @@ func TestGoAdapterV2ObserveAllowsMatchingUnversionedBuildInfo(t *testing.T) {
 		t.Fatal("Check() rejected Go build info with matching package")
 	}
 }
+func resolveTempPath(t *testing.T, dir string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", dir, err)
+	}
+	return resolved
+}
+
 func TestGoAdapterV2InspectsGOBINTargetBeforePATH(t *testing.T) {
-	pathDir := t.TempDir()
-	gobin := t.TempDir()
+	pathDir := resolveTempPath(t, t.TempDir())
+	gobin := resolveTempPath(t, t.TempDir())
 	t.Setenv("PATH", pathDir)
 	t.Setenv("GOBIN", gobin)
 	pathBinary := filepath.Join(pathDir, "realbin")

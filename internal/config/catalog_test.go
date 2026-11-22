@@ -91,7 +91,7 @@ func TestCatalogBaseDir(t *testing.T) {
 		{"linux no roots", "linux", "", "", "", ""},
 		{"darwin", "darwin", "/Users/u", "", "", "/Users/u/Library/Application Support"},
 		{"darwin no home", "darwin", "", "", "", ""},
-		{"windows", "windows", "", "", "/appdata", "/appdata"},
+		{"windows", "windows", "", "", "C:\\appdata", "C:\\appdata"},
 		{"windows relative", "windows", "", "", "appdata", ""},
 	}
 	for _, tc := range cases {

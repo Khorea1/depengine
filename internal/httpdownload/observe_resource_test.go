@@ -14,12 +14,25 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+// resolveTestPath canonicalizes a fixture path the same way the adapter does
+// before emitting host-filesystem evidence (macOS /var -> /private/var, and
+// Windows short 8.3 temp components).
+func resolveTestPath(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", path, err)
+	}
+	return resolved
+}
+
 func TestHTTPObservePhysicalFileSlotEvidence(t *testing.T) {
 	root := t.TempDir()
 	installDir := filepath.Join(root, "real", "bin")
 	if err := os.MkdirAll(installDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	installDir = resolveTestPath(t, installDir)
 	binary := filepath.Join(installDir, "rust")
 	bytes := []byte("verified raw payload")
 	if err := os.WriteFile(binary, bytes, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.

@@ -151,21 +151,21 @@ func TestJournalFiltersByCommandResultAndTimeWindow(t *testing.T) {
 func TestJournalSinceDurationUsesRelativeWindow(t *testing.T) {
 	recent := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
 	env := seedCLIJournal(t,
-		fixedCLIJournalEntry("install", "old", state.JournalSuccess, "2026-01-01T10:00:00Z"),
-		fixedCLIJournalEntry("install", "recent", state.JournalSuccess, recent),
+		fixedCLIJournalEntry("install", "stale-tool", state.JournalSuccess, "2026-01-01T10:00:00Z"),
+		fixedCLIJournalEntry("install", "fresh-tool", state.JournalSuccess, recent),
 	)
 	code, out := runCommand(t, "journal", env, "--since", "24h")
 	if code != 0 {
 		t.Fatalf("journal exit = %d: %s", code, out)
 	}
-	if !strings.Contains(out, "recent") || strings.Contains(out, "old") {
+	if !strings.Contains(out, "fresh-tool") || strings.Contains(out, "stale-tool") {
 		t.Fatalf("--since 24h window = %s, want only the recent entry", out)
 	}
 	code, out = runCommand(t, "journal", env, "--until", "24h")
 	if code != 0 {
 		t.Fatalf("journal exit = %d: %s", code, out)
 	}
-	if !strings.Contains(out, "old") || strings.Contains(out, "recent") {
+	if !strings.Contains(out, "stale-tool") || strings.Contains(out, "fresh-tool") {
 		t.Fatalf("--until 24h window = %s, want only the older entry", out)
 	}
 }

@@ -22,6 +22,16 @@ func bundleTestDocument(url, checksum string) plan.LockDocument {
 	}}}
 }
 
+func evalTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	return resolved
+}
+
 func TestValidateInstallBundleMapsLockedArtifactPayload(t *testing.T) {
 	payload := []byte("locked artifact")
 	digest := sha256.Sum256(payload)
@@ -31,7 +41,7 @@ func TestValidateInstallBundleMapsLockedArtifactPayload(t *testing.T) {
 	url := server.URL + "/demo"
 	document := bundleTestDocument(url, checksum)
 
-	root := filepath.Join(t.TempDir(), "bundle")
+	root := filepath.Join(evalTempDir(t), "bundle")
 	if err := bundle.Export(root, document); err != nil {
 		t.Fatal(err)
 	}
