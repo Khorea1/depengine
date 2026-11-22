@@ -1,6 +1,6 @@
 FROM archlinux:latest
 
-RUN pacman -Sy --noconfirm --needed \
+RUN pacman -Syu --noconfirm --needed \
     go git curl ca-certificates \
     && rm -rf /var/cache/pacman/pkg/*
 
