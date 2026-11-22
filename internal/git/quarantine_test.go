@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -29,7 +30,15 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
+func requireQuarantine(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("replacement quarantine is disabled on Windows")
+	}
+}
+
 func TestQuarantineSharedBinaryRestoresOnRollback(t *testing.T) {
+	requireQuarantine(t)
 	extractTo := filepath.Join(t.TempDir(), "bin")
 	target := filepath.Join(extractTo, "depengine")
 	writeFile(t, target, "old-binary")
@@ -57,6 +66,7 @@ func TestQuarantineSharedBinaryRestoresOnRollback(t *testing.T) {
 }
 
 func TestQuarantineCommitRemovesBackupAfterInstall(t *testing.T) {
+	requireQuarantine(t)
 	extractTo := filepath.Join(t.TempDir(), "bin")
 	target := filepath.Join(extractTo, "depengine")
 	writeFile(t, target, "old-binary")
@@ -78,6 +88,7 @@ func TestQuarantineCommitRemovesBackupAfterInstall(t *testing.T) {
 }
 
 func TestQuarantineDirectoryTarget(t *testing.T) {
+	requireQuarantine(t)
 	extractTo := filepath.Join(t.TempDir(), "depengine")
 	writeFile(t, filepath.Join(extractTo, "depengine"), "old-binary")
 	adapter := NewGitAdapter()
@@ -97,6 +108,7 @@ func TestQuarantineDirectoryTarget(t *testing.T) {
 }
 
 func TestQuarantineManagedPathsRollBackPartially(t *testing.T) {
+	requireQuarantine(t)
 	root := t.TempDir()
 	first := filepath.Join(root, "one")
 	second := filepath.Join(root, "two")
@@ -124,6 +136,7 @@ func TestQuarantineManagedPathsRollBackPartially(t *testing.T) {
 }
 
 func TestQuarantineAdoptsOrphanBackup(t *testing.T) {
+	requireQuarantine(t)
 	extractTo := filepath.Join(t.TempDir(), "bin")
 	target := filepath.Join(extractTo, "depengine")
 	writeFile(t, target+replacementBackupSuffix, "old-binary")

@@ -15,6 +15,7 @@ import (
 )
 
 func TestValidateRepoURL(t *testing.T) {
+	localRepo := filepath.Join(t.TempDir(), "depengine")
 	for _, tc := range []struct {
 		repo    string
 		wantErr bool
@@ -23,7 +24,7 @@ func TestValidateRepoURL(t *testing.T) {
 		{"ssh://git@github.com/Khorea1/depengine.git", false},
 		{"git@github.com:Khorea1/depengine.git", false},
 		{"file:///tmp/depengine", false},
-		{"/tmp/depengine", false},
+		{localRepo, false},
 		{"http://github.com/Khorea1/depengine.git", true},
 		{"https://user:pass@github.com/Khorea1/depengine.git", true},
 		{"https://github.com/Khorea1/depengine.git?token=x", true},

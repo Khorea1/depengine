@@ -96,6 +96,11 @@ func TestCatalogBaseDir(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// filepath.IsAbs is host-specific: only cases using the current
+			// host's path style exercise the intended branch.
+			if (tc.goos == "windows") != (runtime.GOOS == "windows") {
+				t.Skipf("%s paths are not absolute on %s", tc.goos, runtime.GOOS)
+			}
 			if got := catalogBaseDir(tc.goos, tc.home, tc.xdg, tc.appData); got != tc.want {
 				t.Fatalf("catalogBaseDir() = %q, want %q", got, tc.want)
 			}
